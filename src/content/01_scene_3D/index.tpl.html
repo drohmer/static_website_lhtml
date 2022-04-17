@@ -1,0 +1,761 @@
+{% set pageTitle = 'Scene 3D' %}
+
+{% extends "theme/template/base.html" %}
+
+{% block style %}
+<style>
+    .cpp
+    {
+        border: 1px solid gray;
+        padding: 5px;
+        border-radius: 5px;
+        font-size: 85%;
+        color: rgb(80,80,80);
+        line-height: 1.3em;
+    }
+    .cpp:before {
+        content:"Aparté C++";
+        font-style: italic;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+== Scène basique et controle
+
+Compilez et exécutez le code situé dans le répertoire **scenes/inf443/01_introduction**
+::[font-size:90%; color:gray; line-height:1.3em; font-style:italic;]
+* Vous devez suivre la même démarche expliquée dans le tutoriel de compilation (CMake -> compilation) dans le cas de ce répertoire.
+::
+
+::[text-align:center;]
+videoplay::assets/base_code.mp4[width:100%; max-width:550px;]
+::
+
+::[height:1em;]::
+
+Lors de l'exécution du code, vous devez visualiser une scène 3D contenant 
+* - un repère dont les axes rouge-vert-bleu indiquent respectivement la direction \((x,y,z)\) dans le repère du monde. Ce repère vous sera utile visuellement pour placer vos objets, et il peut être activé/desactivé dans cet exemple en cliquant dans l'interface sur le bouton "Frame".
+* - un cube et un plan texturé représentant deux objets 3D visibles dans cette scène.
+
+::[height:1em;]::
+
+Une caméra contrôlable à la souris est également fournie. Les déplacements suivants sont possibles:
+
+* - **Rotation**: clic gauche suivi d'un déplacement de la souris.
+* - **Zoom**: clic droit suivi d'un déplacement de la souris haut/bas.
+* - **Panning** (= translation dans le plan de la caméra): CTRL + clic gauche + déplacement de la souris
+* - **Avance/Recule** (= translation dans le plan orthogonal à la caméra): CTRL + clic droit + déplacement haut/bas de la souris.
+
+== Code
+
+Le code correspondant à cette scène se décompose en deux parties: <br> <br>
+* 1- Le fichier **main.cpp** situé dans le répertoire __scenes/inf443/01_introduction/src/__
+** __Ce fichier contient l'intégralité de la mise en place spécifique de la scène. Vous allez principalement éditer le code C++ dans ce fichier.__
+<br>
+* 2- La bibliothèque de code (link::https://imagecomputing.net/cgp/index.html[**CGP**]) que l'on va utiliser dans le cadre de ses sessions pratiques afin de vous aider dans la programmation graphique (structure de vecteurs, matrices, maillage, affichage, camera, etc), mais restant très simple et bas-niveau (proche d'OpenGL). Cette bibliothèque se situe dans le répertoire __library/cgp/__. Vous n'aurez généralement pas besoin de modifier ces fichiers. 
+** __Une documentation basique de la bibliothèque est disponible ici: link::https://imagecomputing.net/cgp/content/02_quick_tour/index.html[**CGP Quick Tour**].__
+
+::[height:1em;]::
+
+__Remarques__: Dans un premier temps, le code C++ situé dans **main.cpp** (ainsi que de la bibliothèque) est déjà long et va vous sembler complexe, mais cela permet l'affichage d'une scène 3D complète dès à présent. Vous n'avez pas à comprendre l'intégralité en débutant le C++, mais petit à petit au cours des séances, vous serez en mesure de vous y habituer et de le comprendre. 
+
+::[height:1em;]::
+
+Il est normal que des difficultés puissent provenir de différents points:
+* - la compréhension du langage C++ qui est généralement nouveau pour vous.
+* - l'utilisation d'une bibliothèque de code (CGP).
+* - la logique de fonctionnement d'OpenGL et des shaders.
+* - l'algorithmique et la compréhension liée à la partie graphique.
+
+::[height:1em;]::
+
+Dans l'ensemble des cas, n'hésitez pas à nous poser des questions lorsque vous ne comprenez pas certains points où que vous souhaitiez en savoir plus.
+
+
+
+== Ajout d'un élément dans la scène
+
+**Objectif:** Nous allons dans un premier temps ajouter une sphère dans cette scène.
+
+=== Fonction main et organisation générale
+
+Observez rapidement la fonction "int main()" du fichier main.cpp.
+::(.cpp)
+* - Tout programme C++ doit nécessairement avoir une fonction dénommée "main", qui correspond au point de départ du programme.
+
+::[height:1em]::
+
+* - A plusieurs reprises, vous croiserez la commande "std::cout&lt;&lt;" ... "&lt;&lt;std::endl;". Il s'agit de la commande d'écriture standard sur la ligne de commande (similaire à print() pour Python ou System.out.println() pour Java)
+** - **std::** signifie l'appel à une fonction de la bibliothèque standard du C++
+** - **cout** signifie **C**ommon **Out**put.
+** - **endl** signifie **end** of **l**ine.
+** - **&lt;&lt;** est un opérateur en C++ qui est utilisé ici pour concaténer des chaine de charactères à afficher.
+
+::[height:1em]::
+
+* - En C++, les commentaires peuvent se déclarer suivant deux manières:
+::[margin-left:2em]
+code::[c++]
+// Ceci est un commentaire qui s'arrête au bout de la ligne
+
+/* Ceci est un commentaire qui perdure ... 
+    ...
+    jusqu'à rencontrer le symbole suivant */
+code::[-]
+::
+::
+
+::[height:1em;]::
+
+La fonction __main__ contient deux étapes principales:
+* 1. Une étape d'**initialisation** des données par l'appel à la fonction __**initialize()**__. Cette fonction est appelée une unique fois en début de programme.
+** __L'objectif de cette fonction est de réaliser l'ensemble des pré-calculs qui réalisent les opérations couteuses en temps (allocations mémoires, initialisation des coordonnées des formes, etc.).__
+* 2. Une **boucle d'animation** qui tourne en permanence et qui appelle la fonction __**display_scene()**__ (et display_gui) à chaque frame.
+** __L'objectif de la fonction display_scene() est de réaliser les appels à l'affichage des éléments de la scène par le GPU. Cette fonction étant (ré)-appelée en permanence, elle ne doit contenir que des appels légers en temps de calculs.__
+
+
+::[height:2em;]::
+
+Pour ajouter un nouvel objet 3D, nous allons désormais suivre le même processus que pour les variables "cube" et "ground".
+
+::[height:0.5em;]::
+
+**>** Dans la fonction __initialize()__, créez une variable __sphere_mesh__ qui va contenir la structure du maillage de la sphère.
+code::[c++]
+mesh sphere_mesh = mesh_primitive_sphere();
+code::[-]
+__Remarques__
+* - La fonction __mesh_primitive_sphere__ est une fonction précodée de la bibliothèque CGP qui initialise un maillage dont les sommets sont positionnés sur une sphère unitaire. Les coordonnées sont calculées à partir de leurs coordonnées sphériques.
+* - Cette fonction renvoie une structure de type "mesh". Cette structure stocke la liste des informations par sommets (coordonnées, normales, couleur, uv). Ces données sont stockées en mémoire RAM et sont pratiques pour être modifiées dans le code. Par contre elles ne peuvent pas être directement affichées. Pour cela, il est nécessaire d'envoyer ces données préalablement sur la carte graphique.
+
+
+=== Ajout de la sphère
+
+Le process de passage des données du CPU vers la carte graphique (GPU) est géré par la structure __mesh_drawable__ (structure prévue dans la bibliothèque CGP). 
+
+::[height:1em;]::
+
+**>** Pour cela, suivez la démarche suivante:
+
+::[height:1em;]::
+
+* **a**. Créez une **variable globale** de type __mesh_drawable__ (la variable globale est écrite en haut du fichier main.cpp, après "mesh_drawable ground;" par exemple). 
+
+::[margin-left:2em;]
+code::[c++]
+mesh_drawable sphere;
+code::[-]
+::
+
+* **b**. Initialisez le contenu de sphere à partir de sphere_mesh dans la fonction **initialize()**
+
+::[margin-left:2em;]
+code::[c++]
+// Ecrire à la suite de "mesh sphere_mesh = mesh_primitive_sphere();"
+sphere.initialize(sphere_mesh, "Sphere");
+code::[-]
+::
+
+* **c**. Demandez l'affichage de la sphere dans la fonction **display_scene()** (par exemple après "draw(ground, environment);")
+
+::[margin-left:2em;]
+code::[c++]
+draw(sphere, environment);
+code::[-]
+::
+
+::[height:1em;]::
+
+**>** Recompilez et relancez le code, et une sphère blanche devrait être affichée à l'origine.
+
+
+=== Explication
+
+* - L'étape **a.** consiste à déclarer une variable avec son type. La variable n'est pas initialisée à ce stade. En C++, les variables déclarées en haut des fichiers sources (en dehors des fonctions) sont appelées "variables globales". Elles sont accessibles dans toutes les fonctions de ce fichier, ce qui permet de partager des valeurs entre plusieurs fonctions.
+
+::[height:1em;]::
+
+::(.cpp)
+* - Il est généralement préférable d'éviter de déclarer trop de variables globales dans un programme complexe (en C++ comme dans tout autre langage). En effet, du fait de leur portée globale, il peut être difficile de suivre quelle variable est modifiée dans quelle fonction. Il est plus simple de suivre une logique de "variables d'entrée" en tant que paramètre, et de "variable de retour" pour la sortie. En utilisant des variables de portée globale, il y a également un risque d'entrer en conflit avec d'autres variables locales qui seraient déclarées avec le même nom.
+* - Dans les codes des prochaines séances, nous utiliserons un objet appelé __scene__ dans laquelle les variables devant être partagées entre la fonction d'initialisation et d'affichage seront déclarées comme des variables de la classe (en suivant une programmation "orientée objet").
+::
+
+::[height:1em;]::
+
+* - L'étape **b.** permet d'envoyer les données contenues dans la classe mesh sur la carte graphique. Cette étape ne doit être réalisée qu'une seule fois. La structure mesh_drawable est prévue par la bibliothèque CGP - cette structure réalise des appels OpenGL directs que nous expliquerons dans la séance prochaine. 
+
+::[height:0.5em;]::
+
+__Remarque__: La chaine de caractères (type string) "Sphere" est optionnelle, et peut être n'importe quel nom indépendant de celui de la variable. Cette string est uniquement utilisée pour simplifier le debug en cas de crash lors de l'affichage de l'objet (son nom est alors affiché en ligne de commande).
+
+::[height:1em;]::
+
+* - L'étape **c.** est la demande d'affichage des données, ainsi que l'envoi de paramètres spécifiques (translation, position de la caméra, lumière, etc) aux programmes exécutés sur la carte graphique qui sont appelés __shaders__. Nous verrons ces programmes dans la suite. Cette demande d'affichage doit nécessairement être réalisée dans la boucle d'affichage 
+* \(\Rightarrow\) à chaque instant tous les objets de la scène doivent être ré-affichés.
+
+=== Modification de la sphère
+
+Il est possible d'adapter des paramètres globaux de l'objet tels que sa couleur, position, dimension en modifiant certains paramètres de la classe __mesh_drawable__.<br> 
+Par exemple écrivez dans la fonction __initialize()__ après __sphere.initialize(...)__:
+
+
+code::[c++]
+// to add after "sphere.initialize(sphere_mesh, "Sphere");"
+sphere.transform.scaling = 0.2f; // coordinates are multiplied by 0.2 in the shader
+sphere.transform.translation = {1,2,0}; // coordinates are offseted by {1,2,0} in the shader
+sphere.shading.color = { 1,0.5f,0.5f }; // sphere will appear red (r,g,b components in [0,1])
+code::[-]
+
+::(.cpp)
+* Notez "f" après les nombres à virgules (0.2f, 0.5f). 
+** - En C++, les valeurs à virgules (ex. 0.2) sont par défaut des nombres flottants dits à double précision: type "double" - encodés sur 8 octets.
+** - Les cartes graphiques utilisent cependant des nombres flottants à simples précisions: type "float": encodés sur 4 octets. OpenGL et la bibliothèque CGP utilisent ainsi des types "float" par défaut et non pas des "double".
+** - Dans la grande majorité des cas, vous pouvez écrire dans le code "0.2" à la place de "0.2f" sans problèmes: le compilateur convertira de lui-même la valeur à double précision vers simple précision. Dans certains cas particuliers, le compilateur pourrait cependant indiquer un warning (perte de précision), voir une erreur (mélange de type entre float et double en paramètre templates), qui nécessiterait d'expliciter le type flottant simple précision. 
+** - Les codes d'exemples expliciteront généralement l'utilisation des flottants à simple précision avec la lettre "f".
+::
+
+::[height:1em;]::
+
+**>** Relancez le code pour observer le résultat.
+
+::[text-align:center]
+img::assets/sphere.jpg[width:100%; max-width:400px;]
+::
+
+
+== Chargement d'un maillage externe
+
+La bibliothèque CGP fournie la création pré-codées de primitives basiques (sphères, cube, cylinder, cone, etc) par le biais de l'appel "mesh_primitive_xxx". Mais pour des objets plus complexes, il peut être avantageux de charger des maillages depuis un fichier que l'on peut télécharger ou éditer à l'aide de modeleur 3D. <br>
+Pour cela, une fonction de chargement simple d'un format classique: link::https://en.wikipedia.org/wiki/Wavefront_.obj_file[OBJ] est fourni par défaut.
+
+::[height:1em;]::
+
+
+Suivez la démarche suivante pour charger l'exemple d'un modèle de dromadaire:
+
+::[height:1em;]::
+
+* - Créez la variable globale suivante:
+
+::[margin-left:2em;]
+code::[c++]
+mesh_drawable camel;
+code::[-]
+::
+
+::[height:1em;]::
+
+* - Chargez le maillage depuis le fichier, et initialisez la variable camel dans la fonction **initialize()**.
+
+::[margin-left:2em;]
+code::[c++]
+// mesh_load_file_obj: lit un fichier .obj et renvoie une structure mesh lui correspondant
+mesh camel_mesh = mesh_load_file_obj("assets/camel.obj");
+
+// Initialisation classique de la structure mesh_drawable
+camel.initialize(camel_mesh, "obj mesh");
+
+// Ajustement de la taille et position de la forme
+camel.transform.scaling = 0.5f;
+camel.transform.translation = { -1,1,0.5f };
+code::[-]
+::
+
+::[height:1em;]::
+
+* - Ajouter l'appel à l'affichage dans la fonction **display_scene()**
+
+::[margin-left:2em;]
+code::[c++]
+draw(camel, environment);
+code::[-]
+::
+
+::[text-align:center]
+img::assets/camel.jpg[width:100%; max-width:400px;]
+::
+
+== Affichage wireframe
+
+Il est souvent utile de pouvoir visualiser les maillages en __wireframe__ (mode "fil de fer") qui représente explicitement les arêtes des triangles afin de mieux comprendre la structure, et/ou pour du debug.
+
+::[height:1em;]::
+
+La bibliothèque CGP propose la fonction __draw_wireframe(mesh_drawable, environment)__ précodée à cet effet.
+
+::[height:1em;]::
+
+Ajoutez les lignes suivantes dans la fonction **display_scene()** et observez le résultat.
+
+
+code::[c++]
+draw_wireframe(ground, environment);
+draw_wireframe(sphere, environment);
+draw_wireframe(cube, environment);
+draw_wireframe(camel, environment);
+code::[-]
+
+
+::[text-align:center]
+img::assets/camel_wireframe.jpg[width:100%; max-width:450px;]
+::
+
+::[height:1em;]::
+
+Notez que par défaut, les arêtes sont affichées en bleu. Il est possible d'expliciter une couleur (r,g,b) quelconque en argument supplémentaire.
+
+
+code::[c++]
+// affiche les arêtes en rouge
+draw_wireframe(camel, environment, {1,0,0});
+code::[-]
+
+== Buffer de profondeur
+
+Par défaut, la scène est rendue en utilisant le buffer de profondeur (Depth/Z-Buffer). <br> 
+__Pour rappel, ce "buffer" est similaire à une image annexe (qui n'est pas affichée) stockant la profondeur la plus proche des pixel/fragment visibles. Ce buffer est utilisé pour savoir si le pixel d'un triangle en cours d'affichage est visible ou s'il est caché par un objet déjà affiché et plus proche de la caméra.__
+
+::[height:1em;]::
+
+L'utilisation du buffer de profondeur est activée par défaut, ce qui permet un affichage cohérent indépendamment de l'ordre d'affichage des objets dans le code. <br>
+
+**&gt;** Désactivez l'utilisation du buffer de profondeur en ajoutant la ligne suivante au début de la fonction __display_scene()__
+code::[c++]
+glDisable(GL_DEPTH_TEST);
+code::[-]
+
+Observez que les triangles ne sont plus affichés correctement. En désactivant le buffer de profondeur, chaque triangle est affiché dans l'ordre de leurs appels, même s'il se situe "derrière" un autre au niveau de ses coordonnées. Les objets sont donc affichés dans l'ordre de leurs appels - et les derniers objets à être affichés apparaitrons donc toujours "devant" les autres.
+
+::[height:1em;]::
+
+__Remarque__: La désactivation du buffer de profondeur peut être utile dans certains cas particuliers. Par exemple pour l'affichage d'objets semi-transparent - un exemple sera proposé dans la séance consacrée au textures. Mais l'ordre d'affichage des objets doit alors être considéré avec soin.
+
+
+== GUI: Interface utilisateur
+
+Le code prévoit également la possibilité d'intégrer une GUI (Graphical User Interface) qui permet d'ajouter des boutons/sliders associés à des variables de votre programme.
+
+Dans notre cas, le code utilise une bibliothèque externe appelée link::https://github.com/ocornut/imgui[ImGui] (simple et légère d'utilisation, et s'intègre à un contexte OpenGL).
+
+
+=== Ajout d'un bouton
+
+Considérons un exemple d'utilisation de cette bibliothèque pour ajouter un bouton permettant de sélectionner si il faut afficher ou non les maillages en mode wireframe. <br>
+
+::[height:0.5em;]::
+
+Le principe est le suivant:
+
+* a. Créez une variable globale booléenne qui va permettre de stocker s'il faut afficher ou non le maillage en wireframe.
+
+::[margin-left:2em;]
+code::[c++]
+bool gui_display_wireframe = false;
+code::[-]
+::
+
+::[height:1em;]::
+
+* b. Affichez le bouton (checkbox) à l'aide d'ImGui dans la fonction **display_gui()**, et associez l'action de ce bouton à la variable.
+
+::[margin-left:2em;]
+code::[c++]
+ImGui::Checkbox("Wireframe", &gui_display_wireframe);
+code::[-]
+::
+
+
+::(.cpp)
+* - La syntaxe "&amp;gui_display_wireframe" -- ou plus généralement "&amp;variable" -- consiste à considérer "l'adresse mémoire" de la variable plutôt que sa valeur. On parle de "pointeur" sur une variable.
+* - L'utilisation de l'adresse de __gui_display_wireframe__ dans ce cas, permet à la fonction "ImGui::Checkbox" de modifier la valeur de __gui_display_wireframe__. Ce paramètre est donc un paramètre d'entrée et de sortie à cette fonction.
+* - La syntaxe "ImGui::" indique qu'il s'agit d'une fonction de la bibliothèque ImGui. On parle de "namespace".
+* - ImGui est une bibliothèque qui travaille en "mode immédiat". C'est-à-dire qu'à chaque frame, le bouton est créé et la variable qui lui est associée peut être modifiée. Les boutons peuvent être modifiés dynamiquement sans avoir à pré-concevoir une architecture fixe. D'autres bibliothèques (telles que Qt par exemple) utiliseront un principe différent où l'interface devra être spécifiée préalablement.
+::
+
+::[height:1em;]::
+
+* c. Dans la fonction **display_scene()** demandez désormais l'affichage des __draw_wireframe__ uniquement dans le cas où la valeur de __gui_display_wireframe__ est à "true".
+
+::[margin-left:2em;]
+code::[c++]
+if (gui_display_wireframe==true) {
+    draw_wireframe(ground, environment);
+    draw_wireframe(sphere, environment);
+    draw_wireframe(cube, environment);
+    draw_wireframe(camel, environment);
+}
+code::[-]
+::
+
+::(.cpp)
+* - Vous pouvez écrire également plus simplement la condition 
+code::[c++]
+if (gui_display_wireframe) {
+    ...
+}
+code::[-]
+sans avoir à expliciter "==true". En C++ une condition est considérée comme valide tant que sa valeur est différente de 0 (ou false).
+::
+
+
+::[height:2em;]::
+
+**>** Relancez votre programme et testez le fonctionnement du nouveau bouton de votre interface.
+
+::[text-align:center]
+videoplay::assets/button.mp4[width:100%; max-width:500px;]
+::
+
+
+
+=== Ajout d'un slider
+
+ImGui peut également gérer des sliders qui vous permet d'ajuster manuellement la valeur d'une variable dans un intervalle. <br>
+
+Considérons le cas où vous souhaitez translater suivant l'axe x le modèle de dromadaire dans l'intervalle \([-2,2]\). Pour cela, ajouter simplement la ligne suivante dans **display_gui()**:
+
+code::[c++]
+ImGui::SliderFloat("camel-x", &camel.transform.translation.x, -2.0f, 2.0f);
+code::[-]
+
+**>** Relancez votre programme et testez le fonctionnement du slider.
+
+::[text-align:center]
+videoplay::assets/slider.mp4[width:100%; max-width:500px;]
+::
+
+
+::[height:2em;]::
+
+__Remarques__: Cette fois la procédure était encore plus simple que pour le bouton. Nous n'avons pas à créer de variable intermédiaire. En effet, la translation suivant x du dromadaire est déjà stockée et accessible dans la variable "camel.transform.translation.x" qui était déjà utilisée à chaque affichage (lors de l'appel à "draw(camel, environment)"). Dans ce cas, il suffit de lier cette variable au slider pour permettre l'interaction de l'utilisateur.
+
+
+== Projection
+
+La bibliothèque CGP propose des modèles de projections de caméra pré-programmés dans le cas de représentation standard. Un modèle de projection en perspective, et un modèle de projection orthogonale.
+
+=== Perspective
+
+==== Modèle
+
+Le modèle perspectif est celui proposé dans le code par défaut.  <br>
+
+Ce modèle permet de convertir l'espace visible (un cône tronqué à base rectangulaire appelé "frustum") vers l'espace normalisé de représentation attendu par le GPU (appelé "normalized device coordinate") correspondant à un cube dans l'intervalle \([-1,1]\).
+
+::[height:1em;]::
+
+::[text-align:center]
+img::assets/perspective.png[width:100%; max-width:600px;]
+::
+
+
+::[height:1em;]::
+
+Ce modèle, et donc l'espace visible du cône tronqué, est paramétré par:
+* - L'angle de vue \(\theta\) (field of view __fov__).
+* - La plus petite distance à partir de laquelle un objet peut être vu \(z_{near}\) (\(\simeq\) distance de l'écran au centre optique). 
+* - La distance la plus grande où un objet peut être vu (base de la pyramide) \(z_{far}\)
+* - Le rapport largeur/hauteur de la fenêtre (aspect ratio \(a=width/height\)).
+
+
+::[height:2em;]::
+
+La matrice \(4\times 4\) correspondante à ce modèle est la suivante: <br>
+
+::[text-align:center; margin-top:1em;]
+\(\mathrm{P}=
+\left(
+\begin{array}{rrrr}
+f_x & 0   & 0 & 0 \\
+  0 & f_y & 0 & 0 \\
+  0 & 0   & C & D \\
+  0 & 0   & -1 & 0 \\
+\end{array}
+\right)\), 
+avec
+\(\left\{
+\begin{array}{l}
+f_y = 1/\tan(\theta/2) \\
+f_x = f_y/a \\
+L = z_{near}-z_{far} \\
+C = (z_{far}+z_{near})/L \\
+D = 2\,z_{far}\,z_{near}/L
+\end{array}
+\right.\)
+::
+
+::[height:1em;]::
+
+On pourra noter que l'application de cette matrice (en coordonnées homogènes) à un point \((x,y,z,1)\) permet:
+* - De mapper le point \((0,0,-z_{near})\) de l'espace au point \((0,0,-1)\) dans l'espace normalisé.
+* - De mapper le point \((0,0,-z_{far})\) de l'espace au point \((0,0,+1)\) dans l'espace normalisé.
+
+::[height:2em;]::
+
+
+==== Perspective dans le code
+
+La matrice \(P\) utilisée dans le code est accessible en appelant la fonction suivante: "environment.projection.matrix()". <br>
+Il est possible d'afficher cette matrice sur la ligne de commande en écrivant (par exemple dans la fonction __initialize()__)
+
+
+code::[c++]
+std::cout << str_pretty(environment.projection.matrix()) << std::endl;
+code::[-]
+
+
+::[color:gray;]
+__(str_pretty est une fonction de CGP permettant d'exporter une chaine de caractères pour laquelle une matrice sera typiquement affichée ligne par ligne plutôt qu'une suite contigue de valeur)__
+::
+
+::[height:2em;]::
+
+Dans la bibliothèque, la matrice en tant que telle n'est qu'une variable temporaire utilisée pour l'affichage OpenGL. La structure "environment.projection" stocke en fait les paramètres fov, \(z_{near}\), \(z_{far}\), etc, qui permet de générer cette matrice.
+
+::[height:1em;]::
+
+Il est possible par exemple de forcer un angle d'ouverture de \(90^{\circ}\) en écrivant dans la fonction __initialize()__:
+
+code::[c++]
+environment.projection.perspective_data.field_of_view = Pi / 2.0f;
+code::[-]
+
+Remarques: 
+* - L'angle d'ouverture est stocké en radians et non pas en degrés.
+* - La variable "Pi" est précodée dans la bibliothèque CGP.
+
+::[height:2em;]::
+
+**&gt;** Créez désormais un slider qui permet de modifier dynamiquement ce paramètre d'angle d'ouverture de caméra entre \([10^{\circ}, 150^{\circ}]\).
+
+::[height:2em;]::
+
+::[text-align:center]
+videoplay::assets/fov.mp4[width:100%; max-width:500px;]
+::
+
+* - Notez qu'en augmentant l'angle d'ouverture, vous pouvez visualiser une plus grande part de l'espace pour une position de caméra donnée. Par contre, les longueurs (et donc les formes telles que les sphères, carrés, etc) se déforment sur les bords de la fenêtre (effet "fish-eye").
+* - L'angle d'ouverture classique représentant une "vision humaine" attendue sur un écran standard est de \(60^{\circ}\) ou moins.
+
+=== Projection orthogonale
+
+La bibliothèque propose également un modèle pré-codé de projection orthogonale. Dans ce cas, le modèle est paramétré par les dimensions dans les 3 directions (left, right, bottom, up, front, back) par rapport au point central.
+
+Ajoutez ces lignes à la fin de la fonction __initialize()__ pour obtenir une projection orthogonale.
+
+code::[c++]
+// Change le type de projection à orthogonale
+environment.projection.type = camera_perspective_type::orthographic;
+
+// Autorise une vue en profondeur pour des objets 
+//   situés à une distance comprise entre -10 et +10
+environment.projection.orthographic_data.back = -10;
+environment.projection.orthographic_data.front = 10;
+code::[-]
+
+<br>
+
+__Remarque__: La projection orthogonale représente un modèle indépendamment du point de vue - ce qui explique son utilisation pour des représentations précises de longueurs, utile typiquement lors de la modélisation d'un objet suivant les directions x/y/z sans déformation. <br>
+Par contre, il n'y a pas d'effet de perspective (/éloignement) - les objets éloignés sont aussi grands que ceux proches de la caméra, et la caméra ne semble pas se déplacer vers l'avant/arrière: les objets apparaissent/disparaissent directement dans le champ de vision à leur dimension fixe. Cette représentation est généralement non adaptée pour naviguer dans une scène 3D, car non naturelle.
+
+
+== Shaders
+
+Jusqu'à présent, nous avons manipulé des paramètres prévus dans la bibliothèque de code C++, et l'affichage est "pris en charge" par la fonction __draw__.
+
+::[height:1em;]::
+
+Cette fonction __draw(mesh_drawable, environment)__ fait en fait appel à OpenGL, qui est lui-même une interface permettant d'utiliser la carte graphique pour de l'affichage de scène 3D. 
+
+L'intérêt de faire appel à OpenGL et à la carte graphique directement (plutôt que d'utiliser par exemple une fonction "plot" dans un langage plus simple tel que Python) est l'extrême efficacité et flexibilité de ce qui est affiché.
+
+::[height:1em;]::
+
+L'affichage - et plus généralement l'ensemble des calculs et opérations - réalisé par la carte graphique est paramétré par des programmes que l'on appelle des **shaders**. <br>
+Les shaders en OpenGL sont écrits dans un langage appelé le **GLSL** (OpenGL Shading Language) qui est proche du C++, mais n'en est pas. Il s'agit d'un langage plus simple qui se concentre sur les opérations vecteurs/matrices de dimension 2, 3 et 4. <br>
+
+La librairie CGP est écrite pour suivre en grande partie la syntaxe du code glsl, ce qui signifie que votre code C++ sera très ressemblant au code GLSL des shaders.
+
+
+::[height:1em;]::
+
+Nous allons utiliser principalement deux type de shaders:
+
+* - Le **vertex shader** qui correspond à un programme exécuté sur chaque sommet individuel de l'objet en cours d'affichage.
+* - Le **fragment shader** qui correspond à un programme executé sur chaque pixel apparent (appelé un fragment) d'une primitive (généralement un triangle) en cours d'affichage.
+
+::[height:1em]::
+
+Les shaders sont à écrire par le développeur et vont varier en fonction des effets/paramètres souhaités. Cependant les exemples de programmes de ces sessions pratiques sont fournis avec des shaders basiques, qui permettent notamment l'affichage de maillages dans la plupart des cas.
+
+::[height:1em]::
+
+Dans la suite de cette partie, nous allons manipuler un exemple de shader pré-écrit, et nous verrons plus en détail le principe et l'échange de données dans la prochaine séance.
+
+=== Vertex shader
+
+Le vertex shader utilisé dans le cas présent correspond au fichier __shaders/mesh/vert.glsl__. 
+
+::[height:1em]::
+
+Vous pouvez ouvrir ce fichier avec un éditeur de texte classique (ex. Visual Studio Code) et la plupart des éditeurs proposent des modules de coloration syntaxiques (vous pouvez l'installer dans Visual Studio et Visual Studio Code).
+
+code::[glsl]
+#version 330 core // OpenGL 3.3 shader
+
+// Vertex shader - this code is executed for every vertex of the shape
+
+// Inputs coming from VBOs
+layout (location = 0) in vec3 position; 
+layout (location = 1) in vec3 normal; 
+layout (location = 2) in vec3 color; 
+layout (location = 3) in vec2 uv;
+
+...
+code::[-]
+
+::[height:2em]::
+
+Sans rentrer dans les détails de ce code, l'objectif de ce vertex shader est de réaliser l'étape de projection des sommets du maillage.
+* - Le shader reçoit en entrée une coordonnée du maillage initial (ainsi qu'une normale, couleur et coordonnée de texture) exprimée dans le repère local de l'objet (pas nécessairement le repère du monde).
+* - Et il renvoie en sortie (dans la variable prévue gl_Position) la coordonnée après placement dans le repère du monde ainsi que sa projection (perspective ou orthogonale).
+
+::[height:2em]::
+
+
+Formellement, la relation implémentée est la suivante:
+
+::[text-align:center]
+\(p_{out} = \) projection \(\times\) view \(\times\) model \(\times p\), avec 
+::
+
+::[height:1em]::
+
+* - \(p\): la coordonnée du maillage dans son repère local (vecteur 4D).
+* - __model__: la matrice (\(4\times 4\)) de transformation de l'espace local de l'objet vers le repère globale du monde.
+* - __view__: la matrice (\(4\times 4\)) correspondant à l'orientation et la position de la caméra. Permet de passer du repère du monde vers l'espace "camera" ("view space").
+* - __projection__: la matrice (\(4\times 4\)) de projection (perspective ou orthogonal) qui permet de passer de l'espace centré caméra vers le cube normalisé (Normalized Device Coordinates).
+* - \(p_{out}\): la coordonnée (4D) de sortie exprimée dans le repère "Normalized Device Coordinates" (coordonnée uniquement visible entre [-1,1]).
+
+::[height:2em]::
+
+__Le reste des commandes permettent de gérer les dimensions entre vecteurs 3D et espace projectif 4D, ainsi que de gérer les normales, couleurs, et uv qui seront utilisées pour le calcul d'illumination dans le fragment shader. Les variables qualifiées de "uniform" sont des paramètres du shaders qui sont transmis depuis le code C++ juste avant l'affichage d'un objet.__
+
+::[height:2em]::
+
+L'un des points important (et potentiellement complexe à appréhender) est que ce programme est exécuté par la carte graphique à chaque nouvelle frame, et séparément pour chaque sommet. Notez par exemple qu'il n'y a pas de boucle sur les sommets dans ce code. Ainsi la variable d'entrée "vec3 position;" est différente pour chaque sommet, mais le code qui est exécuté est le même.
+
+::[height:0.5em]::
+
+Plus précisément, ce code est exécuté en parallèle sur les sommets et cette parallélisation est gérée automatiquement par OpenGL. Notez que les cartes graphiques récentes possèdent plusieurs milliers de coeurs, et peuvent donc traiter des milliers de sommets en parallèle.
+
+::[height:0.5em]::
+
+Grâce à cette exécution en parallèle sur la carte graphique, les calculs réalisés dans les shaders sont extrêmement efficaces. D'une manière générale toutes les opérations "couteuses" qui doivent être appliquées individuellement sur chaque sommet et à chaque frame aura avantage à être programmées dans le vertex shader plutôt que dans le code C++.
+
+
+==== Transformation affines dans le shader
+
+Il est possible de modifier directement le code des shaders, et ainsi de modifier l'apparence des objets. <br>
+
+Considérons le cas où l'on souhaite appliquer une transformation affine supplémentaire sur les formes. 
+
+::[height:1em;]::
+
+**&gt;** Modifiez la ligne suivante du shader "vec4 p = model * vec4(position, 1.0);" par
+
+code::[glsl]
+vec4 p = model * vec4(position, 1.0);
+mat4 M = transpose(
+         mat4(2.0, 0.0, 0.0, 0.0, 
+              0.0, 1.0, 0.0, 0.0,
+              0.0, 0.0, 1.0, 0.0,
+              0.0, 0.0, 0.0, 1.0));
+
+vec4 p = model *  M * vec4(position, 1.0);
+code::[-]
+
+::[text-align:center]
+img::assets/shader_modif.jpg[width:100%; max-width:600px;]
+::
+
+Nous venons d'appliquer un scaling suivant l'axe x qui a allongé toutes les formes suivant cet axe.
+
+::[height:1em;]::
+
+__Remarques__: 
+* - Par défaut l'ensemble des formes utilisent ce shader (donc toutes les formes sont modifiées), sauf le repère d'origine qui utilise sont propre shader (mesh_reference) afin de garder une référence visuelle.
+* - Bien que cela ne soit pas utile dans cet exemple, nous définissons la "transposé" de la matrice décrite ici. GLSL construit en fait la matrice par colonnes (et non par lignes). Lorsque l'on définit une matrice suivant une écriture "manuscrite" classique, il faut donc considérer sa transposée.
+
+::[height:2em;]::
+
+**&gt;** Appliquez des scaling suivant d'autres axes (ou des "shearing"/cisaillements). Il est également possible de définir des rotations. <br>
+**&gt;** Retrouvez le principe des transformations affines vues en cours pour appliquer des translations. <br>
+**&gt;** Que se passe-t-il si vous modifiez la toute dernière composante de la matrice en bas à droite de 1.0 à 2.0 ?. Expliquez pourquoi.
+
+
+::[height:2em;]::
+
+__Remarques__:
+* - La transformation supplémentaire \(M\) est appliquée au sommet avant la multiplication par la matrice "model" qui applique elle-même des translations différentes sur les objets. <br> Si vous écrivez "M * model * vec4(position, 1.0)" (à la place de "model * M * vec4(position, 1.0)"), vous obtiendrez le même __scaling__, mais une position différente car la translation définie dans "model" subira la multiplication décrite dans M.
+* - Si vous supprimez la matrice "model" du calcul, alors les transformations définies dans le code C++ (ex. camel.transform.translation = ...) ne sont plus appliquées. Dans le cas présent, les objets seront tous centrés sur l'origine et à leurs dimensions locales définies initialement lors de la génération du maillage.
+
+=== Fragment shader
+
+Le fragment shader utilisé dans le cas présent correspond au fichier __shaders/mesh/frag.glsl__. 
+
+::[height:1em;]::
+
+Ce code est exécuté après projection des sommets (et après "rasterization" des triangles) sur chaque pixel/fragment visible d'un triangle. <br>
+
+
+L'objectif général d'un fragment shader est de considérer en entrée les valeurs interpolées sur les triangles à l'endroit du fragment courant (coordonnées, normale, couleur, textures) et de définir en sortie (variable FragColor) la couleur résultante à afficher. <br>
+Dans le cas présent, ce code implémente une illumination de Phong avec trois composantes: ambiante, diffuse, et spéculaire qui vous sera détaillée plus tard.
+
+::[height:2em;]::
+
+**&gt;** Modifiez la couleur de sortie des fragments en testant l'effet des lignes suivantes:
+* - Le code est à écrire à la fin du fragment du fragment shader (juste avant l'accolade fermante). 
+* - Les lignes sont à tester séparément les unes après les autres.
+* - Essayez de comprendre le résultat que vous obtenez (appelez si vous n'êtes pas sûr).
+* - Notez que la couleur de sortie correspond à un vecteur dont les composantes (x,y,z,w) sont (rouge, vert, bleu, alpha). Chaque composante est censée être entre 0 (intensité minimale) et 1 (intensité maximale). La composante alpha n'est pas utilisée dans ce programme et peut être placée à une valeur arbitraire (elle sera utilisée plus tard pour des effets de transparence).
+
+code::[glsl]
+FragColor = vec4(1,0,0,0);
+code::[-]
+
+code::[glsl]
+FragColor = abs(vec4(cos(fragment.position.x),0,0,0));
+code::[-]
+
+code::[glsl]
+FragColor = abs(vec4(fragment.normal.x,fragment.normal.y,fragment.normal.z,0));
+// rem. Les normales d'une surface sont de norme unitaire.
+code::[-]
+
+code::[glsl]
+FragColor = 0.8*vec4(color_shading, alpha * color_image_texture.a) 
+           + 0.2*abs(vec4(cos(10*fragment.position.z),0,0,0));
+code::[-]
+
+code::[glsl]
+if(cos(25*fragment.position.z)<-0.5f) {
+    discard;
+    // discard signifie l'arrêt du fragment shader
+    //  aucune couleur n'est affichée après discard
+    //  le pixel correspondant sera donc transparent.
+}
+code::[-]
+
+__Remarque__: Il s'agit d'exemples "de démonstrations" pour l'instant, mais notez d'une manière générale que la modification du fragment shader permet d'obtenir un contrôle très précis (calcul réalisé sur chaque pixel) qui serait complexe (ou très couteux) de réaliser hors d'un shader.
+
+::[height:1em;]::
+
+::[text-align:center;]
+img::assets/shader_discard.jpg[width:100%; max-width:500px;]
+::
+
+::[height:4em;]::
+
+{% endblock %}

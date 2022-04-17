@@ -1,0 +1,28 @@
+
+$path: '../icons/';
+
+.menu {
+    background-image: url($path+'menu.svg');
+}
+.menu:hover {
+    background-image: url($path+'menu_hover.svg');
+} 
+
+.prev {
+    background-image: url($path+'left_enabled.svg');
+}
+.prev:hover {
+    background-image: url($path+'left_hover.svg');
+}
+.prev-inactive {
+    background-image: url($path+'left_disabled.svg');
+}
+.next {
+    background-image: url($path+'right_enabled.svg');
+}
+.next:hover {
+    background-image: url($path+'right_hover.svg');
+}
+.next-inactive {
+    background-image: url($path+'right_disabled.svg');
+}

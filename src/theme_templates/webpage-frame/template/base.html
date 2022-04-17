@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        {% block head %}
+        <meta charset="utf-8" >
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title> {{ pageTitle }} </title>
+
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/main.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/icons.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/font.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/code.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/classes.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/libs/katex/katex.min.css">
+
+        <script src="{{ pathToRoot }}theme/js/menu.js" defer></script>
+        <script src="{{ pathToRoot }}theme/libs/katex/katex.min.js" defer></script>
+        <script src="{{ pathToRoot }}theme/libs/katex/contrib/auto-render.min.js" onload="renderMathInElement(document.body);" defer></script>
+
+        
+        {% endblock %}
+
+        {% block style %}
+        {% endblock %}
+    </head>
+
+    <body>
+        
+        <div class="navigation container">
+            {% block navigation %}
+
+            <nav>
+                <div id="toc"> {{ table_of_content }} </div>
+                <div id="summary"> {{ summary }} </div>
+                <div id="current-page-title" class="hidden">{{title}}</div>
+            </nav>
+
+            {% endblock %}
+        </div>
+
+        <div id="main-content-margin">
+            <div id="main-content-centered">
+
+                {% block content %}
+                {% endblock %}
+
+
+            </div>
+        </div>
+
+    </body>
+
+
+</html>
