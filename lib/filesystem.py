@@ -2,6 +2,11 @@ import os
 import shutil
 from tqdm import tqdm
 
+def remove_trailing_backslash(filename):
+    while len(filename)>0 and filename.endswith('/'):
+        filename = filename[:-1]
+    return filename
+
 
 def find_files_filter_list(files,dirs):
     if 'private' in dirs:
@@ -14,7 +19,7 @@ def find_files_filter_list(files,dirs):
     return (files, dirs)
 
 
-def find_files_in_hierarchy(src_dir, filter_list=find_files_filter_list, file_condition=lambda x:True, max_depth=-1):
+def find_files_in_hierarchy(src_dir, filter_list=find_files_filter_list, file_condition=lambda x:True, max_depth=-1, max_size=-1):
     files_found = []
     add_reccursive = []
 
@@ -41,7 +46,10 @@ def find_files_in_hierarchy(src_dir, filter_list=find_files_filter_list, file_co
         for f in all_files_name:
             if file_condition(f)==True:
                 current_file = current_dir+'/'+f
-                files_found.append({'filename':f,'dir':current_dir+'/','level':depth})
+                file_size = round(os.stat(current_file).st_size/1024/1024,2)
+                if file_size<max_size or max_size<0:
+                    current_file = current_dir+'/'+f
+                    files_found.append({'filename':f,'dir':current_dir+'/','level':depth,'size':file_size})
 
         if depth<max_depth or max_depth<0:
             for d in all_dirs_name:

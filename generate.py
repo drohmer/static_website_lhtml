@@ -43,6 +43,7 @@ if __name__== '__main__':
     print(f'Copy source files {dir_source} to {dir_site}')
     print(f'\t Find files ...')
     files = filesystem.find_files_in_hierarchy(dir_source)
+    print(files)
     print(f'\t Copy {len(files)} files ...')
     filesystem.copy_files(files, dir_site, dir_source)
     print("\t Copy done\n")
@@ -85,7 +86,8 @@ if __name__== '__main__':
         output_html = lhtml.run(output_html)
 
         # Tidy
-        tidyOptions['warn-proprietary-attributes']=False
+        if 'warn-proprietary-attributes' in tidyOptions:
+            tidyOptions['warn-proprietary-attributes']=False
         tidyOptions['drop-empty-elements']=False
         tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
         if error_tidy_html!="":
