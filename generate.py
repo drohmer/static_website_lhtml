@@ -6,6 +6,7 @@ import tidylib   # pip3 install pytidylib
 import os
 import shutil
 import sys
+import subprocess
 
 from lib import filesystem
 
@@ -33,20 +34,28 @@ if __name__== '__main__':
     tidylib.BASE_OPTIONS = {}
     tidyOptions = {'doctype':'html5'}
 
+    # Remove previous site
+    print(f'Remove {dir_site} ...')
+    os.system(f'rm -rf {dir_site}')
+    print("\t Remove done\n")
+
     # Copy src to _site
     print(f'Copy source files {dir_source} to {dir_site}')
-    filesystem.copy_directories(dir_source, dir_site)
+    print(f'\t Find files ...')
+    files = filesystem.find_files_in_hierarchy(dir_source)
+    print(f'\t Copy {len(files)} files ...')
+    filesystem.copy_files(files, dir_site, dir_source)
     print("\t Copy done\n")
 
 
     # Find all tpl.html files
     print(f'Look for template files in {dir_site} ...')
-    template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.tpl.html'))
+    template_files = filesystem.find_files_in_hierarchy(dir_site, file_condition=lambda f: f.endswith('.tpl.html'))
     print(f'\t Found {len(template_files)} template files\n')
 
     # Copy current theme
     print('Copy current theme',meta['theme'],'into theme/')
-    theme_src = dir_site+'/'+meta['theme']
+    theme_src = meta['theme']
     theme_dst = dir_site+'/theme/'
     filesystem.copy_directories(theme_src, theme_dst)
     print('\t Done\n')
@@ -106,7 +115,7 @@ if __name__== '__main__':
 
     # Find sass and scss files
     print(f'Look for sass files in {dir_site}/{sass_directory} ...')
-    sass_files = filesystem.find_files_in_hierarchy(dir_site+'/'+sass_directory, lambda f: f.endswith('.sass') or f.endswith('.scss'))
+    sass_files = filesystem.find_files_in_hierarchy(dir_site+'/'+sass_directory, file_condition=lambda f: f.endswith('.sass') or f.endswith('.scss'))
 
     print(f'\t Found {len(sass_files)} sass/scss files\n')
     for element in sass_files:
@@ -124,3 +133,10 @@ if __name__== '__main__':
 
 
 
+    # Run all process scripts
+    dir_process = 'process/'
+    all_process = filesystem.find_files_in_hierarchy(dir_process, file_condition=lambda f: f.endswith('.py'))
+    for script in all_process:
+        print('Run script '+script['filename'])
+        filepath = dir_process + script['filename']
+        subprocess.call(['python3',filepath])
