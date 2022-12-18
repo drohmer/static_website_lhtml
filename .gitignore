@@ -1,2 +1,3 @@
-_site
-lib/__pycache__
+_site/
+__pycache__/
+configure.yaml

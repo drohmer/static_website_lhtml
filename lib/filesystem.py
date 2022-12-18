@@ -1,25 +1,46 @@
 import os
-import shutil
-from tqdm import tqdm
 
-def remove_trailing_backslash(filename):
-    while len(filename)>0 and filename.endswith('/'):
-        filename = filename[:-1]
-    return filename
+def directory_name_clean(d_in):
+    d = d_in
+    if d=='' or d=='.':
+        return ''
+    if not d.endswith('/'):
+        d = d+'/'
+    return d
+    
+
+class FilepathRelative:
+    def __init__(self, **kwargs):
+        self.root_directory = ''
+        self.path_local = ''
+        self.filename = ''
+        self.level = 0
+
+        for k in kwargs:
+            getattr(self, k)
+        vars(self).update(kwargs)
+
+    def __str__(self):
+        return f'FilepathRelative(\'root_directory\':\'{self.root_directory}\', \'path_local\':\'{self.path_local}\', \'filename\':\'{self.filename}\', \'level\':\'{self.level}\')'
+
+    def __repr__(self):
+        return str(self)
+
+    def filepath(self):
+        # Return full filepath        
+        return directory_name_clean(self.root_directory) + directory_name_clean(self.path_local) + self.filename
+    
+    def filepath_local(self):
+        # Return filepath without the root_directory
+        return directory_name_clean(self.path_local) + self.filename
+    
+    def path_to_root(self):
+        # Return the relative path to the root directory given the level
+        return '../' * self.level
+    
 
 
-def find_files_filter_list(files,dirs):
-    if 'private' in dirs:
-        dirs.remove('private')
-
-    if 'no_web_parse.txt' in files:
-        return ([],[])
-    if 'no_web_parse_subdirs.txt' in files:
-        return (files,[])
-    return (files, dirs)
-
-
-def find_files_in_hierarchy(src_dir, filter_list=find_files_filter_list, file_condition=lambda x:True, max_depth=-1, max_size=-1):
+def find_files_in_hierarchy(src_dir, condition, max_depth=5):
     files_found = []
     add_reccursive = []
 
@@ -29,7 +50,6 @@ def find_files_in_hierarchy(src_dir, filter_list=find_files_filter_list, file_co
         for d in src_dir:
             add_reccursive.append([d,0])
 
-    
     while len(add_reccursive)>0:
         add_reccursive = sorted(add_reccursive)
         current_dir, depth = add_reccursive.pop(0)
@@ -41,43 +61,22 @@ def find_files_in_hierarchy(src_dir, filter_list=find_files_filter_list, file_co
         all_files_name = list(filter(lambda x: os.path.isfile(current_dir+'/'+x), current_dir_content)) 
         all_dirs_name  = list(filter(lambda x: os.path.isdir(current_dir+'/'+x), current_dir_content)) 
 
-        all_files_name, all_dirs_name = filter_list(all_files_name, all_dirs_name)
-
         for f in all_files_name:
-            if file_condition(f)==True:
-                current_file = current_dir+'/'+f
-                file_size = round(os.stat(current_file).st_size/1024/1024,2)
-                if file_size<max_size or max_size<0:
-                    current_file = current_dir+'/'+f
-                    files_found.append({'filename':f,'dir':current_dir+'/','level':depth,'size':file_size})
+            if condition(f)==True:
+                local_dir = current_dir[len(src_dir):]
+                if local_dir!='' and not local_dir.endswith('/'):
+                    local_dir = local_dir+'/'
+                if local_dir.startswith('/'):
+                    local_dir = local_dir[1:]
+                filepath = FilepathRelative(root_directory=src_dir, path_local=local_dir, level=depth, filename=f)
+                files_found.append({'path':filepath})
+                #{'filename':f,'root_dir':src_dir,'dir':current_dir[len(src_dir)+1:]+'/','level':depth})
 
-        if depth<max_depth or max_depth<0:
+        if depth<max_depth:
             for d in all_dirs_name:
                 add_reccursive.insert(0,[current_dir+'/'+d,depth+1])
 
     return files_found
-
-def copy_files(files_to_copy, dir_output, relative_root):
-    if os.path.isdir(dir_output)==False:
-        os.system('mkdir -p '+dir_output)
-    assert os.path.isdir(dir_output)
-
-    for f in tqdm(files_to_copy):
-        pathIn = f['dir']+f['filename']
-        assert os.path.isfile(pathIn)
-
-        N = len(relative_root)
-        relative_file = pathIn[N:]
-        if pathIn[:N]!=relative_root:
-            print(f'Problem with file {f} : relative_root {relative_root} doesn\'t seems to match')
-            assert False
-
-        pathOut = dir_output+'/'+relative_file
-        dir_file_to_copy = os.path.dirname(pathOut)
-        if not os.path.isdir(dir_file_to_copy):
-            os.system('mkdir -p '+dir_file_to_copy)
-        shutil.copyfile(pathIn, pathOut)
-        assert os.path.isfile(pathOut)
 
 def copy_directories(dir_source, dir_target):
 
@@ -91,5 +90,4 @@ def copy_directories(dir_source, dir_target):
     assert os.path.isdir(dir_target)
 
     # Copy
-    #os.system(f'cp -r {dir_source}* {dir_target}')
-    os.system(f'rsync -arh --info=progress2 {dir_source}* {dir_target}')
+    os.system(f'cp -r {dir_source}* {dir_target}')

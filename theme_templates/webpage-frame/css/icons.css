@@ -1,0 +1,27 @@
+
+
+.menu {
+    background-image: url('../icons/menu.svg');
+}
+.menu:hover {
+    background-image: url('../icons/menu_hover.svg');
+} 
+
+.prev {
+    background-image: url('../icons/left_enabled.svg');
+}
+.prev:hover {
+    background-image: url('../icons/left_hover.svg');
+}
+.prev-inactive {
+    background-image: url('../icons/left_disabled.svg');
+}
+.next {
+    background-image: url('../icons/right_enabled.svg');
+}
+.next:hover {
+    background-image: url('../icons/right_hover.svg');
+}
+.next-inactive {
+    background-image: url('../icons/right_disabled.svg');
+}

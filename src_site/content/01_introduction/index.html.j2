@@ -1,0 +1,391 @@
+{% set pageTitle = 'Introduction to INF585 exercises' %}
+{% set tocTitle = 'Introduction' %}
+
+{% extends "theme/template/base.html" %}
+
+
+{% block content %}
+
+<style>
+    a .download {color: gray; width:100%; max-width:260px;}
+    .download {padding: 2px; border-radius:10px;}
+    .download:hover {border: 2px solid gray; padding:0;}
+</style>
+
+= Introduction to INF585 exercises
+
+
+== Download INF585 exercises
+
+Download any of these archive containing all the necessary codes
+
+::[height:1em;]::
+
+::[text-align:center;color:gray; margin-top:2em; display:flex; justify-content:space-around; flex-wrap:wrap; align-items:flex-start;]
+
+<a href="code/code_inf585.tar.gz">
+div::[](.download)
+img::assets/download_targz.png[width:100%;]
+Download **code_inf585.tar.gz** <br> (Linux/MacOS)
+::
+</a>
+
+<a href="code/code_inf585.zip">
+div::[](.download)
+img::assets/download_zip.png[width:100%;]
+Download **code_inf585.zip** <br> (Windows)
+::
+</a>
+
+::
+
+
+::[height:3em;]::
+
+* __Side notes:__
+The lab classes use a library called link::https://imagecomputing.net/cgp/content/01_general/index.html[CGP - Computer Graphics Programming lib -] that can be accessed separately (without the INF585 exercises) on github 
+* \(\Rightarrow\) link::https://github.com/drohmer/CGP[CGP Github link]
+The directory with the INF585 exercises only (without CGP) can be downloaded here 
+* \(\Rightarrow\) link::code/inf585.tar.gz[inf585.tar.gz]
+
+== System setup and first compilation
+
+If you are not familiar with C++/OpenGL compilation on your system, follow first these instructions to compile the library
+* \(\Rightarrow\) **link::https://imagecomputing.net/cgp/compilation/index.html[Detailed Installation and Compilation Instructions]**
+
+::[height:25px;]::
+
+ __Notes on the requirements__
+* - Your C++ compiler should be compatible with C++14.
+* - Glad is used to load function for OpenGL 3.3.
+* - GLFW is used to create a window and handle mouse/key events.
+* - ImGUI is used to handle GUI.
+
+== Introductory scene
+
+
+* The first introductory scene is available in the directory **__scenes/inf585/00_introduction/__**
+** - Each exercise is described as a unique program (with its own main) defined in the __scenes/__ directory. 
+** - A __CMakeLists.txt__ is associated to each program for its compilation (+ a Makefile for Unix systems).
+*** __(you need to adapt the path of the link::https://imagecomputing.net/cgp/compilation/index.html[compilation instructions] to the directory of the CMakeLists.txt for each exercise)__
+
+
+
+::[height:25px;]::
+
+
+* Once executed, you should observe a basic scene as seen below with rotating cylinder, cube, and curve __(some details may vary)__.
+** - Note that the source code of the scene is fully described in the files __src/main.cpp__ and __src/scene.cpp (and src/scene.hpp)__. 
+** - The __main.cpp__ file contains mostly common elements through all the exercises (general set up of the scene, animation loop, basic handling of the keyboard/mouse input). The specific content is defined in the files __scene.cpp__, and its header __scene.hpp__.
+
+::[text-align:center;]
+videoplay::assets/introduction.mp4[width:100%; max-width:550px]
+::
+
+=== Information on the library (only general information, no exercise)
+
+link::https://imagecomputing.net/cgp/content/01_general/index.html[CGP library] provides a set of functionalities to ease 3D graphics programming such as 
+
+* - Structure for 3D vectors and matrices (and 2D, 4D).
+* - Object structure ready to be displayed with OpenGL (Meshes, lines, etc) and their associated shaders.
+* - Easy and secured storage for buffers of elements.
+* - 3D scene manipulation: Mouse controlled camera
+
+::[height:25px;]::
+
+The library tries to be as lightweight as possible. It is written to ease 3D graphics programming, and to not hide underlying working state. Although this is not required, you should be able to understand every part of the code.
+
+::[height:25px;]::
+
+It keeps in particular the following principles
+
+* - Minimalistic code written to be simple to understand (not necessarily the most generic nor efficient). 
+* - Objects are written to be lightweight and with minimal hidden states - You can directly interact with object attributes. 
+* - The code and functionalities remain close to basic C++/OpenGL - You can use direct OpenGL calls with the library. You should also keep in mind the way that OpenGL works to avoid unexpected display.
+
+==== General structure of the code
+
+Role of the different high level directories
+
+* **scenes/** Contains the code associated to each 3D scene.
+** - One exercise starts with an independant main file (+ possible other files) and associated CMakeLists.txt for its compilation.
+** - Most of the time, the main.cpp will only consists in the general call structure (initialization, events handling, animation loop). While the specific data and drawing calls of each exercise will be set in the files scene.cpp/hpp.
+** - Changing exercise consists in compiling the code from another directory.
+** - All your code will take place in these directories (unless you want to modify the library).
+
+* **library/cgp/**  Contains the actual source code of the CGP library: set of structures and functions to ease generating your 3D scene.
+* **library/third_party** External library used by CGP such as glad (OpenGL loader), imgui (GUI), lodepng (loader for png images), etc.
+
+
+==== Code editor
+
+* The library contains multiples files. Make sure you use a sufficiently advanced (or well parameterized) IDE to have 
+** C++ **code completion** (in particular complete function names, display expected arguments and types, objects arguments, etc.)
+** efficiently **switch between files** and **jump to the signature and code** of any function and object.
+
+** __Note: Visual Studio Code and other lightweights text editor usually doesn't provide by default correct C++ code completion.__
+
+::[height:25px;]::
+
+* If you are not already familiar with C++ code editor (in Linux/Mac), you may try QtCreator, a C++ IDE able to load complete project from the CMakeLists.txt, and providing usefull tool such as code completion and structure navigation (in Windows, Visual Studio is the default IDE for C++).
+** See **link::https://imagecomputing.net/cgp/compilation/content/06_ide_qtcreator/index.html[instructions to use QtCreator]**
+
+::[height:25px;]::
+
+* Finally, note that the code should be executed from the root of the code directory (the directory containing the CMakeLists.txt of the corresponding exercise) in order to load external files at runtime. You may need to parameterize your run directory in your IDE (ex. QtCreator) to start the executable within it.
+
+::[height:2em;]::
+
+== Use of the code library and program structure (the exercise starts here)
+
+
+
+* > Observe the file __main.cpp__. You should recognize the general organization of the program, in particular the setup stage, and the animation loop stage. Note where the method __scene.initialize()__ and __scene.display()__ are called, and their implementation in the file scene.cpp.
+
+::[height:25px;]::
+
+*  > Change the rotation (axis and angle) from some of the object within the scene in the function __display_scene__.
+** Note that the structure __vec3__ implements a model of 3D vector with (x,y,z) coordinates.
+** The rotation is stored as a 3x3 matrix using the __mat3__ structure.
+** You can apply most of the basic operations between vec3 and mat3 using mathematical operators (+,-,*,/).
+
+::[height:25px;]::
+
+* Note that there is two type of mesh structures in use
+::[height:1em;]::
+** **- mesh** storing buffer on data (per vertex: position, normal, uv, color, and triangle connectivity) on CPU
+*** This structure allows to conveniently access to all the data defining a mesh from the C++ code. However these data are not on the GPU, so a __mesh__ cannot be directly displayed. 
+::[height:1em;]::
+** **- mesh_drawable** storing VBOs associated to these buffer once sent on the GPU memory (in the sub-structure mesh_drawable_gpu_data) as well as its VAO. The structure also stores uniform parameters that are sent to the shader at every draw call. A default shader and texture id are also be stored with the structure.
+*** This structure only stores the index corresponding to elements on GPU. You cannot modify individual per-vertex elements easily from this structure.
+
+::[height:25px;]::
+
+** Remark: a __mesh_drawable__ can be automatically generated from a __mesh__ structure in calling the construction __mesh_drawable(meshName)__. However, you cannot create a __mesh__ from a __mesh_drawable__.
+
+
+
+=== Adding a sphere
+
+
+In this first part we display a new sphere to the scene.
+
+::[height:25px;]::
+
+* > Add the class variable to scene_structure class (in the file scene.hpp)
+
+::[margin-left:2.5em;]
+code::[c++]
+cgp::mesh_drawable sphere; 
+code::[-]
+::
+
+* > Initialize this variable in the __initialize()__ function (in the file scene.cpp) as a sphere of radius 0.5
+
+::[margin-left:2.5em;]
+code::[c++]
+mesh sphere_mesh = mesh_primitive_sphere(0.5f);
+sphere.initialize(sphere_mesh, "new Sphere");
+code::[-]
+::
+
+::[margin-left:2em;]
+* (or variant: simply in one line without explicitely storing the mesh variable)
+::[margin-left:2.5em;]
+code::[c++]
+sphere.initialize(mesh_primitive_sphere(0.5f), "new Sphere");
+code::[-]
+::
+::
+
+* > Display this sphere in the __display__ function with the following code
+
+::[margin-left:2.5em;]
+code::[c++]
+draw(sphere, environment);
+code::[-]
+::
+
+* > Compile, run, and observe the sphere in the 3D scene.
+
+::[height:25px;]::
+
+* Note: You can set geometric transformation using the uniform properties of the mesh_drawable structure (reminder: uniform are parameters passed to the shaders).
+** __sphere.transform.translation/rotation/scaling = ... (see example on the other displayed shapes)__
+* Note also that unless specified explicitely, the default shader associated to the mesh_drawable structure is used. 
+* The three trasformations: translation, rotation, and scaling are simply variables that you can write on. By default, their values are respectively, (0,0,0), the identity, and 1. The content of the variables are used (as uniform values in the shader) when the draw call is used.
+
+::[height:25px;]::
+
+* > Add the following line before calling __draw__ on the sphere and observe that the color (as well as any other uniform parameter) can be changed through time in modifying its value at every frame.
+
+::[margin-left:2.5em;]
+code::[c++]
+sphere.shading.color = vec3(1+std::cos(time), 1+std::sin(time), 2.0)/2.0f;
+code::[-]
+::
+
+
+
+
+
+
+
+=== Checkbox interface
+
+We will now add a GUI checkbox (button that can be checked) to activate/deactivate the wireframe display of the sphere.
+
+* > Add the following variable in the definition of the structure __struct gui_parameters__ (in the file scene.hpp) to store a boolean state indicating when the wireframe should be displayed or not
+
+::[margin-left:2.5em;]
+code::[c++]
+bool display_wireframe = false;
+code::[-]
+::
+
+
+* > In the function __display_gui()__ (in scene.cpp) add a Checkbox (handled by ImGui library) and link it (through its adress) to the variable __display_wireframe__ in adding this line of code
+
+::[margin-left:2.5em;]
+code::[c++]
+ImGui::Checkbox("Wireframe", &gui.display_wireframe);
+code::[-]
+::
+
+* In running the code, the checkbox should appear. Every time you select/unselect it, the value of the variable __display_wireframe__ change from true to false but doesn't change yet anything in the 3D display.
+
+::[height:25px;]::
+
+The last step consists in adapting the behavior of the display. 
+* > Add the following code in the __display__ function
+
+::[margin-left:2.5em;]
+code::[c++]
+	if (gui.display_wireframe)
+		draw_wireframe(sphere, environment, { 1,1,0 });
+code::[-]
+::
+
+* Check that you can now interactively display the wireframe representation of the sphere.
+
+
+=== Deforming the vertices of a surface
+
+The following example show a case where mesh position are modified in the C++ code and need to be updated at each frame.
+
+* > Add the following elements as variables of the object scene_structure
+
+::[margin-left:2.5em;]
+code::[c++]
+	cgp::mesh shape;
+	cgp::buffer<cgp::vec3> initial_position;
+	cgp::mesh_drawable shape_visual;
+code::[-]
+::
+
+** __shape__ is use to store (on CPU memory) the current state of the deformed mesh
+** __initial_position__ is use to store (on CPU memory) the initial position of each vertex of the shape
+** __shape_visual__ is use to display the deformed shape.
+
+::[height:25px;]::
+
+* > Initialise these variables to a uniformly sampled grid shape in the __initialize__ function with the following code
+
+::[margin-left:2.5em;]
+code::[c++]
+int N = 100;
+shape = mesh_primitive_grid({ 0,0,0 }, { 1,0,0 }, { 1,1,0 }, { 0,1,0 }, N, N);
+initial_position = shape.position;
+shape_visual.initialize(shape, "Deforming shape");
+shape_visual.shading.color = { 0.6f, 0.6f, 0.9f };
+code::[-]
+::
+
+* > Call the drawing of this surface at the end of the __display()__ function
+
+::[margin-left:2.5em;]
+code::[c++]
+draw(shape_visual, environment);
+if (gui.display_wireframe)
+    draw_wireframe(shape_visual, environment, { 0,0,0 });
+code::[-]
+::
+
+* > Add a new method to the scene class computing the deformation of the surface in
+** Adding the following content in the file scene.cpp
+** Adding the signature of this new method (void evolve_shape()) in the file scene.hpp
+** Call this method in the __display()__ function.
+
+::[margin-left:2.5em;]
+code::[c++]
+void scene_structure::evolve_shape()
+{
+    size_t const N = initial_position.size();
+    for(size_t k=0; k<N; ++k)
+    {
+        vec3 const& p0 = initial_position[k];
+        vec3& p        = shape.position[k];
+        p.z = p0.z + 0.1f * std::cos(10 * p.x + 4 * timer.t);
+    }
+}
+code::[-]
+::
+
+* While the structure mesh is updated by the function, its visual representation (and the associated VBO) are not therefore no change is visible when the code is run. An explicit update of the data stored on the GPU is necessary. 
+* > To this end add the following code after your call to __evolve_shape__
+
+::[margin-left:2.5em;]
+code::[c++]
+shape_visual.update_position(shape.position);
+code::[-]
+::
+
+* This function send again to the GPU the position from the buffer. Note that the update doesn't reallocate any VBO (it is therefore faster that generating a new object) and assume that the size of the buffer remains constant. 
+
+* Observe that the surface is now deformed, but its color remains uniform despite the undulation. Indeed, the shader still use the initial normals of the planar grid, and doesn't take into account the change of geometry in the shading. 
+* > Normals of the surface can be recomputed and updated to the GPU using the following code
+
+::[margin-left:2.5em;]
+code::[c++]
+// Recompute normals on the CPU (given the position and the connectivity currently in the mesh structure)
+shape.compute_normal();
+// Send updated normals on the GPU
+shape_visual.update_normal(shape.normal);
+code::[-]
+::
+
+* Observe that the surface is now correctly updated through its deformation.
+
+::[height:25px;]::
+
+* > Change in the __evolve_shape__ function the deformation to the following one using Perlin noise, make sure you understand the result.
+
+::[margin-left:2.5em;]
+code::[c++]
+float const dz = 0.3f * noise_perlin({ p0.x + 0.2f * timer.t, p0.y, 0 }, 2) 
+  + 0.015f * noise_perlin({ 4 * p0.x, 4 * p0.y, timer.t }, 2);
+code::[-]
+::
+
+
+
+=== Texture
+
+Textures images can also be associated to surface <br>
+__Note that the per-vertex uv coordinates need to be defined correctly to get the mapping of the image on the surface.__
+
+::[height:25px;]::
+
+* > Update the initialization of your __shape__ variable with the following two lines code and observe that your surface should now be textured
+
+::[margin-left:2.5em;]
+code::[c++]
+// Reset the color of the shape to white (only the texture image will be seen)
+shape_visual.shading.color = {1,1,1};
+
+// Load the image and associate the texture id to the structure
+shape_visual.texture = opengl_load_texture_image("assets/squirrel.jpg");
+code::[-]
+::
+
+{% endblock %}

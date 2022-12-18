@@ -1,0 +1,48 @@
+{% set pageTitle = 'Interpolation - Blend Shapes' %}
+{% set tocTitle = 'Blend Shapes' %}
+
+{% extends "theme/template/base.html" %}
+
+
+
+{% block content %}
+
+
+= Blend Shapes
+
+::[color:gray;]
+__Path of the code: [02_blend_shape]__
+::
+
+::[height:1.5em;]::
+
+This code load a set of meshes corresponding to different key poses for the same character face.<br>
+
+In the current implement all the poses are stored as a buffer of meshes (see src/blend_shape directory). The first entry of the buffer will be considered to be the reference pose. <br>
+
+The GUI propose a set of sliders to control the weights associated to each pose but is without effect in the current state.
+
+::[height:1.5em;]::
+
+> **Implement a blend shape deformation** controled interactively by the blend shape weights using the formulation:
+
+\[\displaystyle q_i=p_i + \sum_{j}^{N_{poses}} w_j \, d_{ij}\]
+
+** \(q_i\): Vertex coordinates of the deformed shape.
+** \(p_i\): Vertex coordinates of the reference pose. 
+** \(N_{poses}\): The number of key poses (excluding the reference one).
+** \(w_j\): Blend shape weight \(\in[0,1]\).
+** \(d_{ij}\): Difference between the \(i\)th vertex positions of the key pose \(j\) and \(p_i\).
+
+
+::[height:1.5em;]::
+
+* Check that you can modulate each expression using its own weight.
+* Test also in extrapolating the deformation using weights outside \([0,1]\) range.
+
+::[text-align:center;]
+videoplay::assets/blend_shape.mp4[width:100%; max-width:600px;]
+::
+
+
+{% endblock %}
