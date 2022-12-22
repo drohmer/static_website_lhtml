@@ -1,0 +1,6 @@
+/* Page number appears at the top right */
+nav {
+    position:fixed;
+    top:50px;
+    left:1620px;
+}

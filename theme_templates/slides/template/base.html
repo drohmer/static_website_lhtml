@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        {% block head %}
+        <meta charset="utf-8" >
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title> {{ pageTitle }} </title>
+
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/main.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/icons.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/font.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/code.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/css/classes.css">
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/libs/katex/katex.min.css">
+    
+
+        <script src="{{ pathToRoot }}theme/js/presentation_resize_page.js" defer></script>
+        <script src="{{ pathToRoot }}theme/js/menu.js" defer></script>
+        <script src="{{ pathToRoot }}theme/js/navigation.js" defer></script>
+        <script src="{{ pathToRoot }}theme/libs/katex/katex.min.js" defer></script>
+        <script src="{{ pathToRoot }}theme/libs/katex/contrib/auto-render.min.js" onload="renderMathInElement(document.body);" defer></script>
+        {% endblock %}
+
+        {% block style %}
+        {% endblock %}
+    </head>
+
+
+
+  <body>
+
+    <nav>
+      <div id="current-page-title" class="hidden">{{tocTitle}}</div>
+      <div id="current-page-id" class="hidden">{{pageID}}</div>
+
+      <div id="menu"></div>
+      <div id="link-prev"></div>
+      <div id="link-next"></div>
+
+      <div class="page">
+        <span id="current-page-index"></span>/<span id="total-page-number"></span>
+      </div>
+    </nav>
+    
+
+    {% block content %}
+    {% endblock %}
+
+
+  </body>
+
+  <footer>
+    <div id="toc" class="hidden"></div>
+  </footer>
+
+</html>
+
+
+

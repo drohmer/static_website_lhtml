@@ -25,22 +25,33 @@ meta = {
     'site_directory': '_site',
     'theme': 'theme_templates/webpage-frame/',
     'config_file': 'configure.yaml',
-    'plugin_post': ['plugins/menu.py', 'plugins/redirection_first_page.py']
+    'plugin': ['plugins/menu.py', 'plugins/redirection_first_page.py'], 
+    'debug': False
 }
 
+def try_plugin(plugin_filepath, function_name):
+    spec = importlib.util.spec_from_file_location('plugin', plugin_filepath)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
 
+    if function_name in dir(module):
+        print(f'Run {function_name} '+plugin_filepath)
+        func = getattr(module, function_name)
+        func(meta)
 
 
 if __name__== '__main__':
 
-    parser = argparse.ArgumentParser(description='Generate VISTA Website.')
-    parser.add_argument('-d','--debug', action='store_true',help='Display all lines of the html file when tidyhtml detects a warning or an error.')
+    parser = argparse.ArgumentParser(description='Generate Website.')
+    parser.add_argument('-d','--debug', action='store_true',help='Display more information for debug and keep temporary files.')
     parser.add_argument('-c','--clean', action='store_true',help='Clean the directories.')
     parser.add_argument('-i','--input_config', help='Input yaml configuration file. Default=configure.yaml')
     args = parser.parse_args()
 
     if args.input_config != None:
         meta['config_file'] = args.input_config
+    if args.debug == True:
+        meta['debug'] = True
     
     # load config file
     if os.path.isfile(meta['config_file']):
@@ -57,6 +68,7 @@ if __name__== '__main__':
         os.system('rm -rf lib/__pycache__')
         os.system('rm -rf plugins/__pycache__')
         print('Directories cleaned')
+        print()
         exit()
         
     
@@ -96,6 +108,11 @@ if __name__== '__main__':
     generator_tool.export_structure(template_files, dir_site+'/structure/', dir_site)
 
 
+    # Run plugins pre-process
+    for plugin_filepath in meta['plugin']:
+        try_plugin(plugin_filepath, 'pre_process')
+
+
     # Load jinja
     print(f'Load jinja environment on {dir_site}')
     file_loader = FileSystemLoader(dir_site)
@@ -105,41 +122,40 @@ if __name__== '__main__':
 
     # Convert all jinja files
     print(f'Convert html.j2 files')
-    for element in template_files:
+    for k,element in enumerate(template_files):
         template_path_local = element['path'].filepath_local()
+
+        template_path = element['path'].filepath()
         
-        if not template_path_local.find('/templates/')==0: # do not convert base jinja template
+        print('\t - ',template_path)
+        path_to_root = element['path'].path_to_root()
 
-            template_path = element['path'].filepath()
-            
-            print('\t - ',template_path)
-            path_to_root = element['path'].path_to_root()
+        # Run Jinja
+        template = env.get_template(template_path_local)
+        output_html = template.render({'pathToRoot':path_to_root, 'pageID':k})
+        
+        # Run LHTML
+        meta['current_directory'] = element['path'].root_directory + element['path'].path_local
+        output_html = lhtml.run(output_html, meta)
 
-            # Run Jinja
-            template = env.get_template(template_path_local)
-            output_html = template.render({'pathToRoot':path_to_root})
-            
-            # Run LHTML
-            output_html = lhtml.run(output_html)
+        # Tidy
+        tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
+        if error_tidy_html!="":
+            print("Tidy found error in file "+template_path)
+            print(error_tidy_html)
+            #debug:
+            if args.debug==True:
+                debug = output_html.split('\n')
+                for k,line in enumerate(debug):
+                    print(k+1,': ',line)
 
-            # Tidy
-            tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
-            if error_tidy_html!="":
-                print("Tidy found error in file "+template_path)
-                print(error_tidy_html)
-                #debug:
-                if args.debug==True:
-                    debug = output_html.split('\n')
-                    for k,line in enumerate(debug):
-                        print(k+1,': ',line)
-
-
-            # Copy file in output directory
-            template_path_output = template_path.replace('.html.j2','.html')
-            with open(template_path_output,'w') as fid:
-                fid.write(tidy_html)
-            
-            # Remove template file
+        # Copy file in output directory
+        template_path_output = template_path.replace('.html.j2','.html')
+        with open(template_path_output,'w') as fid:
+            fid.write(tidy_html)
+        
+        # Remove template file
+        if meta['debug']==False:
             os.remove(template_path)
 
 
@@ -170,12 +186,7 @@ if __name__== '__main__':
 
 
     # Run plugins post-process
-    for plugin_filepath in meta['plugin_post']:
-        spec = importlib.util.spec_from_file_location('process', plugin_filepath)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+    for plugin_filepath in meta['plugin']:
+        try_plugin(plugin_filepath, 'post_process')
 
-        if 'post_process' in dir(module):
-            print('Run post-process '+plugin_filepath)
-            module.post_process(meta)
 

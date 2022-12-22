@@ -22,6 +22,7 @@ def extract_data_from_file(file, regex):
     print('Failed to extract data in file ',file)
 
 def clean_string(s):
+    
     s = s.strip()
     if s.startswith("'"):
         s = s[1:]
@@ -38,7 +39,7 @@ def extract_titles(template_files):
 
     for entry in template_files:
         path = entry['path'].filepath()
-        regex = [r'tocTitle.*?=(.*?)%}', r'^(=+) (.*?)$']    
+        regex = [r'tocTitle.*?=(.*?)%}', r'^=+ (.*?)$']    
         title = extract_data_from_file(path, regex)
         
         entry['title'] = clean_string(title)

@@ -19,19 +19,24 @@ def clean_title(input):
         output = output[:-1]
     return output
 
+def load_structure(site_directory):
+    structure_path = site_directory+'/structure/structure.yaml'
+    with open(structure_path) as fid:
+        structure = yaml.load(fid, Loader=yaml.loader.SafeLoader)
+    return structure
+
+
 def post_process(meta):
 
     menu_path = meta['site_directory']+menu_path_relative
 
     # load structure
-    structure_path = meta['site_directory']+'/structure/structure.yaml'
-    with open(structure_path) as fid:
-        structure = yaml.load(fid, Loader=yaml.loader.SafeLoader)
+    structure = load_structure(meta['site_directory'])
     
     toc_txt = '['
     for k,entry in enumerate(structure):
         to_local = '../'*entry['level']
-        toc_txt += '{"path":"'+to_local+entry['dir']+entry['filename']+'", "title":"'+entry['title']+'", "level":'+str(entry['level'])+'}'
+        toc_txt += '{"path":"'+entry['dir']+entry['filename']+'", "title":"'+entry['title']+'", "level":'+str(entry['level'])+'}'
         if k<len(structure)-1:
             toc_txt += ', '
     toc_txt +=']'

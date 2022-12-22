@@ -6,13 +6,15 @@ const toc = {{TOC}};
 
 const tocElementMenu = document.querySelector('#toc');
 const currentPageTitle = document.querySelector('#current-page-title').textContent;
+const currentPageID = parseInt(document.querySelector('#current-page-id').textContent);
 
 tocElementMenu.innerHTML = '<strong>Table of content</strong>'
+const path_to_root = '../'.repeat(toc[currentPageID]["level"]);
 
 for (let element of toc)
 {
     const title = element["title"];
-    const link = element["path"];
+    const link = path_to_root+element["path"];
 
     const pageEntry = document.createElement('div');
     const linkElement = document.createElement('a');

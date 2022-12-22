@@ -1,0 +1,27 @@
+.border {
+    display:inline-block;
+    padding: 15px;
+    border: 2px solid red;
+    border-radius: 10px;
+}
+
+.border:hover {
+    box-shadow: 7px 7px 6px #888888;
+}
+
+.ref, .ref a{
+    font-size: 85%;
+    color: gray;
+    line-height:1.3em;
+    font-style: italic;
+}
+.ref a:hover {
+    color: red;
+}
+.ref:before {
+    content: "[";
+}
+.ref:after {
+    content: "]";
+}
+
