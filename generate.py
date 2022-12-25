@@ -13,35 +13,36 @@ import sys
 import importlib.util
 
 
+
 from lib import filesystem
 from lib import generator_tool
-sys.path.append('lib/lhtml/src/')
+from lib import logger
+
+file_dir = os.path.dirname(os.path.abspath(__file__))+'/'
+sys.path.append(file_dir)
+sys.path.append(file_dir+'lib/lhtml/src/')
 import lhtml
 
 
 # Default meta parameter
+#  These parameters can be writen over using a configuration file
+#    python generate.py [-i configurationFilePath]
 meta = {
-    'source_directory': 'src_site/',
-    'site_directory': '_site',
+    # where are the source files
+    'source_directory': 'src_site/', 
+    # output directory
+    'site_directory': '_site', 
     'theme': 'theme_templates/webpage-frame/',
     'config_file': 'configure.yaml',
     'plugin': ['plugins/menu.py', 'plugins/redirection_first_page.py'], 
-    'debug': False
+    'debug': False,
+    'level_print': 0,
+    'path_config': '',
+    'config_directory': '',
+    'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/'
 }
 
-def try_plugin(plugin_filepath, function_name):
-    spec = importlib.util.spec_from_file_location('plugin', plugin_filepath)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
-    if function_name in dir(module):
-        print(f'Run {function_name} '+plugin_filepath)
-        func = getattr(module, function_name)
-        func(meta)
-
-
-if __name__== '__main__':
-
+def read_arguments(meta):
     parser = argparse.ArgumentParser(description='Generate Website.')
     parser.add_argument('-d','--debug', action='store_true',help='Display more information for debug and keep temporary files.')
     parser.add_argument('-c','--clean', action='store_true',help='Clean the directories.')
@@ -53,53 +54,108 @@ if __name__== '__main__':
     if args.debug == True:
         meta['debug'] = True
     
-    # load config file
-    if os.path.isfile(meta['config_file']):
-        print('Found configuration file \''+meta['config_file']+'\'')
+    meta['args'] = args
+
+
+
+def try_plugin(plugin_filepath, function_name):
+    assert os.path.isfile(plugin_filepath)
+
+    spec = importlib.util.spec_from_file_location('plugin', plugin_filepath)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    if function_name in dir(module):
+        log.keyvalue('Run', plugin_filepath)
+        func = getattr(module, function_name)
+        func(meta)
+
+def load_config_file(meta):
+
+    if meta['config_file']!='':
+        if os.path.isfile(meta['config_file'])==False:
+            log.error('Cannot find configuration file \''+meta['config_file']+'\'')
+        assert os.path.isfile(meta['config_file'])
+   
+        prt_debug('Found configuration file \''+meta['config_file']+'\'')
+
         with open(meta['config_file']) as fid:
             config = yaml.load(fid, Loader=yaml.loader.SafeLoader)
         for key in config.keys():
             meta[key] = config[key]
-        print()
+        prt_debug('\n')
 
+        meta['config_directory'] = os.path.dirname(os.path.abspath(meta['config_file']))+'/'
 
-    if args.clean==True:
-        os.system('rm -rf '+meta['site_directory'])
-        os.system('rm -rf lib/__pycache__')
-        os.system('rm -rf plugins/__pycache__')
-        print('Directories cleaned')
-        print()
+    
+def clean_directories(meta):
+    os.system('rm -rf '+meta['site_directory'])
+    os.system('rm -rf lib/__pycache__')
+    os.system('rm -rf plugins/__pycache__')
+    print('Directories cleaned\n')
+
+if __name__== '__main__':
+
+    read_arguments(meta)
+    
+    log = logger.Logger(indent_level_base=meta['level_print'])
+    meta['log'] = log
+    
+
+    prt_debug = lambda msg, level=0 : generator_tool.print_debug(msg, meta['debug'], meta['level_print'], level)
+
+    # Load config file
+    load_config_file(meta)
+
+    # Pre Check
+    assert os.path.isdir(meta['config_directory'])
+    meta['source_directory'] = meta['config_directory']+meta['source_directory']
+    meta['site_directory']   = meta['config_directory']+meta['site_directory']
+    meta['cache_video_directory']   = meta['config_directory']+meta['cache_video_directory']
+    meta['theme'] = meta['config_directory']+meta['theme']
+    assert os.path.isdir(meta['source_directory'])
+    assert os.path.isdir(meta['theme'])
+
+ 
+    # Clean directories
+    if meta['args'].clean==True:
+        clean_directories(meta)
         exit()
         
     
-
-
-    dir_source = meta['source_directory']
-    dir_site = meta['site_directory']
-
-    sass_directory = 'theme/css/'
-
-
     tidylib.BASE_OPTIONS = {}
     tidyOptions = {'doctype':'html5','warn-proprietary-attributes':'no','show-warnings':'no'}
 
-    # Remove previous site
-    print(f'Copy source files {dir_source} to {dir_site}')
+    dir_source = meta['source_directory']
+    dir_site   = meta['site_directory']
+
+    log.display('[bold white]****************************',pre='\n')
+    log.display('[bold white]  Start website generator')
+    log.display('[bold white]****************************'),
+    log.keyvalue('info',f'Source: {dir_source}', indent_level=1)
+    log.keyvalue('info',f'Plugins: '+str(meta['plugin']), indent_level=1)
+    
+    log.title('Data preparation',pre='\n')
+    log.tic()
+
+    # Copy source to site
+    prt_debug(f'Copy source files \'{dir_source}\' -> \'{dir_site}\'')
     filesystem.copy_directories(dir_source, dir_site)
-    print("\t Copy done\n")
+    prt_debug("Copy source done\n",level=1)
 
     # Copy current theme
-    print('Copy current theme',meta['theme'],'into theme/')
+    prt_debug('Copy current theme \''+meta['theme']+f'\' -> \'{dir_site}theme/\'')
     theme_src = meta['theme']
     theme_dst = dir_site+'/theme/'
     filesystem.copy_directories(theme_src, theme_dst)
-    print('\t Done\n')
+    prt_debug('Copy theme done\n',level=1)
+
 
 
     # Find all html.j2 files
-    print(f'Look for jinja template files in {dir_site} ...')
+    prt_debug(f'Look for jinja template files in \'{dir_site}\' ...')
     template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
-    print(f'\t Found {len(template_files)} template files\n')
+    prt_debug(f'Found {len(template_files)} template files\n',level=1)
 
     # Try to find title for each file
     generator_tool.extract_titles(template_files)
@@ -107,27 +163,36 @@ if __name__== '__main__':
     # Export files as yaml stucture for other process
     generator_tool.export_structure(template_files, dir_site+'/structure/', dir_site)
 
+    log.ok_elapsed()
 
+
+    
     # Run plugins pre-process
+    log.title('Pre-process',pre='\n')
+    log.tic()
     for plugin_filepath in meta['plugin']:
-        try_plugin(plugin_filepath, 'pre_process')
+        try_plugin(meta['config_directory']+plugin_filepath, 'pre_process')
+    log.ok_elapsed()
+    
 
 
     # Load jinja
-    print(f'Load jinja environment on {dir_site}')
+    prt_debug(f'Load jinja environment on {dir_site}')
     file_loader = FileSystemLoader(dir_site)
     env = Environment(loader=file_loader,extensions=['jinja_markdown.MarkdownExtension'])
-    print('\t Jinja environment loaded\n')
+    prt_debug('Jinja environment loaded\n', level=1)
 
 
     # Convert all jinja files
-    print(f'Convert html.j2 files')
+    log.title('Convert HTML',pre='\n')
+    log.tic()
+    log.keyvalue('Found',f'{len(template_files)} template files')
     for k,element in enumerate(template_files):
         template_path_local = element['path'].filepath_local()
 
         template_path = element['path'].filepath()
         
-        print('\t - ',template_path)
+        prt_debug(f'- {template_path}', level=1)
         path_to_root = element['path'].path_to_root()
 
         # Run Jinja
@@ -158,18 +223,18 @@ if __name__== '__main__':
         if meta['debug']==False:
             os.remove(template_path)
 
+    log.ok_elapsed()
 
-    # Clean
-    print()
 
     
     
 
 
     # Find sass files
-    print(f'Look for sass files in {dir_site}{sass_directory} ...')
+    sass_directory = 'theme/css/'
+    prt_debug(f'Look for sass files in {dir_site}{sass_directory} ...')
     sass_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.sass'))
-    print(f'\t Found {len(sass_files)} sass files\n')
+    prt_debug(f'Found {len(sass_files)} sass files\n', level=1)
 
     for element in sass_files:
         path_sass = dir_site+element['dir'][len(dir_site):]+element['filename']
@@ -186,7 +251,10 @@ if __name__== '__main__':
 
 
     # Run plugins post-process
+    log.title('Post-process',pre='\n')
+    log.tic()
     for plugin_filepath in meta['plugin']:
-        try_plugin(plugin_filepath, 'post_process')
+        try_plugin(meta['config_directory']+plugin_filepath, 'post_process')
+    log.ok_elapsed()
 
-
+print()

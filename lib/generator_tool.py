@@ -63,3 +63,8 @@ def export_structure(template_files, structure_path, root_path):
         yaml.dump(structure_to_export, fid)
     with open(path_json,'w') as fid:
         json.dump(structure_to_export, fid, indent=4)
+
+def print_debug(msg, debug, level_base=0, level=0):
+    if debug==True:
+        level_str = '\t'*(level_base+level)
+        print(level_str+msg)
