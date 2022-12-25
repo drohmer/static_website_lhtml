@@ -59,6 +59,7 @@ def read_arguments(meta):
 
 
 def try_plugin(plugin_filepath, function_name):
+    print(plugin_filepath)
     assert os.path.isfile(plugin_filepath)
 
     spec = importlib.util.spec_from_file_location('plugin', plugin_filepath)
