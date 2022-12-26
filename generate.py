@@ -114,6 +114,8 @@ if __name__== '__main__':
     meta['site_directory']   = meta['config_directory']+meta['site_directory']
     meta['cache_video_directory']   = meta['config_directory']+meta['cache_video_directory']
     meta['theme'] = meta['config_directory']+meta['theme']
+    if not os.path.isdir(meta['source_directory']):
+        log.error('Cannot find directory \''+meta['source_directory']+'\'')
     assert os.path.isdir(meta['source_directory'])
     assert os.path.isdir(meta['theme'])
 
