@@ -39,7 +39,7 @@ def extract_titles(template_files):
 
     for entry in template_files:
         path = entry['path'].filepath()
-        regex = [r'tocTitle.*?=(.*?)%}', r'^=+ (.*?)$']    
+        regex = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']    
         title = extract_data_from_file(path, regex)
         
         entry['title'] = clean_string(title)
