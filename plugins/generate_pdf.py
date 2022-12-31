@@ -42,7 +42,7 @@ def pre_process(meta):
     structure = load_structure(meta['site_directory'])
 
     # Need to remove video controls from the html.j2 source
-    print('Remove video controls')
+    meta['log'].keyvalue('*','Remove video controls',indent_level=2)
     remove_controls(meta, structure)
 
 
@@ -50,7 +50,8 @@ def post_process(meta):
 
     structure = load_structure(meta['site_directory'])
 
-    print('\t Generate pdf ...')
+
+    meta['log'].keyvalue('*','Generate pdf ...',indent_level=2)
     template_html_to_pdf_path = path_current_file+'assets/template_html_to_pdf.js'
     all_pdf = []
     procs = []
@@ -70,18 +71,20 @@ def post_process(meta):
         proc.start()
     for proc in procs:
         proc.join()
+
     
-    print('\n\t Merge pdf ...')
+    meta['log'].keyvalue('*','Merge pdf ...',indent_level=2)
     pdf_path_output = os.path.relpath(os.path.abspath(meta['site_directory']+'../slides.pdf'))
     all_pdf_txt = ' '.join(all_pdf)
     cmd = f'pdfunite {all_pdf_txt} {pdf_path_output}'
     os.system(cmd)
     if os.path.isfile(pdf_path_output):
-        print(f'\t PDF file generated at \'{pdf_path_output}\'')
+        meta['log'].keyvalue('info',f'PDF file generated at \'{pdf_path_output}\'',indent_level=2)
     else:
-        print(f'Cannot find PDF file')
+        meta['log'].error(f'Cannot find PDF file')
 
-    print('\n\t Generate images ...')
+
+    meta['log'].keyvalue('*','Generate images ...',indent_level=2)
     image_dir_path = str(os.path.relpath(os.path.abspath(meta['site_directory']+'../images/')))
     if not image_dir_path.endswith('/'):
         image_dir_path = image_dir_path + '/'
@@ -115,9 +118,10 @@ def post_process(meta):
     for proc in procs:
         proc.join()
 
-    print(f'\t Images generated in \'{image_dir_path}\'')
+    meta['log'].keyvalue('info',f'Images generated in \'{image_dir_path}\'',indent_level=2)
 
     # Clean after pdf directory
     if meta['debug']==False:
-        print('\n\t Clean pdf directory')
+        meta['log'].keyvalue('*',f'Clean pdf directory',indent_level=2,debug_level=2)
         os.system('rm -rf '+meta['site_directory'])
+

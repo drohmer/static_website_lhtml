@@ -101,33 +101,7 @@ def generate_cache_videos(meta, cache_video_directory, structure):
         os.system('rm ffmpeg2pass-0.log')
         
 
-# def cache_video_html_adapter(meta, cache_video_directory, structure):
-
-#     for entry in structure:
-#         filepath = meta['site_directory'] + entry['dir'] + entry['filename'].replace('.html','.html.j2')
-#         with open(filepath, 'r') as fid:
-#             file_content = fid.read()
-        
-#         # find videoplay::assets/
-#         r_videoplay = r'videoplay::assets/(.*?)\[(.*?)\]'
-
-#         regex_code = re.compile(r_videoplay,  re.DOTALL | re.MULTILINE)
-#         match = re.finditer(regex_code, file_content)
-#         for it in match:
-#             sentence = file_content[it.span()[0]:it.span()[1]]
-#             file_video = lhtml.analyse_tag(sentence)['text']
-#             extension = pathlib.Path(file_video).suffix
-
-            
-#             expected_file_video_h264 = file_video[:-len(extension)].replace('assets/','assets/'+default_cache_name)+'-h264.mp4'
-#             expected_file_video_vp9 = file_video[:-len(extension)].replace('assets/','assets/'+default_cache_name)+'-vp9.webm'
-#             print(file_video)
-#             print(expected_file_video_vp9)
-            
-
-            
-
-
+         
 
 
 
@@ -143,12 +117,11 @@ def pre_process(meta):
     generate_cache_videos(meta, cache_video_directory, structure)
 
     # copy videos in site
-    print('\n\t Copy videos cache in site directory')
-    cmd = f'cp -r {cache_video_directory}* '+meta['site_directory']
-    os.system(cmd)
+    if len(os.listdir(cache_video_directory))>0:
+        print('\n\t Copy videos cache in site directory')
+        cmd = f'cp -r {cache_video_directory}* '+meta['site_directory']
+        os.system(cmd)
 
-   
-    # cache_video_html_adapter(meta, cache_video_directory, structure)
     
     
 

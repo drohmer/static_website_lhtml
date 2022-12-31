@@ -39,7 +39,7 @@ def extract_titles(template_files):
 
     for entry in template_files:
         path = entry['path'].filepath()
-        regex = [r'tocTitle.*?=(.*?)%}', r'^=+ (.*?)$']    
+        regex = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']    
         title = extract_data_from_file(path, regex)
         
         entry['title'] = clean_string(title)
@@ -63,3 +63,8 @@ def export_structure(template_files, structure_path, root_path):
         yaml.dump(structure_to_export, fid)
     with open(path_json,'w') as fid:
         json.dump(structure_to_export, fid, indent=4)
+
+def print_debug(msg, debug, level_base=0, level=0):
+    if debug==True:
+        level_str = '\t'*(level_base+level)
+        print(level_str+msg)

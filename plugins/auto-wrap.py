@@ -4,8 +4,7 @@ import re
 import json
 import yaml
 
-sys.path.append('lib')
-sys.path.append('../lib')
+sys.path.append(os.path.dirname(os.path.abspath(__file__))+'/../lib')
 import filesystem
 
 template_auto_wrap = '''

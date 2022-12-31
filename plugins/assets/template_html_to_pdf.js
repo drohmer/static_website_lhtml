@@ -33,7 +33,7 @@ const page = await browser.newPage();
 
 //await page.setViewport({width:viewport_width, height:viewport_height});
 
-await page.setDefaultNavigationTimeout(2000);
+await page.setDefaultNavigationTimeout(3000);
 await page.goto(url ,{waitUntil: 'networkidle2'})
 .catch(
   (err)=>{
