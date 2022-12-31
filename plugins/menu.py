@@ -6,7 +6,7 @@ import yaml
 
 sys.path.append('lib')
 sys.path.append('../lib')
-import filesystem
+#import filesystem
 
 
 menu_path_relative = '/theme/js/menu.js'

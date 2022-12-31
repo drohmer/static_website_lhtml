@@ -5,7 +5,7 @@ import yaml
 
 sys.path.append('lib')
 sys.path.append('../lib')
-import filesystem
+#import filesystem
 
 
 def create_html_redirection(url):
