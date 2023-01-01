@@ -1,10 +1,4 @@
 
-// $font: 
-// $font-code: 'Source Code Pro', sans-serif;
-// $back-color: white;
-// $font-color: rgb(0,0,0);
-// $title-color: darkblue;
-// $background-color-code: rgb(245,245,245);
 
 html {
     background-color: white;
@@ -34,6 +28,11 @@ ul {
 
 a {
     text-decoration: none;
+    color: blue;
+}
+
+a:hover {
+    color: red;
 }
 
 h1 {
