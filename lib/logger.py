@@ -1,4 +1,4 @@
-from rich.console import Console
+from rich.console import Console # pip3 install rich
 import time
 
 console = Console()
