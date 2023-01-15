@@ -19,6 +19,22 @@
         <script src="{{ pathToRoot }}theme/js/navigation.js" defer></script>
         <script src="{{ pathToRoot }}theme/libs/katex/katex.min.js" defer></script>
         <script src="{{ pathToRoot }}theme/libs/katex/contrib/auto-render.min.js" onload="renderMathInElement(document.body);" defer></script>
+
+        <!-- Additional css and js if needed -->
+        {% for cssEntry in css %}
+        <link rel="stylesheet" type="text/css" href="{{ cssEntry }}">
+        {% endfor %}
+        {% for cssEntry in cssAbs %}
+        <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}{{ cssEntry }}">
+        {% endfor %}
+        {% for jsEntry in js %}
+        <script src="{{ jsEntry }}" defer></script>
+        {% endfor %}
+        {% for jsEntry in jsAbs %}
+        <script src="{{ pathToRoot }}{{ jsEntry }}" defer></script>
+        {% endfor %}
+
+
         {% endblock %}
 
         {% block style %}
