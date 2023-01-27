@@ -140,7 +140,17 @@ h1, h2, h3, h4 {
     color: blue;
 }
 
+#toc .indent-1 {
+    margin-left: 2.5em;
+    font-size: 90%;
+    margin-bottom: 0.5em;
+    margin-top: 0;
+    font-style: italic;
+}
 
+#toc .indent-2 {
+    margin-left: 4em;
+}
 
 
 @media (max-width: 1620px) {
