@@ -161,6 +161,9 @@ if __name__== '__main__':
     template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
     prt_debug(f'Found {len(template_files)} template files\n',level=1)
 
+    # Try to find additional config.yaml file near the source file
+    generator_tool.extract_additional_config(template_files)
+
     # Try to find title for each file
     generator_tool.extract_titles(template_files)
 

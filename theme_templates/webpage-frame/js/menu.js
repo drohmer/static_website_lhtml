@@ -12,39 +12,18 @@ tocElementMenu.innerHTML = '<strong>Table of content</strong>'
 const path_to_root = '../'.repeat(toc[currentPageID]["level"]);
 
 
-let current_indent = 0;
-let previous_level = 0;
-let increase_future_indent = false;
-let k=0;
+
 
 for (let k=0; k<toc.length; k=k+1)
 {
     const element = toc[k];
-    
-    
-    if(k>0) {
-        const previous_level = toc[k-1].level;
-    }
-    if(increase_future_indent==true){
-        current_indent = current_indent +1;
-        increase_future_indent = false;
-    }
-    
-    const current_level = toc[k].level;
-    if(current_level>previous_level) {
-        increase_future_indent = true;
-    }
-    if(current_level<previous_level) {
-        current_indent = current_indent -1;
-    }
-    previous_level = current_level;
-    
-
+   
     const title = element["title"];
     const link = path_to_root+element["path"];
+    const level_toc = element["level-toc"];
 
     const pageEntry = document.createElement('div');
-    pageEntry.classList.add('indent-'+current_indent);
+    pageEntry.classList.add('indent-'+level_toc);
 
     const linkElement = document.createElement('a');
     linkElement.href = link;

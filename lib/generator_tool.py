@@ -51,7 +51,13 @@ def export_structure(template_files, structure_path, root_path):
     for entry in template_files:
         dir_path = entry['path'].path_local
         file_path = entry['path'].filename.replace('.html.j2','.html')
-        structure_to_export.append({'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title']})
+
+        level_toc = 0
+        if 'extra-config' in entry:
+            if 'level-toc' in entry['extra-config']:
+                level_toc = entry['extra-config']['level-toc']
+
+        structure_to_export.append({'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title'], 'level_toc':level_toc})
         
 
     if not os.path.isdir(structure_path):
@@ -68,3 +74,11 @@ def print_debug(msg, debug, level_base=0, level=0):
     if debug==True:
         level_str = '\t'*(level_base+level)
         print(level_str+msg)
+    
+
+def extract_additional_config(template_files):
+    for k,entry in enumerate(template_files):
+        config_path = entry['path'].root_directory+entry['path'].path_local+'config.yaml'
+        if os.path.isfile(config_path):
+            with open(config_path, 'r') as fid:
+                template_files[k]['extra-config'] = yaml.safe_load(fid)
