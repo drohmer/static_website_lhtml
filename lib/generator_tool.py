@@ -53,11 +53,14 @@ def export_structure(template_files, structure_path, root_path):
         file_path = entry['path'].filename.replace('.html.j2','.html')
 
         level_toc = 0
+        hide_toc = False
         if 'extra-config' in entry:
             if 'level-toc' in entry['extra-config']:
                 level_toc = entry['extra-config']['level-toc']
+            if 'hide-toc' in entry['extra-config']:
+                hide_toc = entry['extra-config']['hide-toc']
 
-        structure_to_export.append({'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title'], 'level_toc':level_toc})
+        structure_to_export.append({'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title'], 'level_toc':level_toc, 'hide_toc':hide_toc})
         
 
     if not os.path.isdir(structure_path):

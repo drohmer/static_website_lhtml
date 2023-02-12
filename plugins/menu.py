@@ -35,10 +35,11 @@ def post_process(meta):
     
     toc_txt = '['
     for k,entry in enumerate(structure):
-        to_local = '../'*entry['level']
-        toc_txt += '{"path":"'+entry['dir']+entry['filename']+'", "title":"'+entry['title']+'", "level":'+str(entry['level'])+', "level-toc":'+str(entry['level_toc'])+'}'
-        if k<len(structure)-1:
-            toc_txt += ', '
+        if not entry['hide_toc']:
+            to_local = '../'*entry['level']
+            toc_txt += '{"path":"'+entry['dir']+entry['filename']+'", "title":"'+entry['title']+'", "level":'+str(entry['level'])+', "level-toc":'+str(entry['level_toc'])+'}'
+            if k<len(structure)-1:
+                toc_txt += ', '
     toc_txt +=']'
 
     menu_content = ''
