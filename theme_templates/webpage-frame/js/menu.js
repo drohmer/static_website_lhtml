@@ -21,6 +21,10 @@ for (let k=0; k<toc.length; k=k+1)
     const title = element["title"];
     const link = path_to_root+element["path"];
     const level_toc = element["level-toc"];
+    const hide_toc = element["hide-toc"];
+    if(hide_toc==true) {
+        continue;
+    }
 
     const pageEntry = document.createElement('div');
     pageEntry.classList.add('indent-'+level_toc);
