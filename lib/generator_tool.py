@@ -52,16 +52,22 @@ def export_structure(template_files, structure_path, root_path):
         dir_path = entry['path'].path_local
         file_path = entry['path'].filename.replace('.html.j2','.html')
 
-        level_toc = 0
-        hide_toc = False
-        if 'extra-config' in entry:
-            if 'level-toc' in entry['extra-config']:
-                level_toc = entry['extra-config']['level-toc']
-            if 'hide-toc' in entry['extra-config']:
-                hide_toc = entry['extra-config']['hide-toc']
-
-        structure_to_export.append({'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title'], 'level_toc':level_toc, 'hide_toc':hide_toc})
+#        level_toc = 0
+#        hide_toc = False
+#        if 'extra-config' in entry:
+#            if 'level-toc' in entry['extra-config']:
+#                level_toc = entry['extra-config']['level-toc']
+#            if 'hide-toc' in entry['extra-config']:
+#                hide_toc = entry['extra-config']['hide-toc']
+#        structure_to_export.append({'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title'], 'level_toc':level_toc, 'hide_toc':hide_toc})
         
+        structure = {'dir':dir_path,'filename':file_path,'level':entry['path'].level,'title':entry['title']}
+        if 'extra-config' in entry:
+            for extra_element in entry['extra-config']:
+                structure[extra_element] = entry['extra-config'][extra_element]
+        structure_to_export.append(structure)
+
+
 
     if not os.path.isdir(structure_path):
         os.system(f'mkdir {structure_path}')
