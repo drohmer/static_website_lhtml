@@ -22,7 +22,7 @@ for (let k=0; k<toc.length; k=k+1)
     const link = path_to_root+element["path"];
     const level_toc = element["level-toc"];
     const hide_toc = element["hide-toc"];
-    if(hide_toc==true) {
+    if(hide_toc=="True") {
         continue;
     }
 
