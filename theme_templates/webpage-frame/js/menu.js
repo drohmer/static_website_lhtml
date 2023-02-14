@@ -31,7 +31,7 @@ for (let k=0; k<toc.length; k=k+1)
     pageEntry.classList.add('indent-'+level_toc);
 
     let linkElement; 
-    if(nourl_toc=="True"){
+    if(nourl_toc!="True"){
         linkElement = document.createElement('a');
         linkElement.href = link;
     }
