@@ -22,6 +22,7 @@ for (let k=0; k<toc.length; k=k+1)
     const link = path_to_root+element["path"];
     const level_toc = element["level-toc"];
     const hide_toc = element["hide-toc"];
+    const nourl_toc = element["nourl-toc"];
     if(hide_toc=="True") {
         continue;
     }
@@ -29,8 +30,14 @@ for (let k=0; k<toc.length; k=k+1)
     const pageEntry = document.createElement('div');
     pageEntry.classList.add('indent-'+level_toc);
 
-    const linkElement = document.createElement('a');
-    linkElement.href = link;
+    let linkElement; 
+    if(nourl_toc=="True"){
+        linkElement = document.createElement('a');
+        linkElement.href = link;
+    }
+    else {
+        linkElement = document.createElement('span');
+    }
     linkElement.textContent = title;
 
     if(title.trim() === currentPageTitle.trim()) {
