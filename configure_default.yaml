@@ -1,0 +1,5 @@
+---
+source_directory: 'src_site_example/'
+site_directory: '_site/'
+theme: 'theme_templates/webpage-frame/'
+plugin_post: ['plugins/menu.py', 'plugins/redirection_first_page.py']
