@@ -11,7 +11,7 @@ import argparse
 import subprocess
 import sys
 import importlib.util
-
+import platform
 
 
 from lib import filesystem
@@ -22,6 +22,7 @@ file_dir = os.path.dirname(os.path.abspath(__file__))+'/'
 sys.path.append(file_dir)
 sys.path.append(file_dir+'lib/lhtml/src/')
 import lhtml
+
 
 
 # Default meta parameter
@@ -127,8 +128,15 @@ if __name__== '__main__':
         exit()
         
     
+
     tidylib.BASE_OPTIONS = {}
-    tidyOptions = {'doctype':'html5','warn-proprietary-attributes':'no','show-warnings':'no'}
+    tidyOptions = {'doctype':'html5','show-warnings':'no'}
+
+    # warn-proprietary-attributes is only available in recent version
+    python_version = platform.python_version_tuple()
+    if int(python_version[0])>=3 and int(python_version[1])>=8 :
+        tidyOptions['warn-proprietary-attributes']='no'
+
 
     dir_source = meta['source_directory']
     dir_site   = meta['site_directory']

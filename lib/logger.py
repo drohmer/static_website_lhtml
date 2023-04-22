@@ -28,7 +28,7 @@ class Logger:
         self.display(f'[[green]OK[/green]] {elapsed}s',indent_level=1)
 
     def keyvalue(self, key='info', value='', indent_level=1, debug_level=1, pre='', post=''):
-        self.display(f'\[{key}] {value}',indent_level=indent_level, pre=pre, post=post)
+        self.display(f'[{key}] {value}',indent_level=indent_level, pre=pre, post=post)
 
     def tic(self):
         self.time_count = time.time()
@@ -36,6 +36,6 @@ class Logger:
         return round(time.time()-self.time_count,2)
 
     def error(self, msg):
-        self.display(f'[red]\[Error] {msg}', debug_level=0, pre='\n')
+        self.display(f'[red] [Error] {msg}', debug_level=0, pre='\n')
 
     
