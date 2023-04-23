@@ -98,6 +98,12 @@ def clean_directories(meta):
 
 if __name__== '__main__':
 
+    python_version = platform.python_version_tuple()
+    if python_version[0]!=3:
+        print('Need python 3')
+        print('Current version:',python_version)
+        assert(python_version[0]==3)
+
     read_arguments(meta)
     
     log = logger.Logger(indent_level_base=meta['level_print'])
