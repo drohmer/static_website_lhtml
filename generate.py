@@ -99,10 +99,10 @@ def clean_directories(meta):
 if __name__== '__main__':
 
     python_version = platform.python_version_tuple()
-    if python_version[0]!=3:
+    if int(python_version[0])!=3:
         print('\nError: Need python 3')
         print('Current version:',python_version,'\n')
-        assert(python_version[0]==3)
+        assert(int(python_version[0])==3)
 
     read_arguments(meta)
     
