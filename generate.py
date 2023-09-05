@@ -40,6 +40,7 @@ meta = {
     'level_print': 0,
     'path_config': '',
     'config_directory': '',
+    'keywords': '',
     'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/'
 }
 
@@ -133,7 +134,7 @@ if __name__== '__main__':
         clean_directories(meta)
         exit()
         
-    
+   
 
     tidylib.BASE_OPTIONS = {}
     tidyOptions = {'doctype':'html5','show-warnings':'no'}
@@ -218,7 +219,8 @@ if __name__== '__main__':
 
         # Run Jinja
         template = env.get_template(template_path_local)
-        output_html = template.render({'pathToRoot':path_to_root, 'pageID':k})
+        jinja_keywords = {**meta['keywords'], 'pathToRoot':path_to_root, 'pageID':k}
+        output_html = template.render(jinja_keywords)
         
         # Run LHTML
         meta['current_directory'] = element['path'].root_directory + element['path'].path_local
