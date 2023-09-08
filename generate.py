@@ -40,7 +40,7 @@ meta = {
     'level_print': 0,
     'path_config': '',
     'config_directory': '',
-    'keywords': '',
+    'keywords': {},
     'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/'
 }
 
