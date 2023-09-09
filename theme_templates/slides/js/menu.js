@@ -26,6 +26,7 @@ for (let element of toc)
         linkElement.classList.add("current-page")
         page_index = counter;
     }
+
    
     pageEntry.appendChild(linkElement);
     tocElementMenu.appendChild(pageEntry);

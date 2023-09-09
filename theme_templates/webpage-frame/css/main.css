@@ -153,6 +153,14 @@ h1, h2, h3, h4 {
     margin-left: 4em;
 }
 
+#toc .menu-delimiter {
+    margin: auto;
+    width: 75%;
+    background-color: gray;
+    height: 2px;
+    margin-top: 1.5em;
+}
+
 
 @media (max-width: 1620px) {
     #summary {

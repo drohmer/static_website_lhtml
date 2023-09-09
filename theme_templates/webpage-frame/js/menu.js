@@ -45,6 +45,13 @@ for (let k=0; k<toc.length; k=k+1)
     }
    
     pageEntry.appendChild(linkElement);
+
+    if(element["delimiter"]!=null) {
+        const delimiter = document.createElement('div');
+        delimiter.classList.add("menu-delimiter");
+        tocElementMenu.appendChild(delimiter);
+    }
+
     tocElementMenu.appendChild(pageEntry);
 }
 
