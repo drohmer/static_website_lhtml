@@ -1,7 +1,6 @@
 from jinja2 import Environment, FileSystemLoader
 # pip3 install Jinja2
 # pip3 install jinja-markdown
-import sass      #pip3 install libsass
 import tidylib   #pip3 install pytidylib
 import yaml # pip install pyyaml
 import json 
@@ -41,7 +40,8 @@ meta = {
     'path_config': '',
     'config_directory': '',
     'keywords': {},
-    'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/'
+    'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/',
+    'use_tidy': False
 }
 
 def read_arguments(meta):
@@ -110,6 +110,9 @@ if __name__== '__main__':
     log = logger.Logger(indent_level_base=meta['level_print'])
     meta['log'] = log
     
+
+    if meta['use_tidy']==True:
+        import sass      #pip3 install libsass
 
     prt_debug = lambda msg, level=0 : generator_tool.print_debug(msg, meta['debug'], meta['level_print'], level)
 
@@ -227,20 +230,22 @@ if __name__== '__main__':
         output_html = lhtml.run(output_html, meta)
 
         # Tidy
-        tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
-        if error_tidy_html!="":
-            print("Tidy found error in file "+template_path)
-            print(error_tidy_html)
-            #debug:
-            if args.debug==True:
-                debug = output_html.split('\n')
-                for k,line in enumerate(debug):
-                    print(k+1,': ',line)
+        if meta['use_tidy']:
+            tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
+            if error_tidy_html!="":
+                print("Tidy found error in file "+template_path)
+                print(error_tidy_html)
+                #debug:
+                if args.debug==True:
+                    debug = output_html.split('\n')
+                    for k,line in enumerate(debug):
+                        print(k+1,': ',line)
+            output_html = tidy_html
 
         # Copy file in output directory
         template_path_output = template_path.replace('.html.j2','.html')
         with open(template_path_output,'w') as fid:
-            fid.write(tidy_html)
+            fid.write(output_html)
         
         # Remove template file
         if meta['debug']==False:
