@@ -1,7 +1,6 @@
 from jinja2 import Environment, FileSystemLoader
 # pip3 install Jinja2
 # pip3 install jinja-markdown
-import sass      #pip3 install libsass
 import tidylib   #pip3 install pytidylib
 import yaml # pip install pyyaml
 import json 
@@ -40,7 +39,9 @@ meta = {
     'level_print': 0,
     'path_config': '',
     'config_directory': '',
-    'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/'
+    'keywords': {},
+    'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/',
+    'use_tidy': False
 }
 
 def read_arguments(meta):
@@ -98,11 +99,20 @@ def clean_directories(meta):
 
 if __name__== '__main__':
 
+    python_version = platform.python_version_tuple()
+    if int(python_version[0])!=3:
+        print('\nError: Need python 3')
+        print('Current version:',python_version,'\n')
+        assert(int(python_version[0])==3)
+
     read_arguments(meta)
     
     log = logger.Logger(indent_level_base=meta['level_print'])
     meta['log'] = log
     
+
+    if meta['use_tidy']==True:
+        import sass      #pip3 install libsass
 
     prt_debug = lambda msg, level=0 : generator_tool.print_debug(msg, meta['debug'], meta['level_print'], level)
 
@@ -127,7 +137,7 @@ if __name__== '__main__':
         clean_directories(meta)
         exit()
         
-    
+   
 
     tidylib.BASE_OPTIONS = {}
     tidyOptions = {'doctype':'html5','show-warnings':'no'}
@@ -212,27 +222,30 @@ if __name__== '__main__':
 
         # Run Jinja
         template = env.get_template(template_path_local)
-        output_html = template.render({'pathToRoot':path_to_root, 'pageID':k})
+        jinja_keywords = {**meta['keywords'], 'pathToRoot':path_to_root, 'pageID':k}
+        output_html = template.render(jinja_keywords)
         
         # Run LHTML
         meta['current_directory'] = element['path'].root_directory + element['path'].path_local
         output_html = lhtml.run(output_html, meta)
 
         # Tidy
-        tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
-        if error_tidy_html!="":
-            print("Tidy found error in file "+template_path)
-            print(error_tidy_html)
-            #debug:
-            if args.debug==True:
-                debug = output_html.split('\n')
-                for k,line in enumerate(debug):
-                    print(k+1,': ',line)
+        if meta['use_tidy']:
+            tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
+            if error_tidy_html!="":
+                print("Tidy found error in file "+template_path)
+                print(error_tidy_html)
+                #debug:
+                if args.debug==True:
+                    debug = output_html.split('\n')
+                    for k,line in enumerate(debug):
+                        print(k+1,': ',line)
+            output_html = tidy_html
 
         # Copy file in output directory
         template_path_output = template_path.replace('.html.j2','.html')
         with open(template_path_output,'w') as fid:
-            fid.write(tidy_html)
+            fid.write(output_html)
         
         # Remove template file
         if meta['debug']==False:
