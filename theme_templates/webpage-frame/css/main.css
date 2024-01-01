@@ -3,7 +3,8 @@
 html {
     background-color: white;
     color: rgb(0,0,0);
-    font-family: 'Source Serif Pro', serif;
+    /*font-family: 'Source Serif Pro', serif;*/
+    font-family: 'Verdana','Arial',sans-serif;
 
     font-stretch: normal;
     text-decoration: none;
@@ -111,7 +112,7 @@ h1, h2, h3, h4 {
     max-width: 900px;
 
     text-align: justify;
-    line-height: 1.5em;
+    line-height: 1.4em;
     margin: auto;
 
     margin-top: 2em;
@@ -122,18 +123,22 @@ h1, h2, h3, h4 {
 
 
 #toc div {
-    margin: 1em;
-    margin-bottom: 0.25em;
+    margin-left: 1em;
 }
 
 #toc a {
     display:block;
     color: darkblue;
+    padding-top: 0.25em;
+    padding-bottom: 0.25em;
+    margin: 0;
 }
-
-#toc a:hover {
+#toc > div:hover a {
+    background-color: rgb(180,180,180);
+}
+/* #toc > div:hover a {
     color: red;
-}
+} */
 
 #toc a.current-page {
     font-weight: bold;
@@ -144,9 +149,9 @@ h1, h2, h3, h4 {
 #toc .indent-1 {
     margin-left: 2.5em;
     font-size: 90%;
-    margin-bottom: 0.5em;
-    margin-top: 0;
-    font-style: italic;
+    /*padding-bottom: 0.25em;
+    padding-top: 0;
+    font-style: italic;*/
 }
 
 #toc .indent-2 {
