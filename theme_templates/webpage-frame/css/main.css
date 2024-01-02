@@ -37,26 +37,26 @@ a:hover {
 }
 
 h1 {
-    font-size: 200%;
+    font-size: 170%;
     color: darkblue;
-    font-variant: small-caps;
+    /*font-variant: small-caps;*/
 }
 
 h2 {
-    font-size: 160%;
+    font-size: 130%;
     font-weight:600;
     margin-top: 50px;
     color: darkblue;
-    font-variant: small-caps;
+    /*font-variant: small-caps;*/
 }
 h3 {
-    font-size: 140%;
+    font-size: 120%;
     font-weight: 600;
     color: black;
     margin-top: 50px;
 }
 h4 {
-    font-size: 140%;
+    font-size: 110%;
     font-weight: 600;
     color: gray;
     margin-top: 25px;
@@ -103,19 +103,24 @@ h1, h2, h3, h4 {
     margin-bottom: 2em;
 }
 
+#toc-title {
+    display: block;
+    margin-bottom: 0.5em;
+}
+
 #main-content-margin {
     margin-left: 150px;
 }
 
 #main-content-centered {
-
+    
     max-width: 900px;
 
     text-align: justify;
     line-height: 1.4em;
     margin: auto;
 
-    margin-top: 2em;
+    margin-top: 3em;
 
     padding-bottom: 3em;
 }

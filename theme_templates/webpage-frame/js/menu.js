@@ -8,7 +8,7 @@ const tocElementMenu = document.querySelector('#toc');
 const currentPageTitle = document.querySelector('#current-page-title').textContent;
 const currentPageID = parseInt(document.querySelector('#current-page-id').textContent);
 
-tocElementMenu.innerHTML = '<strong>Table of content</strong>'
+tocElementMenu.innerHTML = '<strong id="toc-title">Table of content</strong>'
 const path_to_root = '../'.repeat(toc[currentPageID]["level"]);
 
 
@@ -54,33 +54,4 @@ for (let k=0; k<toc.length; k=k+1)
 
     tocElementMenu.appendChild(pageEntry);
 }
-
-
-
-
-// const url = "../../toc.json"
-
-// function convertJSON(response){
-//     return response.json();
-// }
-// function error_fetch_from_hal(error) {
-//     console.log('Failed to fetch toc data');
-//     console.log(error);
-// }
-
-// function load_toc_data(json) {
-//     console.log(json);
-//     const toc = document.querySelector('#toc');
-//     for(const entry of json) {
-//         toc.innerHTML += `<a href="../../${entry.path}">${entry.title}</a>`;
-//     }
-//     //toc.textContent = "hello 2";
-//     //<div id="toc"> {{ table_of_content }} </div>
-// }
-
-// fetch(url)
-//     .then(convertJSON)
-//     .then(load_toc_data)
-//     .catch(error_fetch_from_hal);
-
 
