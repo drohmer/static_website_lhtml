@@ -171,6 +171,12 @@ h1, h2, h3, h4 {
     margin-top: 1.5em;
 }
 
+.code-inline {
+    background-color: #AFB8C144;
+    padding: 0.2em 0.4em;
+    border-radius: 6px;
+    font-size: 105%;
+}
 
 @media (max-width: 1620px) {
     #summary {
