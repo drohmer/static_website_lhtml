@@ -14,6 +14,7 @@
         <link rel="stylesheet" type="text/css" href="{{ pathToRoot }}theme/libs/katex/katex.min.css">
 
         <script src="{{ pathToRoot }}theme/js/menu.js" defer></script>
+        <script src="{{ pathToRoot }}theme/js/title_id.js" defer></script>
         <script src="{{ pathToRoot }}theme/libs/katex/katex.min.js" defer></script>
         <script src="{{ pathToRoot }}theme/libs/katex/contrib/auto-render.min.js" onload="renderMathInElement(document.body);" defer></script>
 
@@ -45,6 +46,7 @@
 
             <nav>
                 <div id="toc"> {{ table_of_content }} </div>
+                <div id="title_id"></div>
                 <div id="summary"> {{ summary }} </div>
                 <div id="current-page-title" class="hidden">{{tocTitle}}</div>
                 <div id="current-page-id" class="hidden">{{pageID}}</div>

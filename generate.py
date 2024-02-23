@@ -39,9 +39,11 @@ meta = {
     'level_print': 0,
     'path_config': '',
     'config_directory': '',
+    'title_id': True,
     'keywords': {},
     'lib_directory': os.path.dirname(os.path.abspath(__file__))+'/',
-    'use_tidy': False
+    'use_tidy': False,
+    'include_head': []
 }
 
 def read_arguments(meta):
@@ -61,7 +63,7 @@ def read_arguments(meta):
 
 
 def try_plugin(plugin_filepath, function_name):
-    print(plugin_filepath)
+    #print(plugin_filepath)
     assert os.path.isfile(plugin_filepath)
 
     spec = importlib.util.spec_from_file_location('plugin', plugin_filepath)
@@ -69,7 +71,7 @@ def try_plugin(plugin_filepath, function_name):
     spec.loader.exec_module(module)
 
     if function_name in dir(module):
-        log.keyvalue('Run', plugin_filepath)
+        log.keyvalue('Run plugin', plugin_filepath.split('/')[-1])
         func = getattr(module, function_name)
         func(meta)
 
@@ -224,10 +226,35 @@ if __name__== '__main__':
         template = env.get_template(template_path_local)
         jinja_keywords = {**meta['keywords'], 'pathToRoot':path_to_root, 'pageID':k}
         output_html = template.render(jinja_keywords)
+
+        # Copy file in output directory
+        template_path_output = template_path.replace('.html.j2','.html')
+        with open(template_path_output,'w') as fid:
+            fid.write(output_html)
+
+
+    # Run plugins Mid-process
+    log.title('Mid-process',pre='\n')
+    log.tic()
+    for plugin_filepath in meta['plugin']:
+        try_plugin(meta['config_directory']+plugin_filepath, 'mid_process')
+    log.ok_elapsed()
+
+
+    for k,element in enumerate(template_files):
+        template_path_local = element['path'].filepath_local()
+
+        template_path = element['path'].filepath().replace('.html.j2','.html')
         
+        prt_debug(f'- {template_path}', level=1)
+        path_to_root = element['path'].path_to_root()
+
+        with open(template_path,'r') as fid:
+            input_html = fid.read()
+
         # Run LHTML
         meta['current_directory'] = element['path'].root_directory + element['path'].path_local
-        output_html = lhtml.run(output_html, meta)
+        output_html = lhtml.run(input_html, meta)
 
         # Tidy
         if meta['use_tidy']:
@@ -249,7 +276,7 @@ if __name__== '__main__':
         
         # Remove template file
         if meta['debug']==False:
-            os.remove(template_path)
+            os.remove(template_path.replace('.html','.html.j2'))
 
     log.ok_elapsed()
 

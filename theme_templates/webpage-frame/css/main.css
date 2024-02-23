@@ -37,9 +37,17 @@ a:hover {
 }
 
 h1 {
-    font-size: 170%;
-    color: darkblue;
+    font-size: 180%;
+    color: black;
     /*font-variant: small-caps;*/
+    margin-left: -1.5rem;
+    text-align: center;
+    margin-bottom: 2.5em;
+
+    background-color: rgb(238,238,238);
+    padding-top: 12px;
+    padding-bottom: 12px;
+    border: 2px solid gray;
 }
 
 h2 {
@@ -48,12 +56,25 @@ h2 {
     margin-top: 50px;
     color: darkblue;
     /*font-variant: small-caps;*/
+    margin-left: -1.5rem;
+
+    background-color: rgb(238,238,248);
+    padding-left: 1rem;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border: 1px solid gray;
 }
 h3 {
-    font-size: 120%;
+    font-size: 110%;
     font-weight: 600;
     color: black;
-    margin-top: 50px;
+    margin-top: 30px;
+    margin-left: -1.5rem;
+
+    background-color: rgb(245,245,245);
+    padding-left: 1.0rem;
+    padding-top: 3px;
+    padding-bottom: 3px;
 }
 h4 {
     font-size: 110%;
@@ -63,7 +84,7 @@ h4 {
     font-style: italic;
 }
 
-h1, h2, h3, h4 {
+h2, h3, h4 {
     text-align: left;
 }
 
@@ -93,13 +114,54 @@ h1, h2, h3, h4 {
     left: 0;
     top: 0;
     width: 250px;
+    height: calc(50% - 6em);
+    border-right: 1px solid black;
+    background-color: #f8f8f7;
+    font-size: 0.8em;
+    padding-top: 6em;
+    padding-left: 1em;
+
+
+}
+#toc .toc-expandable-title {
+    position: relative;
+}
+
+#toc .toc-expandable-trigger {
+    position: absolute;
+    top: 0;
+    left: 80%;
+    padding-right: 10px;
+    padding-left: 15px;
+    width: calc(20% - 26px);
+    font-weight: bold;
+    background-color: rgb(230,230,230);
+    height: 100%;
+    outline: 1px solid rgb(150,150,150);
+}
+#toc .toc-expandable-trigger img {
+    width: 12px;
+}
+#toc .toc-expandable-trigger:hover {
+    cursor: pointer;
+    background-color: rgb(150,150,150);
+}
+
+
+#title_id{
+    position: fixed;
+    overflow: auto;
+    
+    left: 0;
+    top: 50%;
+    width: 250px;
     border-right: 1px solid black;
     background-color: #f8f8f7;
     font-size: 0.8em;
     padding-top: 2em;
     padding-left: 1em;
 
-    height: 100%;
+    height: 50%;
     margin-bottom: 2em;
 }
 
@@ -127,18 +189,24 @@ h1, h2, h3, h4 {
 
 
 
-#toc div {
-    margin-left: 1em;
-}
-
-#toc a {
+#toc a, #toc .no-url  {
     display:block;
-    color: darkblue;
     padding-top: 0.25em;
     padding-bottom: 0.25em;
-    margin: 0;
 }
-#toc > div:hover a {
+#toc .no-url {
+    color: rgb(100,100,100);
+}
+#toc a {
+    color: darkblue;
+}
+
+#toc .toc-entry {
+    display:block;
+    margin: 0;
+    padding: 0;
+}
+#toc a:hover {
     background-color: rgb(180,180,180);
 }
 /* #toc > div:hover a {
@@ -152,15 +220,16 @@ h1, h2, h3, h4 {
 
 
 #toc .indent-1 {
-    margin-left: 2.5em;
+    margin-left: 1.5em;
     font-size: 90%;
+    line-height: 0.8em;
     /*padding-bottom: 0.25em;
     padding-top: 0;
     font-style: italic;*/
 }
 
 #toc .indent-2 {
-    margin-left: 4em;
+    margin-left: 2em;
 }
 
 #toc .menu-delimiter {
@@ -177,6 +246,25 @@ h1, h2, h3, h4 {
     border-radius: 6px;
     font-size: 105%;
 }
+
+#title_id .title {
+    font-weight: bold;
+}
+
+#title_id .title_id-level-2 {
+    margin-left: 1em;
+}
+#title_id .title_id-level-3 {
+    margin-left: 2em;
+}
+#title_id a {
+    display: block;
+}
+#title_id div:hover > a {
+    background-color: rgb(180,180,180);
+    color: blue;
+}
+
 
 @media (max-width: 1620px) {
     #summary {
@@ -204,6 +292,9 @@ h1, h2, h3, h4 {
         width: 80%;
         margin: auto;
         padding-bottom: 3em;
+    }
+    #title_id {
+        display: none;
     }
     #main-content-margin{
         margin-left:1em;

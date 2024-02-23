@@ -43,8 +43,6 @@ def post_process(meta):
                 toc_txt += '"'+element+'":"'+str(entry[element])+'", '
         toc_txt += '}'
 
-        # toc_txt += '{"path":"'+entry['dir']+entry['filename']+'", "title":"'+entry['title']+'", "level":'+str(entry['level'])+', "level-toc":'+str(entry['level_toc'])+', "hide-toc":'+str(entry['hide_toc']).lower()+'}'
-
 
         if k<len(structure)-1:
             toc_txt += ', '

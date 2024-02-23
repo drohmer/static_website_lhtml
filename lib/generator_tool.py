@@ -22,6 +22,8 @@ def extract_data_from_file(file, regex):
     print('Failed to extract data in file ',file)
 
 def clean_string(s):
+    if s==None:
+        return "unknown"
     
     s = s.strip()
     if s.startswith("'"):
