@@ -5,6 +5,17 @@ import json
 
 
 
+def clean_string(s):
+    if s==None:
+        return "unknown"
+
+    s = s.strip()
+    s = s.replace("'",'')
+    s = s.replace("'",'')
+    s = s.strip()
+
+    return s
+
 def extract_data_from_file(file, regex):
     # Read file
     file_content = ''
@@ -21,31 +32,53 @@ def extract_data_from_file(file, regex):
     
     print('Failed to extract data in file ',file)
 
-def clean_string(s):
-    if s==None:
-        return "unknown"
-    
-    s = s.strip()
-    if s.startswith("'"):
-        s = s[1:]
-    if s.startswith('"'):
-        s = s[1:]
-    if s.endswith("'"):
-        s = s[:-1]
-    if s.endswith('"'):
-        s = s[:-1]
-    return s
+def extract_title_id_from_file(path, title):
 
+    file_content = ''
+    with open(path,'r') as fid:
+        file_content = fid.read()
+
+    regex = r'title_id.*?=(.*?)%}'
+
+    regex_compiled = re.compile(regex,  re.DOTALL | re.MULTILINE)
+    match = re.findall(regex_compiled, file_content)
+    if len(match)>=1:
+        data = match[0]
+    else:
+        data = title
+    return clean_string(data).replace(' ','_').replace('#','').lower()
+
+
+
+  
+def generate_unique_id(title_id, sitemap):
+
+    if title_id in sitemap:
+        k = 1
+        attempt = title_id
+        while attempt in sitemap:
+            attempt = title_id+'_'+str(k)
+            k = k+1
+        title_id = attempt
+
+    return title_id
 
 def extract_titles(template_files):
+
+    sitemap = {}
 
     for entry in template_files:
         path = entry['path'].filepath()
         regex = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']    
         title = extract_data_from_file(path, regex)
+        title_id = extract_title_id_from_file(path, title)
         
         entry['title'] = clean_string(title)
-
+        title_id = generate_unique_id(title_id, sitemap)
+        entry[title_id] = title_id
+        sitemap[title_id] = {'title':title, 'path':entry['path']}
+    
+    return sitemap
 
 def export_structure(template_files, structure_path, root_path):
 
@@ -93,3 +126,14 @@ def extract_additional_config(template_files):
         if os.path.isfile(config_path):
             with open(config_path, 'r') as fid:
                 template_files[k]['extra-config'] = yaml.safe_load(fid)
+
+def export_sitemap(sitemap, dir_sitemap, meta):
+
+    if not os.path.isdir(dir_sitemap):
+        os.mkdir(dir_sitemap)
+
+    for id in sitemap:
+        path_dest = '../'+sitemap[id]['path'].filepath_local().replace('.html.j2','.html')
+
+        with open(dir_sitemap+id+'.html', 'w') as fid:
+            fid.write(f'<html><head><meta http-equiv="refresh" content="0; url={path_dest}"></head></html>')

@@ -185,7 +185,11 @@ if __name__== '__main__':
     generator_tool.extract_additional_config(template_files)
 
     # Try to find title for each file
-    generator_tool.extract_titles(template_files)
+    sitemap = generator_tool.extract_titles(template_files)
+
+    # Construct the sitemap of the website
+    generator_tool.export_sitemap(sitemap, dir_site+'/sitemap/', meta)
+    
 
     # Export files as yaml stucture for other process
     generator_tool.export_structure(template_files, dir_site+'/structure/', dir_site)
@@ -221,6 +225,13 @@ if __name__== '__main__':
         
         prt_debug(f'- {template_path}', level=1)
         path_to_root = element['path'].path_to_root()
+
+        # Fill the keywords to all the sitemaps
+        for id_site in sitemap:
+            url = path_to_root+sitemap[id_site]['path'].filepath_local().replace('.html.j2','.html')
+            meta['keywords']['pathTo_'+id_site] = url
+            meta['keywords']['linkTo_'+id_site] = f'<a href="{url}">{id_site}</a>'
+
 
         # Run Jinja
         template = env.get_template(template_path_local)
