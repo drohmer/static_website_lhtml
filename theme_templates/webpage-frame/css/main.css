@@ -163,6 +163,8 @@ h2, h3, h4 {
 
     height: 50%;
     margin-bottom: 2em;
+
+    border-top: 1px solid gray;
 }
 
 #toc-title {

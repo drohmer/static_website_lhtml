@@ -4,7 +4,7 @@
 
 .code .c { color: #408080; font-style: italic } /* Comment */
 .code .err { border: 1px solid #FF0000 } /* Error */
-.code .k { color: #008000; font-weight: bold } /* Keyword */
+.code .k { color: #008000; font-weight: normal } /* Keyword */
 .code .o { color: #666666 } /* Operator */
 .code .ch { color: #408080; font-style: italic } /* Comment.Hashbang */
 .code .cm { color: #408080; font-style: italic } /* Comment.Multiline */
