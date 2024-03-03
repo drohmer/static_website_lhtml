@@ -12,6 +12,9 @@ def clean_string(s):
     s = s.strip()
     s = s.replace("'",'')
     s = s.replace("'",'')
+    s = s.replace("/",'')
+    s = s.replace("(",'')
+    s = s.replace(")",'')
     s = s.strip()
 
     return s
