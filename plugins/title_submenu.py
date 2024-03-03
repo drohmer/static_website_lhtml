@@ -22,6 +22,8 @@ def generate_new_id(text, id_storage):
     text_id = text_id.replace(',','')
     text_id = text_id.replace('.','')
     text_id = text_id.replace(':','')
+    text_id = text_id.replace('(','')
+    text_id = text_id.replace(')','')
     if len(text_id)>N_max:
         text_id = text_id[:N_max]
 
