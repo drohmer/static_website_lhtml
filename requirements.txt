@@ -2,3 +2,4 @@ Jinja2
 jinja-markdown
 pytidylib
 pyyaml
+rich
