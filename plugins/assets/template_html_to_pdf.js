@@ -16,9 +16,11 @@ if(args['output']){output = args['output'];}
 
 const url = `file:${input}`;
 
+console.log(url);
+(async() => {   
 
-(async() => {    
 const browser = await puppeteer.launch({
+  headless: "new",
   args: [
        '--disable-gpu',
        '--disable-dev-shm-usage',
@@ -29,20 +31,24 @@ const browser = await puppeteer.launch({
        '--single-process',
   ]
 });
-const page = await browser.newPage(); 
 
+
+
+const page = await browser.newPage(); 
 //await page.setViewport({width:viewport_width, height:viewport_height});
 
-await page.setDefaultNavigationTimeout(3000);
+await page.setDefaultNavigationTimeout(4000);
+
+
 await page.goto(url ,{waitUntil: 'networkidle2'})
 .catch(
   (err)=>{
-    //null;
+    //null;``
+    console.log('-----',url);
     console.log(err);
   }
   );
 
-await page.waitForTimeout(500);
 
 
 await page.pdf({
