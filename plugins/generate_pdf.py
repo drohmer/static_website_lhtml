@@ -100,7 +100,7 @@ def post_process(meta):
         #os.system(cmd)
 
         # ppm -> jpg
-        cmd_2 = f'convert {img_tmp_path}-1.ppm -resize 3840 {img_tmp_path}.jpg'
+        cmd_2 = f'magick {img_tmp_path}-1.ppm -resize 3840 {img_tmp_path}.jpg'
         #os.system(cmd)
 
         # move resulting image
