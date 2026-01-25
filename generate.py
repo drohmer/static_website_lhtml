@@ -51,13 +51,14 @@ def read_arguments(meta):
     parser.add_argument('-d','--debug', action='store_true',help='Display more information for debug and keep temporary files.')
     parser.add_argument('-c','--clean', action='store_true',help='Clean the directories.')
     parser.add_argument('-i','--input_config', help='Input yaml configuration file. Default=configure.yaml')
+    parser.add_argument('-l','--light', action='store_true',help='Light mode: only convert .html.j2 files without copying other files.')
     args = parser.parse_args()
 
     if args.input_config != None:
         meta['config_file'] = args.input_config
     if args.debug == True:
         meta['debug'] = True
-    
+
     meta['args'] = args
 
 
@@ -162,17 +163,31 @@ if __name__== '__main__':
     log.title('Data preparation',pre='\n')
     log.tic()
 
-    # Copy source to site
-    prt_debug(f'Copy source files \'{dir_source}\' -> \'{dir_site}\'')
-    filesystem.copy_directories(dir_source, dir_site)
-    prt_debug("Copy source done\n",level=1)
+    if meta['args'].light:
+        log.keyvalue('info','Light mode: copying only .html.j2 files', indent_level=1)
+        # Find .html.j2 files in source and copy them to _site
+        source_template_files = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
+        for element in source_template_files:
+            src_path = element['path'].filepath()
+            rel_path = element['path'].filepath_local()
+            dst_path = dir_site + '/' + rel_path
+            dst_dir = os.path.dirname(dst_path)
+            if not os.path.exists(dst_dir):
+                os.makedirs(dst_dir)
+            shutil.copy2(src_path, dst_path)
+        prt_debug(f'Copied {len(source_template_files)} .html.j2 files\n', level=1)
+    else:
+        # Copy source to site
+        prt_debug(f'Copy source files \'{dir_source}\' -> \'{dir_site}\'')
+        filesystem.copy_directories(dir_source, dir_site)
+        prt_debug("Copy source done\n",level=1)
 
-    # Copy current theme
-    prt_debug('Copy current theme \''+meta['theme']+f'\' -> \'{dir_site}theme/\'')
-    theme_src = meta['theme']
-    theme_dst = dir_site+'/theme/'
-    filesystem.copy_directories(theme_src, theme_dst)
-    prt_debug('Copy theme done\n',level=1)
+        # Copy current theme
+        prt_debug('Copy current theme \''+meta['theme']+f'\' -> \'{dir_site}theme/\'')
+        theme_src = meta['theme']
+        theme_dst = dir_site+'/theme/'
+        filesystem.copy_directories(theme_src, theme_dst)
+        prt_debug('Copy theme done\n',level=1)
 
 
 
@@ -187,17 +202,16 @@ if __name__== '__main__':
     # Try to find title for each file
     sitemap = generator_tool.extract_titles(template_files)
 
-    # Construct the sitemap of the website
-    generator_tool.export_sitemap(sitemap, dir_site+'/sitemap/', meta)
-    
+    if not meta['args'].light:
+        # Construct the sitemap of the website
+        generator_tool.export_sitemap(sitemap, dir_site+'/sitemap/', meta)
 
-    # Export files as yaml stucture for other process
-    generator_tool.export_structure(template_files, dir_site+'/structure/', dir_site)
+        # Export files as yaml stucture for other process
+        generator_tool.export_structure(template_files, dir_site+'/structure/', dir_site)
 
     log.ok_elapsed()
 
 
-    
     # Run plugins pre-process
     log.title('Pre-process',pre='\n')
     log.tic()
@@ -267,6 +281,7 @@ if __name__== '__main__':
         meta['current_directory'] = element['path'].root_directory + element['path'].path_local
         output_html = lhtml.run(input_html, meta)
 
+
         # Tidy
         if meta['use_tidy']:
             tidy_html, error_tidy_html = tidylib.tidy_document(output_html, options=tidyOptions)
@@ -274,7 +289,7 @@ if __name__== '__main__':
                 print("Tidy found error in file "+template_path)
                 print(error_tidy_html)
                 #debug:
-                if args.debug==True:
+                if meta['args'].debug==True:
                     debug = output_html.split('\n')
                     for k,line in enumerate(debug):
                         print(k+1,': ',line)
@@ -296,25 +311,24 @@ if __name__== '__main__':
     
 
 
-    # Find sass files
-    sass_directory = 'theme/css/'
-    prt_debug(f'Look for sass files in {dir_site}{sass_directory} ...')
-    sass_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.sass'))
-    prt_debug(f'Found {len(sass_files)} sass files\n', level=1)
+    if not meta['args'].light:
+        # Find sass files
+        sass_directory = 'theme/css/'
+        prt_debug(f'Look for sass files in {dir_site}{sass_directory} ...')
+        sass_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.sass'))
+        prt_debug(f'Found {len(sass_files)} sass files\n', level=1)
 
-    for element in sass_files:
-        path_sass = dir_site+element['dir'][len(dir_site):]+element['filename']
-        css_txt = sass.compile(filename=path_sass)
-        
-        # write css file
-        path_css_output = path_sass.replace('.sass', '.css')
-        with open(path_css_output,'w') as fid:
-            fid.write(css_txt)
+        for element in sass_files:
+            path_sass = dir_site+element['dir'][len(dir_site):]+element['filename']
+            css_txt = sass.compile(filename=path_sass)
 
-        # remove sass file
-        os.remove(path_sass)
+            # write css file
+            path_css_output = path_sass.replace('.sass', '.css')
+            with open(path_css_output,'w') as fid:
+                fid.write(css_txt)
 
-
+            # remove sass file
+            os.remove(path_sass)
 
     # Run plugins post-process
     log.title('Post-process',pre='\n')
