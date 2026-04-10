@@ -1,3 +1,0 @@
-[submodule "lib/lhtml"]
-	path = lib/lhtml
-	url = git@github.com:drohmer/lhtml.git
