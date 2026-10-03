@@ -260,6 +260,34 @@ plugin_arg:
     contact_rows: 4
 ```
 
+## Style Profile (writing slides in the style of an author)
+
+`tools/style_profile.py` describes what the slides of a corpus usually look
+like and how they are written, so that an LLM can write new slides in the
+same style:
+
+```bash
+python tools/style_profile.py ../course_a ../course_b --output style/
+```
+
+Each argument is a slide project with `src/<chapter>/` and the generated
+`_site/<chapter>/html/` (nothing is regenerated: the pages are measured as
+they are, like `--layout`). Measurements are cached in `style/pages/` and
+redone only for pages generated since (`-f` to force, `-j` for the number of
+browsers in parallel). A slide copied in several chapters counts once.
+
+Output:
+
+- `style.md`: usual values of each deck (title, columns, font sizes, words
+  per slide), layout types of the slides (`section`, `media`, `media_row`,
+  `columns`, `text_left_media_right`, `text_then_media`, `text_code`,
+  `code_media`, `text`, ...) with their frequency in each deck, typical
+  measures and examples (path and LHTML source), and the LHTML idioms of
+  the sources (block tags, spacers, most used style properties and values,
+  most frequent block openers)
+- `types/<type>.png`: thumbnails of 16 examples of each layout type
+- `style.json`: the same data, with the type and measures of every slide
+
 ## Error Reporting
 
 Errors during LHTML conversion show the file path and line number:

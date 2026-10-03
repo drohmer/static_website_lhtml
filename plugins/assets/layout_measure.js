@@ -4,7 +4,7 @@
 //
 // Usage:
 //   node layout_measure.js --input=pages.json [--root=body]
-//        [--exclude="nav, footer"] [--width=1920] [--height=1080] [--images=1]
+//        [--exclude="nav, footer"] [--width=1920] [--height=1080] [--images=1|render|0]
 //
 // pages.json: [{"html": "/abs/path/index.html", "out": "/abs/output/dir"}, ...]
 // For each page, writes <out>/layout.json and, if images=1, <out>/render.png
@@ -21,7 +21,9 @@ const rootSelector = args.root || 'body';
 const excludeSelector = args.exclude || 'nav, footer';
 const width = parseInt(args.width || 1920);
 const height = parseInt(args.height || 1080);
-const withImages = String(args.images || '1') !== '0';
+// images: 1 = render, overlay and blocks; render = render only; 0 = none
+const images = String(args.images === undefined ? '1' : args.images);
+const withImages = images !== '0';
 
 const PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4',
                  '#f032e6', '#bfef45', '#469990', '#9a6324', '#800000', '#808000',
@@ -486,6 +488,9 @@ async function waitForContent(page) {
             if (withImages) {
                 const clip = {x: 0, y: 0, width, height};
                 await page.screenshot({path: path.join(entry.out, 'render.png'), clip});
+            }
+            if (withImages && images !== 'render') {
+                const clip = {x: 0, y: 0, width, height};
                 await page.evaluate(drawOverlay, layout.blocks, PALETTE, false);
                 await page.screenshot({path: path.join(entry.out, 'overlay.png'), clip});
                 await page.evaluate(drawOverlay, layout.blocks, PALETTE, true);
