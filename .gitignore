@@ -2,3 +2,4 @@ _site/
 __pycache__/
 configure.yaml
 **/.DS_Store
+node_modules/

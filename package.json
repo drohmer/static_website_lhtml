@@ -1,0 +1,9 @@
+{
+  "name": "static-website-lhtml",
+  "private": true,
+  "description": "Node dependencies of the generate_pdf plugin (HTML to PDF with headless Chrome)",
+  "dependencies": {
+    "minimist": "^1.2.8",
+    "puppeteer": "^25.12.0"
+  }
+}

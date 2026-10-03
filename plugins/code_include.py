@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import subprocess
 import json
 import yaml
 
@@ -9,6 +10,11 @@ import filesystem
 
 from lhtml.element_extract import extract_bracket_elements
 from lib.structure import load_structure
+
+
+# Directory where the code repositories are cloned, relative to the
+# configuration directory (set at the start of mid_process)
+CODE_DIRECTORY = 'code/'
 
 
 def split_group_with_quote(text, separator):
@@ -64,7 +70,7 @@ def remove_template(content):
 
 def remove_trailing_space(content):
     content = content.replace('\t', '  ')
-    return content.strip()
+    return content.strip(' ')
 
 
 def remove_const_ref(content):
@@ -85,7 +91,7 @@ def clean_include(content):
 
 def research_file(arg):
     file_to_research = arg['research_file']
-    root_path = 'code/' + arg['root']
+    root_path = CODE_DIRECTORY + arg['root']
 
     candidates = []
     for root, dirs, files in os.walk(root_path):
@@ -103,7 +109,8 @@ def research_file(arg):
     if not os.path.isfile(filepath):
         print(f'Warning: ideal file not found [{filepath}]')
 
-    return filepath[5:]
+    # path relative to the code directory
+    return filepath[len(CODE_DIRECTORY):]
 
 
 def extract_first_namespace(content):
@@ -117,7 +124,7 @@ def extract_first_namespace(content):
 def research_line_in_header_files(arg):
     pattern_to_research = arg['research_line']
     all_lines = []
-    root_path = 'code/' + arg['root']
+    root_path = CODE_DIRECTORY + arg['root']
 
     for root, dirs, files in os.walk(root_path):
         local_root = root[len(root_path):]
@@ -139,18 +146,20 @@ def research_line_in_header_files(arg):
 
 
 def mid_process(meta):
+    global CODE_DIRECTORY
+    CODE_DIRECTORY = meta.get('config_directory', '') + 'code/'
     structure = load_structure(meta['site_directory'])
 
     # Code to download
     if 'plugin_arg' in meta and 'includeadv' in meta['plugin_arg']:
         for codename in meta['plugin_arg']['includeadv']:
             url = meta['plugin_arg']['includeadv'][codename]
-            code_dir = f'code/{codename}'
+            code_dir = CODE_DIRECTORY + codename
             if os.path.isdir(code_dir):
                 subprocess.run(['git', 'pull'], cwd=code_dir)
             else:
-                os.makedirs('code/', exist_ok=True)
-                subprocess.run(['git', 'clone', url], cwd='code/')
+                os.makedirs(CODE_DIRECTORY, exist_ok=True)
+                subprocess.run(['git', 'clone', url], cwd=CODE_DIRECTORY)
 
     for entry in structure:
         file_path = meta['site_directory'] + entry['dir'] + entry['filename']
@@ -168,7 +177,7 @@ def mid_process(meta):
             arg_includeadv = analyse_includeadv_match(file_content, it)
 
             if 'filepath' in arg_includeadv:
-                include_filepath = 'code/' + arg_includeadv['filepath']
+                include_filepath = CODE_DIRECTORY + arg_includeadv['filepath']
                 with open(include_filepath, 'r') as fid:
                     include_file_content = fid.read()
 

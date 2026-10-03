@@ -80,7 +80,7 @@ def generate_cache_videos(meta, cache_video_directory, structure):
 
 def pre_process(meta):
     if 'cache_video_directory' not in meta:
-        cache_video_directory = default_cache_video_directory
+        cache_video_directory = meta.get('config_directory', '') + default_cache_video_directory
         print(f"Couldn't find meta parameter 'cache_video_directory'. Using default: '{default_cache_video_directory}'.")
     else:
         cache_video_directory = meta['cache_video_directory']

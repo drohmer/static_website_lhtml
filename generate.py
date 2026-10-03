@@ -13,6 +13,8 @@ import argparse
 import sys
 import importlib.util
 import platform
+import copy
+import traceback
 
 from lib import filesystem
 from lib import generator_tool
@@ -71,7 +73,10 @@ def load_config(meta, log):
         sys.exit(1)
 
     with open(config_file) as fid:
-        config = yaml.safe_load(fid)
+        config = yaml.safe_load(fid) or {}
+    if not isinstance(config, dict):
+        log.error(f"Invalid configuration file '{config_file}' (expected key: value pairs)")
+        sys.exit(1)
     meta.update(config)
 
     meta['config_directory'] = os.path.dirname(os.path.abspath(config_file)) + '/'
@@ -83,6 +88,18 @@ def load_config(meta, log):
     meta['theme'] = config_dir + meta['theme']
     if 'cache_video_directory' in meta:
         meta['cache_video_directory'] = config_dir + meta['cache_video_directory']
+
+
+def normalize_config(meta):
+    """Directories always end with '/' (plugins concatenate paths), and
+    'plugin' is always a list."""
+    for key in ('source_directory', 'site_directory', 'theme', 'cache_video_directory'):
+        if key in meta and meta[key] and not meta[key].endswith('/'):
+            meta[key] += '/'
+    if isinstance(meta.get('plugin'), str):
+        meta['plugin'] = [meta['plugin']]
+    elif meta.get('plugin') is None:
+        meta['plugin'] = []
 
 
 # Directories renamed in the v2 layout: old path fragment -> new one
@@ -117,14 +134,49 @@ def validate_directories(meta, log):
 # Plugin system
 # ---------------------------------------------------------------------------
 
-def run_plugins(meta, hook_name, log):
-    """Run a plugin hook (pre_process / mid_process / post_process)."""
-    for plugin_path in meta['plugin']:
-        full_path = meta['config_directory'] + plugin_path
-        if not os.path.isfile(full_path):
-            log.error(f'Plugin not found: {full_path}')
-            continue
+# Plugins renamed in the v2 layout
+RENAMED_PLUGINS = {'auto-wrap.py': 'auto_wrap.py'}
 
+
+def resolve_plugin_path(meta, plugin_path, log):
+    """Find a plugin file: absolute path, relative to the configuration
+    directory, or relative to the generator directory (default plugins).
+    Renamed plugins (auto-wrap.py) are redirected with a warning."""
+    candidates = [plugin_path]
+    for old, new in RENAMED_PLUGINS.items():
+        if plugin_path.endswith(old):
+            candidates.append(plugin_path[:-len(old)] + new)
+    for candidate in candidates:
+        for base in ('', meta['config_directory'], meta['lib_directory']):
+            if os.path.isabs(candidate) != (base == ''):
+                continue
+            full_path = base + candidate
+            if os.path.isfile(full_path):
+                if candidate != plugin_path:
+                    log.warning(f"Plugin '{plugin_path}' was renamed: using '{full_path}' "
+                                f"(update 'plugin' in your configuration file)")
+                return full_path
+    return None
+
+
+def resolve_plugins(meta, log):
+    """Resolve the plugin paths once. Returns (full paths found, number missing)."""
+    found, missing = [], 0
+    for plugin_path in meta['plugin']:
+        full_path = resolve_plugin_path(meta, plugin_path, log)
+        if full_path is None:
+            log.error(f'Plugin not found: {plugin_path}')
+            missing += 1
+        else:
+            found.append(full_path)
+    return found, missing
+
+
+def run_plugins(meta, hook_name, log):
+    """Run a plugin hook (pre_process / mid_process / post_process) for the
+    plugins in meta['plugin_paths']. Returns the number of plugins that failed."""
+    failures = 0
+    for full_path in meta['plugin_paths']:
         try:
             spec = importlib.util.spec_from_file_location('plugin', full_path)
             module = importlib.util.module_from_spec(spec)
@@ -134,7 +186,10 @@ def run_plugins(meta, hook_name, log):
                 log.keyvalue('Run plugin', full_path.split('/')[-1])
                 getattr(module, hook_name)(meta)
         except Exception as e:
-            log.error(f'Plugin {full_path} failed: {e}')
+            log.error(f'Plugin {full_path} failed ({hook_name}): {type(e).__name__}: {e}')
+            log.debug(traceback.format_exc())
+            failures += 1
+    return failures
 
 
 # ---------------------------------------------------------------------------
@@ -155,10 +210,13 @@ def prepare_data(meta, log):
             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
             shutil.copy2(src_path, dst_path)
     else:
+        log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
         filesystem.copy_directories(dir_source, dir_site)
-        filesystem.copy_directories(meta['theme'], dir_site + '/theme/')
+        log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
+        filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
 
     template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
+    log.debug(f"Found {len(template_files)} template files in '{dir_site}'")
     generator_tool.extract_additional_config(template_files)
     sitemap = generator_tool.extract_titles(template_files)
 
@@ -167,6 +225,16 @@ def prepare_data(meta, log):
         generator_tool.export_structure(template_files, dir_site + '/structure/', dir_site)
 
     return template_files, sitemap
+
+
+def discard_page(meta, element):
+    """Remove the outputs of a page that failed (kept in debug mode)."""
+    if meta['debug']:
+        return
+    j2_path = element['path'].filepath()
+    for path in (j2_path, j2_path.replace('.html.j2', '.html')):
+        if os.path.isfile(path):
+            os.remove(path)
 
 
 def render_jinja(meta, template_files, sitemap, log):
@@ -187,16 +255,19 @@ def render_jinja(meta, template_files, sitemap, log):
             meta['keywords']['pathTo_' + id_site] = url
             meta['keywords']['linkTo_' + id_site] = f'<a href="{url}">{id_site}</a>'
 
+        log.debug(f'- {template_local}')
         try:
             template = env.get_template(template_local)
-            output_html = template.render(**meta['keywords'], pathToRoot=path_to_root, pageID=k)
+            output_html = template.render({**meta['keywords'],
+                                           'pathToRoot': path_to_root, 'pageID': k})
         except Exception as e:
             log.error(f'Jinja2 error in {template_local}: {e}')
             failed.append(element)
-            # Do not leave the output of a previous generation for this page
+            # Remove the template and any output of a previous generation
             stale_output = element['path'].filepath().replace('.html.j2', '.html')
             if os.path.isfile(stale_output):
                 os.remove(stale_output)
+            discard_page(meta, element)
             continue
 
         output_path = element['path'].filepath().replace('.html.j2', '.html')
@@ -223,6 +294,7 @@ def render_lhtml(meta, template_files, log):
         if not os.path.isfile(html_path):
             # Jinja2 rendering failed for this page (error already reported)
             continue
+        log.debug(f'- {html_path}')
         with open(html_path, 'r') as fid:
             input_html = fid.read()
 
@@ -238,12 +310,16 @@ def render_lhtml(meta, template_files, log):
                 msg = f'line {line}: {msg}'
             log.error(f'{html_path}: {msg}')
             failed.append(element)
+            discard_page(meta, element)
             continue
 
         if meta['use_tidy']:
             tidy_html, error = tidylib.tidy_document(output_html, options=tidy_options)
             if error:
                 log.error(f'Tidy error in {html_path}:\n{error}')
+                if meta['debug']:
+                    for k, line in enumerate(output_html.split('\n')):
+                        log.display(f'{k + 1}: {line}', debug_level=0)
             output_html = tidy_html
 
         with open(html_path, 'w') as fid:
@@ -259,13 +335,17 @@ def render_lhtml(meta, template_files, log):
 
 def compile_sass(meta, log):
     """Find and compile .sass files to .css."""
+    dir_site = meta['site_directory']
+    sass_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.sass'))
+    if not sass_files:
+        return
     try:
         import sass
     except ImportError:
+        log.warning(f'{len(sass_files)} .sass file(s) not compiled: '
+                    'install libsass (pip install libsass)')
         return
-
-    dir_site = meta['site_directory']
-    sass_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.sass'))
+    log.debug(f'Compile {len(sass_files)} sass files')
 
     for element in sass_files:
         path_sass = element['path'].filepath()
@@ -297,7 +377,7 @@ def clean_directories(meta):
 # ---------------------------------------------------------------------------
 
 def main():
-    meta = dict(META_DEFAULTS)
+    meta = copy.deepcopy(META_DEFAULTS)
     args = parse_arguments()
 
     if args.input_config is not None:
@@ -306,10 +386,11 @@ def main():
         meta['debug'] = True
     meta['args'] = args
 
-    log = logger.Logger(indent_level_base=meta['level_print'])
+    log = logger.Logger(indent_level_base=meta['level_print'], debug_level=2 if args.debug else 1)
     meta['log'] = log
 
     load_config(meta, log)
+    normalize_config(meta)
     validate_directories(meta, log)
 
     if args.clean:
@@ -321,6 +402,7 @@ def main():
     log.display('[bold white]****************************')
     log.keyvalue('info', f"Source: {meta['source_directory']}", indent_level=1)
     log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
+    meta['plugin_paths'], plugin_failures = resolve_plugins(meta, log)
 
     # Data preparation
     log.title('Data preparation', pre='\n')
@@ -331,7 +413,7 @@ def main():
     # Pre-process plugins
     log.title('Pre-process', pre='\n')
     log.tic()
-    run_plugins(meta, 'pre_process', log)
+    plugin_failures += run_plugins(meta, 'pre_process', log)
     log.ok_elapsed()
 
     # Jinja2 rendering
@@ -344,7 +426,7 @@ def main():
     # Mid-process plugins
     log.title('Mid-process', pre='\n')
     log.tic()
-    run_plugins(meta, 'mid_process', log)
+    plugin_failures += run_plugins(meta, 'mid_process', log)
     log.ok_elapsed()
 
     # LHTML conversion
@@ -358,12 +440,15 @@ def main():
     # Post-process plugins
     log.title('Post-process', pre='\n')
     log.tic()
-    run_plugins(meta, 'post_process', log)
+    plugin_failures += run_plugins(meta, 'post_process', log)
     log.ok_elapsed()
 
     print()
     if failed:
         log.error(f'{len(failed)} page(s) failed (see errors above)')
+    if plugin_failures:
+        log.error(f'{plugin_failures} plugin error(s) (see errors above, use -d for details)')
+    if failed or plugin_failures:
         sys.exit(1)
 
 

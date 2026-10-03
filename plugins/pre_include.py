@@ -10,6 +10,8 @@ def pre_process(meta):
     files_to_include = meta['plugin_arg']['pre_include']
     content_to_include = []
     for f in files_to_include:
+        # relative paths are relative to the configuration directory
+        f = os.path.join(meta.get('config_directory', ''), f)
         with open(f, 'r') as fid:
             content_to_include.append(fid.read())
 

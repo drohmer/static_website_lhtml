@@ -78,8 +78,21 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=5):
     return files_found
 
 
+def _ignore_hidden(root):
+    """copytree filter: hidden files at the top level of `root` (as the
+    previous 'cp -r root/*'), and .git / .DS_Store everywhere."""
+    root = os.path.abspath(root)
+
+    def ignore(directory, names):
+        top_level = os.path.abspath(directory) == root
+        return {n for n in names
+                if n in ('.git', '.DS_Store') or (top_level and n.startswith('.'))}
+    return ignore
+
+
 def copy_directories(dir_source, dir_target):
-    """Copy source directory to target, replacing target if it exists."""
+    """Copy source directory to target, replacing target if it exists.
+    Symbolic links are copied as links (dangling links are kept as is)."""
     if os.path.isdir(dir_target):
         shutil.rmtree(dir_target)
-    shutil.copytree(dir_source, dir_target)
+    shutil.copytree(dir_source, dir_target, symlinks=True, ignore=_ignore_hidden(dir_source))
