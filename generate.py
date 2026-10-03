@@ -13,121 +13,35 @@ import argparse
 import sys
 import importlib.util
 import platform
-import copy
 import traceback
 
 from lib import filesystem
 from lib import generator_tool
 from lib import logger
+from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
 
 import lhtml
 
 
-# ---------------------------------------------------------------------------
-# Default configuration
-# ---------------------------------------------------------------------------
-
-META_DEFAULTS = {
-    'source_directory': 'src_site/',
-    'site_directory': '_site',
-    'theme': 'themes/webpage-frame/',
-    'config_file': 'configure.yaml',
-    'plugin': ['plugins/menu.py', 'plugins/redirection_first_page.py'],
-    'debug': False,
-    'level_print': 0,
-    'path_config': '',
-    'config_directory': '',
-    'title_id': True,
-    'keywords': {},
-    'lib_directory': os.path.dirname(os.path.abspath(__file__)) + '/',
-    'use_tidy': False,
-    'include_head': [],
-}
-
-
-# ---------------------------------------------------------------------------
 # Configuration & CLI
-# ---------------------------------------------------------------------------
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Generate Website.')
-    parser.add_argument('-d', '--debug', action='store_true',
+    debug_group = parser.add_mutually_exclusive_group()
+    debug_group.add_argument('-d', '--debug', action='store_true', default=None,
                         help='Display more information and keep temporary files.')
+    debug_group.add_argument('--no-debug', dest='debug', action='store_false',
+                             help='Disable debug mode configured in YAML.')
     parser.add_argument('-c', '--clean', action='store_true',
                         help='Clean the output directories.')
     parser.add_argument('-i', '--input_config',
                         help='Input yaml configuration file. Default=configure.yaml')
     parser.add_argument('-l', '--light', action='store_true',
                         help='Light mode: only convert .html.j2 files without copying other files.')
+    parser.add_argument('--check-config', action='store_true',
+                        help='Validate and display resolved configuration without generating files.')
     return parser.parse_args()
 
-
-def load_config(meta, log):
-    """Load YAML config file and resolve directory paths."""
-    config_file = meta['config_file']
-    if not config_file:
-        return
-
-    if not os.path.isfile(config_file):
-        log.error(f"Cannot find configuration file '{config_file}'")
-        sys.exit(1)
-
-    with open(config_file) as fid:
-        config = yaml.safe_load(fid) or {}
-    if not isinstance(config, dict):
-        log.error(f"Invalid configuration file '{config_file}' (expected key: value pairs)")
-        sys.exit(1)
-    meta.update(config)
-
-    meta['config_directory'] = os.path.dirname(os.path.abspath(config_file)) + '/'
-
-    # Resolve paths relative to config directory
-    config_dir = meta['config_directory']
-    meta['source_directory'] = config_dir + meta['source_directory']
-    meta['site_directory'] = config_dir + meta['site_directory']
-    meta['theme'] = config_dir + meta['theme']
-    if 'cache_video_directory' in meta:
-        meta['cache_video_directory'] = config_dir + meta['cache_video_directory']
-
-
-def normalize_config(meta):
-    """Directories always end with '/' (plugins concatenate paths), and
-    'plugin' is always a list."""
-    for key in ('source_directory', 'site_directory', 'theme', 'cache_video_directory'):
-        if key in meta and meta[key] and not meta[key].endswith('/'):
-            meta[key] += '/'
-    if isinstance(meta.get('plugin'), str):
-        meta['plugin'] = [meta['plugin']]
-    elif meta.get('plugin') is None:
-        meta['plugin'] = []
-
-
-# Directories renamed in the v2 layout: old path fragment -> new one
-RENAMED_DIRECTORIES = {'theme_templates/': 'themes/', 'src_site_example/': 'example/'}
-
-
-def validate_directories(meta, log):
-    """Check that required directories exist.
-
-    Paths using the directory names of the previous layout
-    (theme_templates/, src_site_example/) are redirected to the new ones
-    with a warning, so that existing configure.yaml files keep working.
-    """
-    for key in ('source_directory', 'theme'):
-        path = meta[key]
-        if os.path.isdir(path):
-            continue
-        for old, new in RENAMED_DIRECTORIES.items():
-            if old in path and os.path.isdir(path.replace(old, new)):
-                meta[key] = path.replace(old, new)
-                log.warning(f"'{old}' was renamed '{new}': using '{meta[key]}' "
-                            f"(update '{key}' in your configuration file)")
-                break
-
-    for key, label in [('source_directory', 'Source'), ('theme', 'Theme')]:
-        if not os.path.isdir(meta[key]):
-            log.error(f"{label} directory not found: '{meta[key]}'")
-            sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -204,25 +118,44 @@ def prepare_data(meta, log):
     if meta['args'].light:
         log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
         source_files = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
+        structure_path = os.path.join(dir_site, 'structure/structure.yaml')
+        current_pages = {e['path'].filepath_local().replace('.html.j2', '.html')
+                         for e in source_files}
+        if os.path.isfile(structure_path):
+            with open(structure_path) as fid:
+                previous_pages = yaml.safe_load(fid) or []
+            for entry in previous_pages:
+                relative = entry['dir'] + entry['filename']
+                if relative not in current_pages:
+                    for suffix in ('', '.j2'):
+                        stale = os.path.join(dir_site, relative + suffix)
+                        if os.path.isfile(stale):
+                            os.remove(stale)
+        generator_tool.extract_additional_config(source_files)
         for element in source_files:
             src_path = element['path'].filepath()
             dst_path = dir_site + '/' + element['path'].filepath_local()
             os.makedirs(os.path.dirname(dst_path), exist_ok=True)
             shutil.copy2(src_path, dst_path)
+            element['path'].root_directory = dir_site
     else:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
         filesystem.copy_directories(dir_source, dir_site)
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
 
-    template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
+    template_files = (source_files if meta['args'].light else
+                      filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2')))
     log.debug(f"Found {len(template_files)} template files in '{dir_site}'")
-    generator_tool.extract_additional_config(template_files)
+    if not meta['args'].light:
+        generator_tool.extract_additional_config(template_files)
     sitemap = generator_tool.extract_titles(template_files)
 
-    if not meta['args'].light:
-        generator_tool.export_sitemap(sitemap, dir_site + '/sitemap/', meta)
-        generator_tool.export_structure(template_files, dir_site + '/structure/', dir_site)
+    sitemap_dir = os.path.join(dir_site, 'sitemap')
+    if meta['args'].light and os.path.isdir(sitemap_dir):
+        shutil.rmtree(sitemap_dir)
+    generator_tool.export_sitemap(sitemap, dir_site + '/sitemap/', meta)
+    generator_tool.export_structure(template_files, dir_site + '/structure/', dir_site)
 
     return template_files, sitemap
 
@@ -366,9 +299,6 @@ def clean_directories(meta):
     site_dir = meta['site_directory']
     if os.path.isdir(site_dir):
         shutil.rmtree(site_dir)
-    for d in ['lib/__pycache__', 'plugins/__pycache__']:
-        if os.path.isdir(d):
-            shutil.rmtree(d)
     print('Directories cleaned\n')
 
 
@@ -377,22 +307,40 @@ def clean_directories(meta):
 # ---------------------------------------------------------------------------
 
 def main():
-    meta = copy.deepcopy(META_DEFAULTS)
     args = parse_arguments()
+    try:
+        config, config_file, warnings = load_config(
+            args.input_config or 'configure.yaml', debug_override=args.debug)
+        validate_paths(config, config_file, require_inputs=not args.clean or args.check_config)
+    except ConfigError as exc:
+        logger.Logger().error(str(exc))
+        sys.exit(1)
 
-    if args.input_config is not None:
-        meta['config_file'] = args.input_config
-    if args.debug:
-        meta['debug'] = True
-    meta['args'] = args
+    log = logger.Logger(indent_level_base=config.level_print,
+                        debug_level=2 if config.debug else 1)
+    for warning in warnings:
+        log.warning(warning)
+    context = BuildContext(config, config_file, args, log)
+    meta = context.meta
 
-    log = logger.Logger(indent_level_base=meta['level_print'], debug_level=2 if args.debug else 1)
-    meta['log'] = log
-
-    load_config(meta, log)
-    normalize_config(meta)
-    validate_directories(meta, log)
-
+    # Diagnostic mode takes precedence over --clean and never runs plugins.
+    if args.check_config or not args.clean:
+        paths, plugin_failures = resolve_plugins(meta, log)
+        context.plugin_paths.extend(paths)
+        if plugin_failures:
+            sys.exit(1)
+    if args.check_config:
+        print(yaml.safe_dump({
+            'config_file': str(config_file),
+            'source_directory': config.source_directory,
+            'site_directory': config.site_directory,
+            'theme': config.theme,
+            'plugin_paths': context.plugin_paths,
+            'debug': config.debug,
+            'level_print': config.level_print,
+            'use_tidy': config.use_tidy,
+        }, sort_keys=False))
+        return
     if args.clean:
         clean_directories(meta)
         return
@@ -402,7 +350,6 @@ def main():
     log.display('[bold white]****************************')
     log.keyvalue('info', f"Source: {meta['source_directory']}", indent_level=1)
     log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
-    meta['plugin_paths'], plugin_failures = resolve_plugins(meta, log)
 
     # Data preparation
     log.title('Data preparation', pre='\n')

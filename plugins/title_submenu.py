@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import shutil
+from collections import Counter
 
 from lib.structure import load_structure
 
@@ -34,6 +36,7 @@ def pre_process(meta):
 
     id_storage = {}
     title_id_summary = {}
+    pages_per_directory = Counter(entry['dir'] for entry in structure)
 
     for entry in structure:
         file_path = meta['site_directory'] + entry['dir'] + entry['filename'].replace('.html', '.html.j2')
@@ -41,9 +44,10 @@ def pre_process(meta):
         with open(file_path, 'r') as fid:
             file_content = fid.read()
 
-        title_id_summary[entry['dir']] = []
+        page_key = entry['dir'] + entry['filename']
+        title_id_summary[page_key] = []
 
-        def add_id(it, dir_entry=entry['dir']):
+        def add_id(it, page=page_key):
             n = str(len(it.group(1)))
             class_id = (it.group(2) or '').strip()
             title = it.group(3)
@@ -52,7 +56,7 @@ def pre_process(meta):
             if not class_id:
                 class_id = '#' + generated_id
 
-            title_id_summary[dir_entry].append({'level': n, 'title': title, 'id': class_id[1:]})
+            title_id_summary[page].append({'level': n, 'title': title, 'id': class_id[1:]})
             # Each heading is replaced at its own position (identical
             # headings get distinct ids)
             return '=' * int(n) + '(' + class_id + ') ' + title
@@ -69,5 +73,18 @@ def pre_process(meta):
 
     for entry in structure:
         dirname = meta['site_directory'] + entry['dir']
-        with open(dirname + 'title_id.json', 'w') as fid:
-            json.dump(title_id_summary[entry['dir']], fid, indent=4)
+        headings = title_id_summary[entry['dir'] + entry['filename']]
+        with open(dirname + entry['filename'] + '.title_id.json', 'w') as fid:
+            json.dump(headings, fid, indent=4)
+        # Preserve the old URL for a directory index or a single-page folder.
+        if entry['filename'] == 'index.html' or pages_per_directory[entry['dir']] == 1:
+            with open(dirname + 'title_id.json', 'w') as fid:
+                json.dump(headings, fid, indent=4)
+
+    # A light rebuild must also update the reader for the new per-page files.
+    if getattr(meta.get('args'), 'light', False):
+        source = os.path.join(meta['theme'], 'js/title_id.js')
+        target = os.path.join(meta['site_directory'], 'theme/js/title_id.js')
+        if os.path.isfile(source):
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copy2(source, target)

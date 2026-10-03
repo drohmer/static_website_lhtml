@@ -1,0 +1,22 @@
+# Example to copy to configure.yaml; this file is never merged automatically.
+# Precedence: built-in defaults < this YAML file < explicit CLI options.
+# Relative paths are resolved from this file's directory; absolute paths work too.
+source_directory: 'example/'
+site_directory: '.site/'  # Optional; .site/ is the built-in default.
+theme: 'themes/webpage-frame/'  # Omit to use the bundled webpage-frame theme.
+
+# Plugins run in this order. Use [] to disable them.
+# Paths are relative to this file, then to the generator installation.
+plugin:
+  - 'plugins/menu.py'
+  - 'plugins/redirection_first_page.py'
+
+# Optional settings (uncomment to override the defaults):
+# debug: false           # --debug takes precedence; also keeps intermediate files.
+# level_print: 0         # Non-negative indentation level for logs.
+# use_tidy: false
+# title_id: true
+# keywords: {}           # Variables exposed to Jinja2 templates.
+# include_head: []
+# plugin_arg: {}         # Plugin-specific options.
+# cache_video_directory: 'cache_video_directory/'

@@ -2,7 +2,8 @@ import os
 import re
 import subprocess
 import shutil
-from multiprocessing import Process
+from concurrent.futures import ThreadPoolExecutor
+from tempfile import TemporaryDirectory
 
 from lib.structure import load_structure
 
@@ -33,59 +34,49 @@ def pre_process(meta):
 
 def post_process(meta):
     structure = load_structure(meta['site_directory'])
+    if not structure:
+        raise ValueError('No pages to export as PDF')
 
-    meta['log'].keyvalue('*', 'Generate pdf ...', indent_level=2)
-    template_html_to_pdf_path = path_current_file + 'assets/template_html_to_pdf.js'
-    all_pdf = []
-    procs = []
-    for entry in structure:
-        path_in = os.path.abspath(meta['site_directory'] + entry['dir'] + entry['filename'])
-        path_out = os.path.abspath(meta['site_directory'] + entry['dir'] + 'output.pdf')
+    site_dir = os.path.abspath(meta['site_directory'])
+    output_dir = os.path.dirname(site_dir)
+    script = path_current_file + 'assets/template_html_to_pdf.js'
 
-        cmd = f'node {template_html_to_pdf_path} --input={path_in} --output={path_out}'
-        proc = Process(target=os.system, args=(cmd,))
-        procs.append(proc)
-        all_pdf.append(path_out)
+    # Stage fresh outputs so a failed export cannot reuse stale PDFs or remove
+    # the HTML needed to diagnose/retry the failure.
+    with TemporaryDirectory(prefix='pdf-export-', dir=output_dir) as staging:
+        def export_page(item):
+            counter, entry = item
+            html_path = os.path.join(site_dir, entry['dir'], entry['filename'])
+            stem = os.path.join(staging, 'slide_' + str(counter).zfill(3))
+            pdf_path = stem + '.pdf'
+            subprocess.run(['node', script, '--input=' + html_path,
+                            '--output=' + pdf_path], check=True)
+            if not os.path.isfile(pdf_path):
+                raise RuntimeError(f'PDF not generated: {pdf_path}')
+            subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf_path, stem], check=True)
+            subprocess.run(['magick', stem + '.ppm', '-resize', '3840', stem + '.jpg'], check=True)
+            if not os.path.isfile(stem + '.jpg'):
+                raise RuntimeError(f'Image not generated: {stem}.jpg')
+            return pdf_path, stem + '.jpg'
 
-    for proc in procs:
-        proc.start()
-    for proc in procs:
-        proc.join()
+        meta['log'].keyvalue('*', 'Generate PDF and images ...', indent_level=2)
+        with ThreadPoolExecutor() as pool:
+            outputs = list(pool.map(export_page, enumerate(structure)))
 
-    meta['log'].keyvalue('*', 'Merge pdf ...', indent_level=2)
-    pdf_path_output = os.path.relpath(os.path.abspath(meta['site_directory'] + '../slides.pdf'))
-    all_pdf_txt = ' '.join(all_pdf)
-    subprocess.run(f'pdfunite {all_pdf_txt} {pdf_path_output}', shell=True)
-    if os.path.isfile(pdf_path_output):
-        meta['log'].keyvalue('info', f"PDF file generated at '{pdf_path_output}'", indent_level=2)
-    else:
-        meta['log'].error('Cannot find PDF file')
+        merged = os.path.join(staging, 'slides.pdf')
+        subprocess.run(['pdfunite', *[pdf for pdf, _ in outputs], merged], check=True)
+        if not os.path.isfile(merged):
+            raise RuntimeError('Merged PDF not generated')
 
-    meta['log'].keyvalue('*', 'Generate images ...', indent_level=2)
-    image_dir_path = os.path.relpath(os.path.abspath(meta['site_directory'] + '../images/'))
-    if not image_dir_path.endswith('/'):
-        image_dir_path += '/'
-    os.makedirs(image_dir_path, exist_ok=True)
+        image_dir = os.path.join(output_dir, 'images')
+        os.makedirs(image_dir, exist_ok=True)
+        for _, image in outputs:
+            shutil.copy2(image, image_dir)
+        pdf_output = os.path.join(output_dir, 'slides.pdf')
+        os.replace(merged, pdf_output)
+        meta['log'].keyvalue('info', f"PDF file generated at '{pdf_output}'", indent_level=2)
+        meta['log'].keyvalue('info', f"Images generated in '{image_dir}'", indent_level=2)
 
-    procs = []
-    for counter, pdf_path in enumerate(all_pdf):
-        img_tmp_path = pdf_path.replace('output.pdf', 'out_img')
-        image_path = image_dir_path + 'slide_' + str(counter).zfill(3)
-
-        cmd = f'pdftoppm {pdf_path} {img_tmp_path}; magick {img_tmp_path}-1.ppm -resize 3840 {img_tmp_path}.jpg; cp {img_tmp_path}.jpg {image_path}.jpg'
-        proc = Process(target=os.system, args=(cmd,))
-        procs.append(proc)
-
-    for proc in procs:
-        proc.start()
-    for proc in procs:
-        proc.join()
-
-    meta['log'].keyvalue('info', f"Images generated in '{image_dir_path}'", indent_level=2)
-
-    # Clean pdf directory
+    # Only clean after every export and publication step succeeded.
     if not meta['debug']:
-        meta['log'].keyvalue('*', 'Clean pdf directory', indent_level=2, debug_level=2)
-        site_dir = meta['site_directory']
-        if os.path.isdir(site_dir):
-            shutil.rmtree(site_dir)
+        shutil.rmtree(site_dir)

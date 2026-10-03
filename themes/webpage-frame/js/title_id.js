@@ -49,7 +49,8 @@ function load_title_id(data) {
 async function main() {
 
 
-    await fetch_title_id("title_id.json");
+    const filename = window.location.pathname.split('/').pop() || 'index.html';
+    await fetch_title_id(filename + '.title_id.json');
 
 }
 

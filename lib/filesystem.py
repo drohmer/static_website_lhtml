@@ -40,41 +40,38 @@ class FilepathRelative:
         return '../' * self.level
 
 
-def find_files_in_hierarchy(src_dir, condition, max_depth=5):
+def find_files_in_hierarchy(src_dir, condition, max_depth=None):
+    """Find files at any depth, avoiding directory symlink cycles.
+
+    An optional explicit depth limit remains available to callers. Separate
+    aliases of a directory are traversed, but an ancestor cannot be revisited.
+    """
+    roots = [src_dir] if isinstance(src_dir, (str, os.PathLike)) else src_dir
     files_found = []
-    add_reccursive = []
-
-    if isinstance(src_dir, str):
-        add_reccursive = [[src_dir, 0]]
-    else:
-        for d in src_dir:
-            add_reccursive.append([d, 0])
-
-    while len(add_reccursive) > 0:
-        add_reccursive = sorted(add_reccursive)
-        current_dir, depth = add_reccursive.pop(0)
-        current_dir_content = sorted(os.listdir(current_dir))
-
-        if current_dir.endswith('/'):
-            current_dir = current_dir[:-1]
-
-        all_files_name = [x for x in current_dir_content if os.path.isfile(current_dir + '/' + x)]
-        all_dirs_name = [x for x in current_dir_content if os.path.isdir(current_dir + '/' + x)]
-
-        for f in all_files_name:
-            if condition(f):
-                local_dir = current_dir[len(src_dir):]
-                if local_dir != '' and not local_dir.endswith('/'):
-                    local_dir = local_dir + '/'
-                if local_dir.startswith('/'):
-                    local_dir = local_dir[1:]
-                filepath = FilepathRelative(root_directory=src_dir, path_local=local_dir, level=depth, filename=f)
-                files_found.append({'path': filepath})
-
-        if depth < max_depth:
-            for d in all_dirs_name:
-                add_reccursive.insert(0, [current_dir + '/' + d, depth + 1])
-
+    for root in roots:
+        root = os.fspath(root)
+        pending = [(root, 0, frozenset())]
+        while pending:
+            pending.sort(key=lambda item: item[0])
+            directory, depth, ancestors = pending.pop(0)
+            real_directory = os.path.realpath(directory)
+            if real_directory in ancestors:
+                continue
+            ancestors = ancestors | {real_directory}
+            for name in sorted(os.listdir(directory)):
+                path = os.path.join(directory, name)
+                if os.path.isfile(path) and condition(name):
+                    local = os.path.relpath(directory, root)
+                    if local == '.':
+                        local = ''
+                    files_found.append({'path': FilepathRelative(
+                        root_directory=directory_name_clean(root),
+                        path_local=directory_name_clean(local), level=depth, filename=name)})
+            if max_depth is None or depth < max_depth:
+                for name in sorted(os.listdir(directory)):
+                    path = os.path.join(directory, name)
+                    if os.path.isdir(path):
+                        pending.append((path, depth + 1, ancestors))
     return files_found
 
 

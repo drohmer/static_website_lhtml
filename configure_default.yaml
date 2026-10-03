@@ -1,5 +1,0 @@
----
-source_directory: 'example/'
-site_directory: '_site/'
-theme: 'themes/webpage-frame/'
-plugin: ['plugins/menu.py', 'plugins/redirection_first_page.py']

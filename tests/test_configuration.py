@@ -1,0 +1,139 @@
+"""Configuration precedence, diagnostics, and non-destructive path validation."""
+from pathlib import Path
+from types import SimpleNamespace
+import subprocess
+import sys
+import tempfile
+import unittest
+import yaml
+
+from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
+from lib.logger import Logger
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+class ConfigurationTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='lhtml-config-')
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        (self.root / 'src').mkdir()
+        self.file = self.root / 'configure.yaml'
+        self.write()
+
+    def write(self, **options):
+        self.file.write_text(yaml.safe_dump({'source_directory': 'src', **options}))
+
+    def cli(self, *args):
+        return subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.file), *args],
+                              cwd=self.root, capture_output=True, text=True)
+
+    def test_defaults_yaml_cli_and_context_isolation(self):
+        self.write(debug=False, level_print=3, keywords={'nested': {'value': 'original'}})
+        config, path, _ = load_config(self.file, debug_override=True)
+        self.assertTrue(config.debug)
+        self.assertEqual(config.level_print, 3)
+        self.assertEqual(Path(config.site_directory), self.root / '.site')
+        context = BuildContext(config, path, SimpleNamespace(), Logger())
+        context.meta['keywords']['nested']['value'] = 'changed'
+        context.meta['title_id'] = {'runtime': []}
+        self.assertEqual(config.keywords['nested']['value'], 'original')
+        self.assertTrue(config.title_id)
+        self.write(debug=True)
+        self.assertTrue(load_config(self.file)[0].debug)
+        result = self.cli('--check-config')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('debug: true', result.stdout)
+        self.assertIn('debug: false', self.cli('--check-config', '--no-debug').stdout)
+        self.write(debug=False)
+        self.assertIn('debug: true', self.cli('--check-config', '-d').stdout)
+
+    def test_bad_types_and_yaml_have_actionable_errors(self):
+        for key, value in [('source_directory', None), ('site_directory', 3),
+                           ('debug', 'false'), ('level_print', True), ('level_print', -1),
+                           ('keywords', []), ('plugin_arg', []), ('plugin', [42]),
+                           ('include_head', 'script'), ('log', 'override')]:
+            with self.subTest(key=key, value=value):
+                self.write(**{key: value})
+                result = self.cli('--check-config')
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(key, result.stdout)
+                self.assertNotIn('Traceback', result.stderr)
+        for text in ('false', '[]', 'plugin: [broken'):
+            self.file.write_text(text)
+            with self.assertRaises(ConfigError):
+                load_config(self.file)
+
+    def test_legacy_alias_unknown_key_and_conflict(self):
+        self.write(plugin_post=[], site_directoy='typo', custom_option=42)
+        config, _, warnings = load_config(self.file)
+        self.assertEqual(config.plugin, [])
+        self.assertEqual(config.to_meta()['custom_option'], 42)
+        self.assertIn('plugin_post', '\n'.join(warnings))
+        self.assertIn("Did you mean 'site_directory'", '\n'.join(warnings))
+        self.write(plugin=[], plugin_post=[])
+        with self.assertRaises(ConfigError):
+            load_config(self.file)
+
+    def test_overlapping_paths_and_symlinks_rejected_before_clean(self):
+        marker = self.root / 'src/keep.txt'
+        marker.write_text('keep')
+        theme = self.root / 'theme'
+        theme.mkdir()
+        link = self.root / 'alias'
+        link.symlink_to(self.root / 'src', target_is_directory=True)
+        for output in ('src', '.', 'src/output', 'theme', 'theme/output', 'alias', str(REPO)):
+            with self.subTest(output=output):
+                self.write(site_directory=output, theme='theme')
+                result = self.cli('--clean')
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn('Unsafe', result.stdout)
+                self.assertEqual(marker.read_text(), 'keep')
+
+    def test_check_does_not_create_delete_or_execute_plugins(self):
+        site = self.root / '.site'
+        site.mkdir()
+        marker = site / 'keep.txt'
+        marker.write_text('keep')
+        plugin = self.root / 'plugin.py'
+        plugin.write_text("raise RuntimeError('must not be imported')\n")
+        self.write(plugin=['plugin.py'])
+        result = self.cli('--check-config', '--clean')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(plugin), result.stdout)
+        self.assertEqual(marker.read_text(), 'keep')
+        self.write(site_directory='fresh')
+        self.assertEqual(self.cli('--check-config').returncode, 0)
+        self.assertFalse((self.root / 'fresh').exists())
+        self.write(plugin=['missing.py'])
+        self.assertEqual(self.cli('--check-config').returncode, 1)
+        self.assertEqual(self.cli().returncode, 1)
+        self.assertEqual(marker.read_text(), 'keep')
+
+    def test_clean_works_without_source_and_only_removes_output(self):
+        self.write(source_directory='missing')
+        (self.root / '.site').mkdir()
+        unrelated = self.root / 'lib/__pycache__'
+        unrelated.mkdir(parents=True)
+        self.assertEqual(self.cli('--clean').returncode, 0)
+        self.assertFalse((self.root / '.site').exists())
+        self.assertTrue(unrelated.exists())
+
+    def test_renamed_example_and_legacy_directories(self):
+        example = self.root / 'configure_example.yaml'
+        self.file.rename(example)
+        config, path, warnings = load_config(self.root / 'configure_default.yaml')
+        self.assertEqual(path, example)
+        self.assertTrue(warnings)
+        (self.root / 'example').mkdir()
+        (self.root / 'themes/webpage-frame').mkdir(parents=True)
+        self.write(source_directory='src_site_example', theme='theme_templates/webpage-frame')
+        config, path, warnings = load_config(self.file)
+        validate_paths(config, path)
+        self.assertEqual(Path(config.source_directory), self.root / 'example')
+        self.assertEqual(len(warnings), 2)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -40,30 +40,19 @@ const page = await browser.newPage();
 await page.setDefaultNavigationTimeout(4000);
 
 
-await page.goto(url ,{waitUntil: 'networkidle2'})
-.catch(
-  (err)=>{
-    //null;``
-    console.log('-----',url);
-    console.log(err);
-  }
-  );
+try {
+  await page.goto(url, {waitUntil: 'networkidle2'});
+  await page.pdf({
+    path: output,
+    width: width,
+    height: height,
+    margin: {top: "0px", left: "0px", right: "0px", bottom: "0px"}
+  });
+} finally {
+  await browser.close();
+}
 
-
-
-await page.pdf({
-  path: output,
-  width: width,
-  height: height,
-  margin: {
-        top: "0px",
-        left: "0px",
-        right: "0px",
-        bottom: "0px"
-  }
+})().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
 });
-
-await browser.close();    
-
-})();
-

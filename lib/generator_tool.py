@@ -94,7 +94,12 @@ def extract_additional_config(template_files):
         config_path = entry['path'].root_directory + entry['path'].path_local + 'config.yaml'
         if os.path.isfile(config_path):
             with open(config_path, 'r') as fid:
-                template_files[k]['extra-config'] = yaml.safe_load(fid)
+                config = yaml.safe_load(fid)
+            if config is None:
+                config = {}
+            if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
+                raise ValueError(f"Invalid page configuration '{config_path}': expected key: value pairs")
+            template_files[k]['extra-config'] = config
 
 
 def export_sitemap(sitemap, dir_sitemap, meta):

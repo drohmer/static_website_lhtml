@@ -19,6 +19,12 @@ def create_html_redirection(url):
 
 def post_process(meta):
     structure = load_structure(meta['site_directory'])
+    if not structure or any(os.path.normpath(entry['dir'] + entry['filename']) == 'index.html'
+                            for entry in structure):
+        return
+    # A hand-written HTML homepage also takes precedence over a redirect.
+    if os.path.isfile(os.path.join(meta['source_directory'], 'index.html')):
+        return
     url = structure[0]['dir'] + structure[0]['filename']
     html = create_html_redirection(url)
 
