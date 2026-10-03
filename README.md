@@ -165,14 +165,23 @@ Output in `_layout/` (next to the configuration file):
   size of what is actually drawn, margins, CSS position, font size, signature),
   then the problems and the vertical gaps between blocks
 - `<page>/layout.json`: the same data, for scripts
-- `<page>/overlay.png`: the real render with a numbered outline per block
-- `<page>/blocks.png`: one solid rectangle per block, content hidden
+- `<page>/overlay.png`: the real render with the outlined ink of each block and its number
+- `<page>/blocks.png`: the ink of each block as solid rectangles, content hidden
 
 Coordinates are CSS pixels, origin at the top-left corner of the page
 (1920×1080 for slides); the usable area is the inside of the slide frame.
 Detected problems: `COLLISION` (two blocks overlapping, with the overlap
 rectangle), `OUT OF AREA` (block beyond the frame), `CLIPPED` (content cut by
 `overflow`), `UPSCALED IMAGE` (image displayed larger than its native size).
+
+Only what is actually drawn counts (the *ink* of a block): text lines, images
+trimmed to their drawn content (uniform or transparent background removed),
+backgrounds and borders. Each block is described by a list of ink rectangles
+(`"ink"` in `layout.json`), so invisible full-width boxes and the empty corners
+of an irregular block (short last lines, L-shaped content) do not create
+collisions. A block that overlaps only the background of an image is listed in
+a `Notes` section, not as a problem. Empty blocks (`::nl`, `div[height:...]`)
+are `spacer`s and are ignored by the analysis.
 
 A block is a top-level element of the page: title, paragraph or bare text,
 list, code block, image, video, math, or a `div::` / `::[...]` with all its

@@ -23,12 +23,39 @@ def block(id, x, y, w, h, kind='div', position='static', **extra):
 
 def test_collision_with_overlap_rectangle():
     blocks = [block(1, 0, 0, 100, 100), block(2, 50, 60, 100, 100, position='fixed')]
-    assert layout_report.find_collisions(blocks) == [{'a': 1, 'b': 2, 'x0': 50, 'y0': 60, 'x1': 100, 'y1': 100}]
+    assert layout_report.find_collisions(blocks) == [{'a': 1, 'b': 2, 'x0': 50, 'y0': 60, 'x1': 100, 'y1': 100,
+                                                      'area': 2000}]
 
 
 def test_touching_or_tiny_overlap_is_not_a_collision():
     blocks = [block(1, 0, 0, 100, 100), block(2, 100, 0, 100, 100), block(3, 0, 97, 100, 50)]
     assert layout_report.find_collisions(blocks, threshold=4) == []
+
+
+def test_empty_corner_of_an_irregular_block_is_not_a_collision():
+    # L-shaped text: a long first line, then short lines; a fixed image sits
+    # to the right of the short lines, inside the bounding rectangle
+    text = block(1, 0, 0, 800, 120, ink=[{'x': 0, 'y': 0, 'w': 800, 'h': 40},
+                                         {'x': 0, 'y': 40, 'w': 300, 'h': 80}])
+    image = block(2, 400, 50, 300, 200, position='fixed')
+    assert layout_report.find_collisions([text, image]) == []
+    image_over_text = block(3, 250, 60, 300, 100, position='fixed')
+    collisions = layout_report.find_collisions([text, image_over_text])
+    assert collisions == [{'a': 1, 'b': 3, 'x0': 250, 'y0': 60, 'x1': 300, 'y1': 120, 'area': 3000}]
+
+
+def test_overlap_with_image_background_only_is_a_note():
+    content = {'x': 600, 'y': 100, 'w': 200, 'h': 200}
+    media = [{'src': 'tri.png', 'w': 400, 'h': 400, 'natural_w': 800, 'natural_h': 800,
+              'box': {'x': 500, 'y': 0, 'w': 400, 'h': 400}, 'content': content}]
+    image = block(1, 600, 100, 200, 200, kind='image', media=media, ink=[content])
+    text = block(2, 0, 20, 550, 40)
+    layout = {'area': AREA, 'blocks': [image, text]}
+    analysis = layout_report.analyse(layout)
+    assert analysis['collisions'] == []
+    assert analysis['background_overlaps'] == [{'image': 1, 'other': 2, 'src': 'tri.png'}]
+    md = layout_report.page_markdown('p', 'src/p/index.html.j2', layout)
+    assert '#2 overlaps only the background' in md
 
 
 def test_out_of_area_sides():

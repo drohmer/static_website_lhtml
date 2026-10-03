@@ -39,15 +39,48 @@ function extractBlocks(rootSelector, excludeSelector) {
     const excerpt = (s, n = 60) => { const c = Array.from(clean(s)); return c.length > n ? c.slice(0, n).join('') + '…' : c.join(''); };
     const basename = (src) => (src || '').split('/').pop().split('?')[0];
 
+    // Rectangles are {x, y, w, h} in page coordinates (CSS px)
+    function toRect(r) {
+        return {x: round(r.left + scrollX), y: round(r.top + scrollY), w: round(r.width), h: round(r.height)};
+    }
+
     function unionRects(rects) {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const r of rects) {
-            if (r.width <= 0 || r.height <= 0) continue;
-            x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top);
-            x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+            if (r.w <= 0 || r.h <= 0) continue;
+            x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y);
+            x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h);
         }
-        if (x0 === Infinity) return null;
-        return {x: round(x0 + scrollX), y: round(y0 + scrollY), w: round(x1 - x0), h: round(y1 - y0)};
+        return x0 === Infinity ? null : {x: x0, y: y0, w: x1 - x0, h: y1 - y0};
+    }
+
+    const contains = (a, b) => a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h;
+
+    // Merge the fragments of a same line of text (vertical overlap of at
+    // least half their height, horizontal gap below `gap`) and drop the
+    // rectangles contained in another one.
+    function mergeRects(rects, gap) {
+        let list = rects.filter(r => r.w > 1 && r.h > 1).map(r => ({...r}));
+        let merged = true;
+        while (merged) {
+            merged = false;
+            outer:
+            for (let i = 0; i < list.length; i++) {
+                for (let j = i + 1; j < list.length; j++) {
+                    const a = list[i], b = list[j];
+                    const overlapY = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+                    const gapX = Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w);
+                    if (contains(a, b) || contains(b, a)
+                        || (overlapY >= 0.5 * Math.min(a.h, b.h) && gapX <= gap)) {
+                        list[i] = unionRects([a, b]);
+                        list.splice(j, 1);
+                        merged = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+        return list;
     }
 
     function paints(cs) {
@@ -70,19 +103,67 @@ function extractBlocks(rootSelector, excludeSelector) {
         return false;
     }
 
-    // Ink extent of an element: its text (glyph boxes), media, and the
-    // descendants that paint a background or a border. Invisible layout
-    // boxes (full-width blocks, struts) are ignored. null if nothing visible.
-    function inkRect(el) {
+    // Rectangle of the drawn content of an image: pixels that are neither
+    // transparent nor of the background color (taken from the corners).
+    // The whole image if it cannot be analysed or has no uniform background.
+    function imageContentRect(img) {
+        const box = toRect(img.getBoundingClientRect());
+        if (img.tagName !== 'IMG' || !img.complete || !img.naturalWidth) return box;
+        const scale = Math.min(1, 200 / Math.max(img.naturalWidth, img.naturalHeight));
+        const cw = Math.max(1, Math.round(img.naturalWidth * scale));
+        const ch = Math.max(1, Math.round(img.naturalHeight * scale));
+        let data;
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = cw; canvas.height = ch;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, cw, ch);
+            data = ctx.getImageData(0, 0, cw, ch).data;
+        } catch (e) {
+            return box;
+        }
+        const px = (x, y) => data.subarray(4 * (y * cw + x), 4 * (y * cw + x) + 4);
+        const corners = [px(0, 0), px(cw - 1, 0), px(0, ch - 1), px(cw - 1, ch - 1)];
+        const transparent = corners.some(c => c[3] < 16);
+        const bg = corners[0];
+        const close = (c) => Math.max(Math.abs(c[0] - bg[0]), Math.abs(c[1] - bg[1]), Math.abs(c[2] - bg[2])) <= 24;
+        if (!transparent && !corners.every(close)) return box;
+        const isContent = transparent ? (c) => c[3] >= 16 : (c) => c[3] >= 16 && !close(c);
+        let x0 = cw, y0 = ch, x1 = -1, y1 = -1;
+        for (let y = 0; y < ch; y++) {
+            for (let x = 0; x < cw; x++) {
+                if (isContent(px(x, y))) {
+                    if (x < x0) x0 = x; if (x > x1) x1 = x;
+                    if (y < y0) y0 = y; if (y > y1) y1 = y;
+                }
+            }
+        }
+        if (x1 < 0) return box;
+        const sx = box.w / cw, sy = box.h / ch;
+        return {x: round(box.x + x0 * sx), y: round(box.y + y0 * sy),
+                w: round((x1 - x0 + 1) * sx), h: round((y1 - y0 + 1) * sy)};
+    }
+
+    function inkOf(el) {
+        // ink rectangle of an element that is itself drawn (media, background, border)
+        if (el.tagName === 'IMG') return imageContentRect(el);
+        return toRect(el.getBoundingClientRect());
+    }
+
+    // Ink of an element: its text (lines), media (images trimmed to their
+    // drawn content) and the descendants that paint a background or a
+    // border, as a list of rectangles. Invisible layout boxes (full-width
+    // blocks, struts) are ignored. Empty list if nothing is drawn.
+    function inkRects(el, fontSize) {
         const rects = [];
-        if (MEDIA.has(el.tagName) || paints(getComputedStyle(el))) rects.push(el.getBoundingClientRect());
+        if (MEDIA.has(el.tagName) || paints(getComputedStyle(el))) rects.push(inkOf(el));
         const range = document.createRange();
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         let node, count = 0;
         while ((node = walker.nextNode()) && count < 5000) {
             if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
             range.selectNodeContents(node);
-            for (const r of range.getClientRects()) if (r.width > 1 && r.height > 1) rects.push(r);
+            for (const r of range.getClientRects()) rects.push(toRect(r));
             count++;
         }
         const descendants = el.getElementsByTagName('*');
@@ -90,9 +171,9 @@ function extractBlocks(rootSelector, excludeSelector) {
             const d = descendants[i];
             const cs = getComputedStyle(d);
             if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-            if (MEDIA.has(d.tagName) || paints(cs)) rects.push(d.getBoundingClientRect());
+            if (MEDIA.has(d.tagName) || paints(cs)) rects.push(inkOf(d));
         }
-        return unionRects(rects);
+        return mergeRects(rects, Math.max(8, fontSize));
     }
 
     function isVisible(el) {
@@ -129,16 +210,19 @@ function extractBlocks(rootSelector, excludeSelector) {
     function mediaInfo(el) {
         const imgs = el.tagName === 'IMG' ? [el] : [...el.querySelectorAll('img')];
         return imgs.slice(0, 6).map(img => {
-            const r = img.getBoundingClientRect();
-            return {src: basename(img.getAttribute('src')), w: round(r.width), h: round(r.height),
-                    natural_w: img.naturalWidth, natural_h: img.naturalHeight};
+            const box = toRect(img.getBoundingClientRect());
+            return {src: basename(img.getAttribute('src')), w: box.w, h: box.h,
+                    natural_w: img.naturalWidth, natural_h: img.naturalHeight,
+                    box, content: imageContentRect(img)};
         });
     }
 
     function describe(el) {
         const cs = getComputedStyle(el);
         const box = el.getBoundingClientRect();
-        const visual = inkRect(el);
+        const fontSize = parseFloat(cs.fontSize) || 16;
+        const ink = inkRects(el, fontSize);
+        const visual = unionRects(ink);
         const media = mediaInfo(el);
         let signature = el.tagName.toLowerCase();
         if (el.className && typeof el.className === 'string') signature += '.' + el.className.trim().split(/\s+/).join('.');
@@ -149,8 +233,9 @@ function extractBlocks(rootSelector, excludeSelector) {
         return {
             kind: visual ? kindOf(el) : 'spacer',
             signature,
-            box: {x: round(box.left + scrollX), y: round(box.top + scrollY), w: round(box.width), h: round(box.height)},
+            box: toRect(box),
             visual,
+            ink,
             position: cs.position,
             margin: ['Top', 'Right', 'Bottom', 'Left'].map(s => round(parseFloat(cs['margin' + s]) || 0)),
             font_size: round(parseFloat(cs.fontSize) || 0),
@@ -168,13 +253,13 @@ function extractBlocks(rootSelector, excludeSelector) {
         const range = document.createRange();
         range.setStartBefore(nodes[0]);
         range.setEndAfter(nodes[nodes.length - 1]);
-        const visual = unionRects([...range.getClientRects()].filter(r => r.width > 1 && r.height > 1));
+        const fontSize = parseFloat(getComputedStyle(root).fontSize) || 16;
+        const ink = mergeRects([...range.getClientRects()].map(toRect), Math.max(8, fontSize));
+        const visual = unionRects(ink);
         if (!visual) return;
-        const parentStyle = getComputedStyle(root);
         blocks.push({kind: 'text', signature: `text "${excerpt(nodes.map(n => n.textContent).join(' '))}"`,
-                     box: visual, visual, position: 'static', margin: [0, 0, 0, 0],
-                     font_size: round(parseFloat(parentStyle.fontSize) || 0), overflow: 'visible',
-                     scroll: null, media: []});
+                     box: visual, visual, ink, position: 'static', margin: [0, 0, 0, 0],
+                     font_size: round(fontSize), overflow: 'visible', scroll: null, media: []});
     }
     for (const node of root.childNodes) {
         if (node.nodeType === Node.TEXT_NODE) { run.push(node); continue; }
@@ -194,7 +279,10 @@ function extractBlocks(rootSelector, excludeSelector) {
     const bcs = getComputedStyle(body);
     const br = body.getBoundingClientRect();
     const px = (v) => parseFloat(v) || 0;
-    const area = br.width > 0 && br.height > 0 && br.height <= innerHeight ? {
+    // a slide has a frame (body) that fits in the viewport, even when its
+    // content overflows; a web page has a body taller than the viewport
+    const framed = br.width > 0 && br.height > 0 && br.height <= innerHeight;
+    const area = framed ? {
         x: round(br.left + px(bcs.borderLeftWidth)),
         y: round(br.top + px(bcs.borderTopWidth)),
         w: round(br.width - px(bcs.borderLeftWidth) - px(bcs.borderRightWidth)),
@@ -202,12 +290,13 @@ function extractBlocks(rootSelector, excludeSelector) {
     } : {x: 0, y: 0, w: innerWidth, h: innerHeight};
     return {root: document.querySelector(rootSelector) ? rootSelector : 'body', title: document.title,
             viewport: {w: innerWidth, h: innerHeight}, area, blocks,
-            scrolling: document.documentElement.scrollHeight > innerHeight + 1};
+            scrolling: !framed && document.documentElement.scrollHeight > innerHeight + 1};
 }
 
 
-// Runs in the page: draws numbered outlines (filled=false) or solid
-// rectangles on a white background (filled=true) above the content.
+// Runs in the page: draws, above the content, the ink rectangles of each
+// block with its number: outlines on the real render (filled=false), or
+// solid rectangles on a white background (filled=true).
 function drawOverlay(blocks, palette, filled) {
     const old = document.getElementById('__layout_overlay');
     if (old) old.remove();
@@ -216,21 +305,23 @@ function drawOverlay(blocks, palette, filled) {
     Object.assign(layer.style, {position: 'fixed', left: '0', top: '0', width: '100vw', height: '100vh',
                                 zIndex: '2147483647', pointerEvents: 'none',
                                 background: filled ? 'white' : 'transparent'});
-    for (const b of blocks) {
-        if (b.kind === 'spacer') continue;
-        const r = b.visual || b.box;
-        const color = palette[(b.id - 1) % palette.length];
+    const rectDiv = (r, style) => {
         const d = document.createElement('div');
         Object.assign(d.style, {position: 'absolute', left: (r.x - scrollX) + 'px', top: (r.y - scrollY) + 'px',
-                                width: r.w + 'px', height: r.h + 'px', boxSizing: 'border-box',
-                                border: `3px solid ${color}`,
-                                background: filled ? color : 'transparent', opacity: filled ? '0.7' : '1'});
-        const label = document.createElement('div');
-        label.textContent = '#' + b.id;
-        Object.assign(label.style, {position: 'absolute', left: '0', top: '0', padding: '2px 6px',
-                                    font: 'bold 22px sans-serif', color: 'white', background: color});
-        d.appendChild(label);
+                                width: r.w + 'px', height: r.h + 'px', boxSizing: 'border-box'}, style);
         layer.appendChild(d);
+        return d;
+    };
+    for (const b of blocks) {
+        if (b.kind === 'spacer') continue;
+        const color = palette[(b.id - 1) % palette.length];
+        for (const r of (b.ink && b.ink.length ? b.ink : [b.visual || b.box])) {
+            rectDiv(r, filled ? {background: color, opacity: '0.7'} : {border: `2px solid ${color}`});
+        }
+        const v = b.visual || b.box;
+        const label = rectDiv({x: v.x, y: v.y, w: 0, h: 0}, {width: 'auto', height: 'auto', padding: '2px 6px',
+                              font: 'bold 22px sans-serif', color: 'white', background: color});
+        label.textContent = '#' + b.id;
     }
     document.body.appendChild(layer);
 }

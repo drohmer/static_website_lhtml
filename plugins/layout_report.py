@@ -47,10 +47,27 @@ path_current_file = os.path.dirname(os.path.abspath(__file__)) + '/'
 # Analysis (pure functions on the measured layout)
 # ---------------------------------------------------------------------------
 
-def _rect(block):
-    """Ink extent of a block (what is drawn), or its layout box for spacers."""
-    r = block.get('visual') or block['box']
+def _as_tuple(r):
     return r['x'], r['y'], r['x'] + r['w'], r['y'] + r['h']
+
+
+def _rect(block):
+    """Bounding rectangle of the ink of a block, or its layout box for spacers."""
+    return _as_tuple(block.get('visual') or block['box'])
+
+
+def _ink(block):
+    """Ink rectangles of a block (text lines, trimmed images, backgrounds,
+    borders); its bounding rectangle if the measurement has no detail."""
+    rects = block.get('ink')
+    return [_as_tuple(r) for r in rects] if rects else [_rect(block)]
+
+
+def _overlap(r, s, threshold):
+    """Intersection of two (x0, y0, x1, y1) rectangles if larger than
+    `threshold` in both directions, else None."""
+    x0, y0, x1, y1 = max(r[0], s[0]), max(r[1], s[1]), min(r[2], s[2]), min(r[3], s[3])
+    return (x0, y0, x1, y1) if x1 - x0 > threshold and y1 - y0 > threshold else None
 
 
 def _visible(blocks):
@@ -59,17 +76,40 @@ def _visible(blocks):
 
 
 def find_collisions(blocks, threshold=4):
-    """Pairs of blocks whose visual extents overlap by more than `threshold`
-    pixels in both directions. Returns dicts (a, b, x0, y0, x1, y1)."""
+    """Pairs of blocks whose ink rectangles overlap by more than `threshold`
+    pixels in both directions (empty corners of irregular blocks do not
+    count). Returns dicts (a, b, x0, y0, x1, y1, area): bounding rectangle
+    and total area (px²) of the overlapping parts."""
     collisions = []
     for i, a in enumerate(blocks):
-        ax0, ay0, ax1, ay1 = _rect(a)
+        ink_a = _ink(a)
         for b in blocks[i + 1:]:
-            bx0, by0, bx1, by1 = _rect(b)
-            x0, y0, x1, y1 = max(ax0, bx0), max(ay0, by0), min(ax1, bx1), min(ay1, by1)
-            if x1 - x0 > threshold and y1 - y0 > threshold:
-                collisions.append({'a': a['id'], 'b': b['id'], 'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1})
+            parts = [o for r in ink_a for s in _ink(b) for o in [_overlap(r, s, threshold)] if o]
+            if parts:
+                collisions.append({'a': a['id'], 'b': b['id'],
+                                   'x0': min(p[0] for p in parts), 'y0': min(p[1] for p in parts),
+                                   'x1': max(p[2] for p in parts), 'y1': max(p[3] for p in parts),
+                                   'area': sum((p[2] - p[0]) * (p[3] - p[1]) for p in parts)})
     return collisions
+
+
+def find_background_overlaps(blocks, collisions, threshold=4):
+    """Blocks that overlap only the uniform or transparent background of an
+    image of another block (not its drawn content): informational, not a
+    problem. Returns dicts (image, other, src)."""
+    colliding = {frozenset((c['a'], c['b'])) for c in collisions}
+    result = []
+    for img_block in blocks:
+        for m in img_block.get('media', []):
+            if not m.get('box') or not m.get('content') or m['box'] == m['content']:
+                continue
+            box = _as_tuple(m['box'])
+            for other in blocks:
+                if other is img_block or frozenset((img_block['id'], other['id'])) in colliding:
+                    continue
+                if any(_overlap(box, r, threshold) for r in _ink(other)):
+                    result.append({'image': img_block['id'], 'other': other['id'], 'src': m['src']})
+    return result
 
 
 def find_out_of_area(blocks, area, threshold=4, scrolling=False):
@@ -119,7 +159,7 @@ def occupancy(blocks, area, step=10):
     """Fraction of the usable area covered by at least one block (sampled on a grid)."""
     if area['w'] <= 0 or area['h'] <= 0:
         return 0.0
-    rects = [_rect(b) for b in blocks]
+    rects = [r for b in blocks for r in _ink(b)]
     covered = total = 0
     for y in range(area['y'] + step // 2, area['y'] + area['h'], step):
         for x in range(area['x'] + step // 2, area['x'] + area['w'], step):
@@ -133,8 +173,10 @@ def analyse(layout, threshold=4):
     """Add an 'analysis' entry to a measured layout and return it."""
     blocks, area = _visible(layout['blocks']), layout['area']
     bottom = max((_rect(b)[3] for b in blocks), default=area['y'])
+    collisions = find_collisions(blocks, threshold)
     layout['analysis'] = {
-        'collisions': find_collisions(blocks, threshold),
+        'collisions': collisions,
+        'background_overlaps': find_background_overlaps(blocks, collisions, threshold),
         'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False)),
         'clipped': find_clipped(blocks, threshold),
         'upscaled_images': find_upscaled_images(blocks),
@@ -166,8 +208,10 @@ def page_markdown(name, source, layout):
              f"Usable area: x {area['x']}..{area['x'] + area['w']}, y {area['y']}..{area['y'] + area['h']} "
              f"({area['w']}×{area['h']} px) · occupancy {round(100 * analysis['occupancy'])} % "
              f"· free space at the bottom {analysis['free_bottom']} px", '',
-             'Positions and sizes are the ink extent of each block (text, images, '
-             'backgrounds and borders actually drawn); spacers are empty blocks.', '',
+             'Positions and sizes bound the ink of each block: what is actually drawn '
+             '(text lines, images trimmed to their content, backgrounds, borders). '
+             'Collisions are computed on the ink rectangles themselves (layout.json: "ink"), '
+             'so the empty corners of a block do not count. Spacers are empty blocks.', '',
              '| # | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
              '|---|------|------|-------|-------------------|----------|------|-----------|']
     for b in layout['blocks']:
@@ -179,7 +223,8 @@ def page_markdown(name, source, layout):
     problems = []
     for c in analysis['collisions']:
         problems.append(f"- COLLISION #{c['a']} × #{c['b']}: overlap x {c['x0']}..{c['x1']}, "
-                        f"y {c['y0']}..{c['y1']} ({c['x1'] - c['x0']}×{c['y1'] - c['y0']} px)")
+                        f"y {c['y0']}..{c['y1']} ({c.get('area', (c['x1'] - c['x0']) * (c['y1'] - c['y0']))} px² "
+                        f"of drawn content)")
     for o in analysis['out_of_area']:
         sides = ', '.join(f'{v} px {k}' for k, v in o.items() if k != 'id')
         problems.append(f"- OUT OF AREA #{o['id']}: {sides}")
@@ -188,6 +233,12 @@ def page_markdown(name, source, layout):
     for u in analysis['upscaled_images']:
         problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
     lines += ['', '## Problems', ''] + (problems or ['None.'])
+
+    notes = [f"- #{o['other']} overlaps only the background (uniform or transparent) of image "
+             f"{o['src']} in #{o['image']}: not visible, but the image box is reserved there"
+             for o in analysis.get('background_overlaps', [])]
+    if notes:
+        lines += ['', '## Notes', ''] + notes
 
     if analysis['gaps']:
         lines += ['', '## Vertical gaps between in-flow blocks', '',
