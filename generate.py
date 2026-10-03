@@ -40,6 +40,9 @@ def parse_arguments():
                         help='Light mode: only convert .html.j2 files without copying other files.')
     parser.add_argument('--check-config', action='store_true',
                         help='Validate and display resolved configuration without generating files.')
+    parser.add_argument('--layout', action='store_true',
+                        help='Write a layout report (block positions, collisions, overflows) '
+                             'of each page in _layout/ (plugin layout_report.py, requires npm install).')
     return parser.parse_args()
 
 
@@ -84,6 +87,18 @@ def resolve_plugins(meta, log):
         else:
             found.append(full_path)
     return found, missing
+
+
+LAYOUT_PLUGIN = 'plugins/layout_report.py'
+
+
+def add_layout_plugin(meta):
+    """Add the layout report plugin (--layout): after the other plugins, but
+    before generate_pdf, which removes the site directory."""
+    plugins = [p for p in meta['plugin'] if not p.endswith('layout_report.py')]
+    position = next((k for k, p in enumerate(plugins) if p.endswith('generate_pdf.py')), len(plugins))
+    plugins.insert(position, meta['lib_directory'] + LAYOUT_PLUGIN)
+    meta['plugin'] = plugins
 
 
 def run_plugins(meta, hook_name, log):
@@ -322,6 +337,9 @@ def main():
         log.warning(warning)
     context = BuildContext(config, config_file, args, log)
     meta = context.meta
+    if args.layout:
+        add_layout_plugin(meta)
+
 
     # Diagnostic mode takes precedence over --clean and never runs plugins.
     if args.check_config or not args.clean:

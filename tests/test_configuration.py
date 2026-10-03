@@ -49,6 +49,16 @@ class ConfigurationTests(unittest.TestCase):
         self.write(debug=False)
         self.assertIn('debug: true', self.cli('--check-config', '-d').stdout)
 
+    def test_layout_diagnostic_orders_plugin_before_pdf(self):
+        self.write(plugin=['plugins/generate_pdf.py', 'plugins/layout_report.py'])
+        result = self.cli('--check-config', '--layout')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        report = yaml.safe_load(result.stdout)
+        paths = report['plugin_paths']
+        self.assertEqual([Path(path).name for path in paths], ['layout_report.py', 'generate_pdf.py'])
+        self.assertFalse((self.root / '.site').exists())
+        self.assertFalse((self.root / '_layout').exists())
+
     def test_bad_types_and_yaml_have_actionable_errors(self):
         for key, value in [('source_directory', None), ('site_directory', 3),
                            ('debug', 'false'), ('level_print', True), ('level_print', -1),
