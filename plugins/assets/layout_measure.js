@@ -481,7 +481,10 @@ async function waitForContent(page) {
     for (const entry of pages) {
         try {
             fs.mkdirSync(entry.out, {recursive: true});
-            await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'networkidle0', timeout: 60000});
+            // pages with streaming media (autoplay videos, iframes) never become
+            // idle: wait for the load event, then for a short network idle
+            await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 60000});
+            await page.waitForNetworkIdle({idleTime: 500, timeout: 5000}).catch(() => {});
             await waitForContent(page);
             const layout = await page.evaluate(extractBlocks, rootSelector, excludeSelector);
             fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
