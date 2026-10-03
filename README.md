@@ -160,11 +160,19 @@ python generate.py -l --layout       # after editing a slide: light mode + repor
 
 Output in `_layout/` (next to the configuration file):
 
-- `summary.md`: all pages sorted by number of problems, with links to the page reports
+- `summary.md`: the usual values of the deck (its style, see below), then all
+  pages sorted by number of problems and warnings, with their number `n` in
+  the deck and links to the page reports
+- `contact_NN.png` (and `.html`): thumbnails of all pages in deck order, 16
+  per sheet, with badges `P` (problems), `W` (warnings), `D` (differences
+  with the deck): the whole deck at a glance
+- `deck.json`: the usual values of the deck, for scripts
 - `<page>/layout.md`: one row per top-level block (number, kind, position and
   size of what is actually drawn, margins, CSS position, font size, signature),
-  then the problems and the vertical gaps between blocks
+  then the problems, warnings, differences with the deck, density and the
+  vertical gaps between blocks
 - `<page>/layout.json`: the same data, for scripts
+- `<page>/render.png`: the real render
 - `<page>/overlay.png`: the real render with the outlined ink of each block and its number
 - `<page>/blocks.png`: the ink of each block as solid rectangles, content hidden
 
@@ -182,10 +190,35 @@ Detected problems:
 - `UPSCALED IMAGE`: bitmap displayed more than 1.25× its native size, hence
   blurry (vector images such as SVG are ignored)
 
-Warnings: `TIGHT`, when the line box of a text overlaps another text or an
-image by less than 0.4× the font size: the glyphs usually do not touch, but
-the spacing is tight. Text on the background of another block is not an
-overlap (only hidden text matters there).
+Warnings:
+
+- `TIGHT`: the line box of a text overlaps another text or an image by less
+  than 0.4× the font size: the glyphs usually do not touch, but the spacing
+  is tight. Text on the background of another block is not an overlap (only
+  hidden text matters there).
+- `NEAR-ALIGNED`: an edge or the center of a block is 3 to 12 px away from
+  that of another block, of the usable area, or of a column of the deck:
+  align it exactly, or move it clearly. Only edges whose position is
+  meaningful are compared: edges of images filling their box and of
+  backgrounds/borders, the aligned side of text (left, right or center,
+  from `text-align`); tops and bottoms only between blocks side by side.
+- `DENSE` (more than `max_words` words of text) and `SMALL FONT` (text
+  smaller than `min_font` px), on slides only.
+
+Each page report also gives its density: words (math and code excluded),
+formulas, lines of code, list items, lines of text, smallest font size, and
+the parts of the area covered by text and images.
+
+Differences with the deck: the usual values of the deck are measured over
+all its pages (`summary.md`, `deck.json`): page title variants (heading tag
+and font size used on at least 3 pages) with their position (left edge or
+center, top or middle: whichever varies least), columns (left edges of
+in-flow blocks shared by at least a quarter of the pages), body font size
+and the text sizes used on several pages, gap below the title, words per
+page and occupancy. A page is compared with them: `TITLE POSITION`,
+`TITLE VARIANT` (title of an unusual kind or size), `TITLE GAP`, `TEXT FONT`
+(text in a size used nowhere else). These are not errors, but breaks of
+consistency to check.
 
 Only what is actually drawn counts (the *ink* of a block): text lines, images
 reduced to their drawn shape (16 px cells; uniform or transparent background
@@ -204,9 +237,10 @@ list, code block, image, video, math, or a `div::` / `::[...]` with all its
 content. Its signature (tag, inline style, beginning of the text, image names)
 is enough to find it in `src/.../index.html.j2`.
 
-Typical loop with an LLM (e.g. Claude Code): "read `_layout/summary.md`, fix
-the collisions and overflows by editing the sources (positions, widths, font
-sizes), run `python generate.py -l --layout` and check the new report".
+Typical loop with an LLM (e.g. Claude Code): "read `_layout/summary.md` and
+the contact sheets, fix the collisions and overflows by editing the sources
+(positions, widths, font sizes), run `python generate.py -l --layout` and
+check the new report".
 
 Options (`configure.yaml`):
 
@@ -217,9 +251,13 @@ plugin_arg:
     exclude: 'nav, footer'      # children of the root that are not content
     width: 1920                 # viewport size
     height: 1080
-    images: true                # write overlay.png / blocks.png
+    images: true                # write render.png / overlay.png / blocks.png and contact sheets
     threshold: 4                # minimal overlap / overflow reported (px)
     output: '_layout/'
+    max_words: 80               # DENSE above this number of words per slide
+    min_font: 20                # SMALL FONT below this font size (px)
+    contact_columns: 4          # thumbnails per row and rows per contact sheet
+    contact_rows: 4
 ```
 
 ## Error Reporting

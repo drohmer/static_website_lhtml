@@ -156,3 +156,115 @@ def test_hidden_text_is_a_problem():
     assert 'HIDDEN TEXT #1 under #2' in md and '30 % of the text of #1' in md
     # the overlap of the text with the image content is not reported again as a collision
     assert analysis['collisions'] == []
+
+
+def paint(x, y, w, h):
+    return {'x': x, 'y': y, 'w': w, 'h': h, 't': 'paint'}
+
+
+def test_near_alignment_of_frames_and_text_left_edges():
+    # two framed boxes stacked: right edges 6 px apart
+    code = block(1, 100, 100, 700, 200, ink=[paint(100, 100, 700, 200)])
+    image = block(2, 100, 350, 694, 300, ink=[paint(100, 350, 694, 300)])
+    near = layout_report.find_near_alignments([code, image], AREA)
+    assert near == [{'id': 1, 'axis': 'x', 'edge': 'right', 'value': 800, 'ref': 794,
+                     'ref_label': 'right of #2', 'delta': 6}]
+    # left-aligned text 7 px off a column of the deck
+    para = block(3, 159, 700, 400, 40, ink=[text(159, 700, 400, 40)])
+    near = layout_report.find_near_alignments([para], {'x': 0, 'y': 0, 'w': 1000, 'h': 1000}, grid=[152])
+    assert [(n['id'], n['edge'], n['ref_label'], n['delta']) for n in near] == [(3, 'left', 'deck column', 7)]
+
+
+def test_ragged_text_edges_and_line_boxes_are_not_compared():
+    # right end of left-aligned text, left end of centered text, top of line boxes
+    a = block(1, 100, 100, 400, 40, ink=[text(100, 100, 400, 40)])
+    b = block(2, 100, 200, 405, 40, ink=[text(100, 200, 405, 40)])
+    centered = block(3, 306, 300, 200, 40, ink=[text(306, 300, 200, 40)], text_align='center')
+    framed = block(4, 300, 400, 210, 100, ink=[paint(300, 400, 210, 100)])
+    side = block(5, 700, 105, 200, 40, ink=[text(700, 105, 200, 40)])
+    assert layout_report.find_near_alignments([a, b, centered, framed, side], AREA) == []
+
+
+def test_image_with_transparent_margin_has_no_precise_edges():
+    media = [{'src': 'tri.png', 'box': {'x': 500, 'y': 100, 'w': 300, 'h': 300},
+              'content': {'x': 550, 'y': 150, 'w': 200, 'h': 200}}]
+    image = block(1, 550, 150, 200, 200, kind='image', media=media,
+                  ink=[{'x': 550, 'y': 150, 'w': 200, 'h': 200, 't': 'media'}])
+    assert layout_report._precise_edges(image) == {}
+    media[0]['content'] = media[0]['box']
+    assert set(layout_report._precise_edges(image)) == {'left', 'right', 'center', 'top', 'bottom', 'middle'}
+
+
+def page(title_y=58, title_font=70, body_font=35, words=30, extra=()):
+    title = block(1, 62, title_y, 600, 70, kind='title', font_size=title_font, ink=[text(62, title_y, 600, 70)])
+    title['signature'] = 'h1 "Title"'
+    body = block(2, 112, title_y + 100, 800, 200, kind='list', font_size=body_font,
+                 ink=[text(112, title_y + 100, 800, 200)], text={'words': words, 'min_font': body_font})
+    return {'area': {'x': 32, 'y': 32, 'w': 1856, 'h': 1016}, 'blocks': [title, body, *extra]}
+
+
+def test_deck_norms_and_deviations():
+    deck = [page() for _ in range(5)] + [page(title_y=80), page(body_font=22)]
+    norms = layout_report.deck_norms(deck)
+    assert norms['titles'] == [{'tag': 'h1', 'font': 70, 'pages': 7, 'x_anchor': 'left', 'x': 62,
+                                'y_anchor': 'top', 'y': 58}]
+    assert norms['columns'] == [62, 112] and norms['body_font'] == 35 and norms['text_fonts'] == [35]
+    assert norms['title_gap'] == 30 and norms['words'] == 30
+    assert layout_report.analyse(deck[0], norms=norms)['deviations'] == []
+    deviations = layout_report.analyse(deck[5], norms=norms)['deviations']
+    assert deviations == [{'kind': 'title_position', 'id': 1, 'value': [62, 80], 'norm': [62, 58],
+                           'anchor': ['left', 'top']}]
+    deviations = layout_report.analyse(deck[6], norms=norms)['deviations']
+    assert deviations == [{'kind': 'text_font', 'id': 2, 'value': 22, 'norm': [35]}]
+    assert 'TEXT FONT #2: text at 22 px' in layout_report.page_markdown('p', 's', deck[6])
+    assert 'page title `h1` 70 px (7 pages): left x 62, top y 58' in layout_report.norms_markdown(norms)
+
+
+def test_centered_titles_of_various_lengths():
+    deck = []
+    for w in (400, 600, 800):
+        t = block(1, 960 - w // 2, 500, w, 90, kind='title', font_size=91, ink=[text(960 - w // 2, 500, w, 90)])
+        t['signature'] = 'h1 "Section"'
+        deck.append({'area': AREA, 'blocks': [t]})
+    norms = layout_report.deck_norms(deck)
+    assert [(t['x_anchor'], t['x']) for t in norms['titles']] == [('center', 960)]
+
+
+def test_density_and_warnings():
+    blocks = [block(1, 0, 0, 500, 100, ink=[text(0, 0, 500, 50), text(0, 50, 300, 50)],
+                    text={'words': 70, 'formulas': 2, 'code_lines': 0, 'items': 3, 'min_font': 35}),
+              block(2, 0, 200, 500, 200, kind='code', ink=[paint(0, 200, 500, 200), text(10, 210, 300, 20)],
+                    text={'words': 0, 'formulas': 0, 'code_lines': 8, 'items': 0, 'min_font': 17})]
+    d = layout_report.density(blocks, AREA)
+    assert (d['words'], d['formulas'], d['code_lines'], d['items'], d['text_lines'], d['min_font']) == \
+        (70, 2, 8, 3, 2, 17)
+    assert layout_report.find_density_warnings(d, max_words=60, min_font=20) == [
+        {'kind': 'words', 'value': 70, 'limit': 60}, {'kind': 'min_font', 'value': 17, 'limit': 20}]
+    layout = {'area': AREA, 'blocks': blocks}
+    analysis = layout_report.analyse(layout, limits={'max_words': 60, 'min_font': 20})
+    assert layout_report.count_warnings(analysis) == 2
+    md = layout_report.page_markdown('p', 's', layout)
+    assert 'DENSE: 70 words' in md and 'SMALL FONT: 17 px' in md and '## Density' in md
+
+
+def test_contact_sheets():
+    analysis = layout_report.analyse({'area': AREA, 'blocks': [block(1, 0, 0, 100, 100),
+                                                                block(2, 50, 50, 100, 100)]})
+    rows = [(f'p{i}', f'dir/p{i}', analysis) for i in range(20)]
+    sheets = layout_report.contact_sheets_html(rows, {'w': 1920, 'h': 1080}, columns=4, rows_per_sheet=4)
+    assert len(sheets) == 2 and sheets[0].count('<figure>') == 16 and sheets[1].count('<figure>') == 4
+    assert '<img src="dir/p16/render.png"><figcaption><b>17</b> p16 <span class="p">P1</span>' in sheets[1]
+
+
+def test_deck_without_page_titles():
+    deck = [{'area': AREA, 'blocks': [block(1, 10, 10, 300, 40, ink=[text(10, 10, 300, 40)],
+                                            text={'words': 5, 'min_font': 20})]} for _ in range(4)]
+    norms = layout_report.deck_norms(deck)
+    assert norms['titles'] == [] and norms['columns'] == [10]
+    assert layout_report.analyse(deck[0], norms=norms)['deviations'] == []
+
+
+def test_no_density_warnings_on_scrolling_pages():
+    blocks = [block(1, 0, 0, 500, 2000, ink=[text(0, 0, 500, 2000)], text={'words': 900, 'min_font': 14})]
+    analysis = layout_report.analyse({'area': AREA, 'blocks': blocks, 'scrolling': True})
+    assert analysis['dense'] == [] and analysis['density']['words'] == 900

@@ -7,9 +7,9 @@
 //        [--exclude="nav, footer"] [--width=1920] [--height=1080] [--images=1]
 //
 // pages.json: [{"html": "/abs/path/index.html", "out": "/abs/output/dir"}, ...]
-// For each page, writes <out>/layout.json and, if images=1, <out>/overlay.png
-// (real render + outlined ink of each block) and <out>/blocks.png (ink of
-// each block as solid rectangles).
+// For each page, writes <out>/layout.json and, if images=1, <out>/render.png
+// (real render), <out>/overlay.png (real render + outlined ink of each block)
+// and <out>/blocks.png (ink of each block as solid rectangles).
 
 const fs = require('fs');
 const path = require('path');
@@ -182,7 +182,7 @@ function extractBlocks(rootSelector, excludeSelector) {
     // Ink of an element: text lines, media (image shapes) and descendants
     // painting a background or a border, as typed rectangles. Invisible
     // layout boxes (full-width blocks, struts) are ignored.
-    function inkRects(el, fontSize) {
+    function inkRects(el, fontSize, stats) {
         const rects = [];
         const own = (e) => {
             if (e.tagName === 'IMG') rects.push(...imageShape(e).cells);
@@ -195,6 +195,7 @@ function extractBlocks(rootSelector, excludeSelector) {
         let node, count = 0;
         while ((node = walker.nextNode()) && count < 5000) {
             if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
+            if (stats) countText(node, stats);
             range.selectNodeContents(node);
             for (const r of range.getClientRects()) rects.push(toRect(r, 'text'));
             count++;
@@ -206,6 +207,25 @@ function extractBlocks(rootSelector, excludeSelector) {
             own(descendants[i]);
         }
         return mergeRects(rects, (t) => t === 'text' ? Math.max(8, fontSize) : 0);
+    }
+
+    // Text statistics of a block: prose words (math and code excluded),
+    // formulas, lines of code, list items, smallest font size of prose/code.
+    function newStats() { return {words: 0, formulas: 0, code_lines: 0, items: 0, min_font: null}; }
+    function countText(node, stats) {
+        const parent = node.parentElement;
+        if (parent.closest('.katex')) return;
+        const size = round(parseFloat(getComputedStyle(parent).fontSize) || 16);
+        stats.min_font = stats.min_font === null ? size : Math.min(stats.min_font, size);
+        if (!parent.closest('pre')) stats.words += (node.textContent.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
+    }
+    function elementStats(el, stats) {
+        const all = (sel) => [...(el.matches(sel) ? [el] : []), ...el.querySelectorAll(sel)];
+        stats.formulas = all('.katex').filter(k => !k.parentElement.closest('.katex')).length;
+        stats.code_lines = all('pre').filter(p => !p.parentElement.closest('pre'))
+            .reduce((n, p) => n + p.innerText.split('\n').filter(l => l.trim()).length, 0);
+        stats.items = all('li').length;
+        return stats;
     }
 
     function isVisible(el) {
@@ -258,9 +278,11 @@ function extractBlocks(rootSelector, excludeSelector) {
         const box = toRect(el.getBoundingClientRect());
         delete box.t;
         const fontSize = parseFloat(cs.fontSize) || 16;
-        const ink = inkRects(el, fontSize);
+        const stats = newStats();
+        const ink = inkRects(el, fontSize, stats);
         const visual = unionRects(ink);
         const media = mediaInfo(el);
+        elementStats(el, stats);
         let signature = el.tagName.toLowerCase();
         if (el.className && typeof el.className === 'string') signature += '.' + el.className.trim().split(/\s+/).join('.');
         if (el.getAttribute('style')) signature += `[${clean(el.getAttribute('style'))}]`;
@@ -274,11 +296,13 @@ function extractBlocks(rootSelector, excludeSelector) {
             visual,
             ink,
             position: cs.position,
+            text_align: cs.textAlign,
             margin: ['Top', 'Right', 'Bottom', 'Left'].map(s => round(parseFloat(cs['margin' + s]) || 0)),
             font_size: round(fontSize),
             overflow: cs.overflow,
             scroll: {w: el.scrollWidth, h: el.scrollHeight, client_w: el.clientWidth, client_h: el.clientHeight},
             media,
+            text: stats,
             // overlap marked as intentional in the source, e.g. ::(.overlay)[...]
             intentional: el.classList.contains('overlay'),
         };
@@ -298,10 +322,20 @@ function extractBlocks(rootSelector, excludeSelector) {
                                () => Math.max(8, fontSize));
         const visual = unionRects(ink);
         if (!visual) return;
+        const stats = newStats();
+        for (const n of nodes) {
+            if (n.nodeType === Node.TEXT_NODE) { if (n.textContent.trim()) countText(n, stats); continue; }
+            const walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+            let t;
+            while ((t = walker.nextNode())) if (t.textContent.trim() && !isHiddenText(t.parentElement)) countText(t, stats);
+            const s = elementStats(n, newStats());
+            stats.formulas += s.formulas; stats.code_lines += s.code_lines; stats.items += s.items;
+        }
         const block = {kind: 'text', signature: `text "${excerpt(nodes.map(n => n.textContent).join(' '))}"`,
                        box: visual, visual, ink, position: 'static', margin: [0, 0, 0, 0],
+                       text_align: getComputedStyle(root).textAlign,
                        font_size: round(fontSize), overflow: 'visible', scroll: null, media: [],
-                       intentional: false};
+                       text: stats, intentional: false};
         blocks.push(block);
         for (const n of nodes) if (n.nodeType === Node.ELEMENT_NODE) blockOf.set(n, block);
     }
@@ -451,6 +485,7 @@ async function waitForContent(page) {
             fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
             if (withImages) {
                 const clip = {x: 0, y: 0, width, height};
+                await page.screenshot({path: path.join(entry.out, 'render.png'), clip});
                 await page.evaluate(drawOverlay, layout.blocks, PALETTE, false);
                 await page.screenshot({path: path.join(entry.out, 'overlay.png'), clip});
                 await page.evaluate(drawOverlay, layout.blocks, PALETTE, true);
