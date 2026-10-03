@@ -47,25 +47,25 @@ path_current_file = os.path.dirname(os.path.abspath(__file__)) + '/'
 # Analysis (pure functions on the measured layout)
 # ---------------------------------------------------------------------------
 
-def _as_tuple(r):
-    return r['x'], r['y'], r['x'] + r['w'], r['y'] + r['h']
+def _as_tuple(r, t='paint'):
+    return r['x'], r['y'], r['x'] + r['w'], r['y'] + r['h'], r.get('t', t)
 
 
 def _rect(block):
     """Bounding rectangle of the ink of a block, or its layout box for spacers."""
-    return _as_tuple(block.get('visual') or block['box'])
+    return _as_tuple(block.get('visual') or block['box'])[:4]
 
 
 def _ink(block):
-    """Ink rectangles of a block (text lines, trimmed images, backgrounds,
-    borders); its bounding rectangle if the measurement has no detail."""
+    """Typed ink rectangles (x0, y0, x1, y1, t) of a block, t in text /
+    media / paint; its bounding rectangle if the measurement has no detail."""
     rects = block.get('ink')
-    return [_as_tuple(r) for r in rects] if rects else [_rect(block)]
+    return [_as_tuple(r) for r in rects] if rects else [_rect(block) + ('paint',)]
 
 
 def _overlap(r, s, threshold):
-    """Intersection of two (x0, y0, x1, y1) rectangles if larger than
-    `threshold` in both directions, else None."""
+    """Intersection of two rectangles if larger than `threshold` in both
+    directions, else None."""
     x0, y0, x1, y1 = max(r[0], s[0]), max(r[1], s[1]), min(r[2], s[2]), min(r[3], s[3])
     return (x0, y0, x1, y1) if x1 - x0 > threshold and y1 - y0 > threshold else None
 
@@ -75,22 +75,69 @@ def _visible(blocks):
     return [b for b in blocks if b.get('kind') != 'spacer']
 
 
-def find_collisions(blocks, threshold=4):
-    """Pairs of blocks whose ink rectangles overlap by more than `threshold`
-    pixels in both directions (empty corners of irregular blocks do not
-    count). Returns dicts (a, b, x0, y0, x1, y1, area): bounding rectangle
-    and total area (px²) of the overlapping parts."""
-    collisions = []
+def _bounds(parts):
+    return {'x0': min(p[0] for p in parts), 'y0': min(p[1] for p in parts),
+            'x1': max(p[2] for p in parts), 'y1': max(p[3] for p in parts),
+            'area': sum((p[2] - p[0]) * (p[3] - p[1]) for p in parts)}
+
+
+def find_overlaps(blocks, threshold=4, tight_ratio=0.4):
+    """Classify the overlaps between the ink of pairs of blocks.
+
+    - text on the background of another block: ignored (whether the text is
+      hidden is checked separately, see hidden text);
+    - text on text or on an image, by less than tight_ratio × font size
+      vertically: 'tight' (the line box of the text, taller than its glyphs,
+      overlaps; the glyphs usually do not touch);
+    - any other overlap (text on text, text on image content, images,
+      backgrounds): 'collision', or 'intentional' if one of the blocks is
+      marked as an intentional overlay (class 'overlay').
+
+    Returns (collisions, tight, intentional): lists of dicts
+    (a, b, x0, y0, x1, y1, area) with the bounds and area of the overlap.
+    """
+    collisions, tight, intentional = [], [], []
     for i, a in enumerate(blocks):
         ink_a = _ink(a)
         for b in blocks[i + 1:]:
-            parts = [o for r in ink_a for s in _ink(b) for o in [_overlap(r, s, threshold)] if o]
-            if parts:
-                collisions.append({'a': a['id'], 'b': b['id'],
-                                   'x0': min(p[0] for p in parts), 'y0': min(p[1] for p in parts),
-                                   'x1': max(p[2] for p in parts), 'y1': max(p[3] for p in parts),
-                                   'area': sum((p[2] - p[0]) * (p[3] - p[1]) for p in parts)})
-    return collisions
+            hard, soft = [], []
+            min_font = min(a.get('font_size') or 16, b.get('font_size') or 16)
+            for r in ink_a:
+                for s in _ink(b):
+                    o = _overlap(r, s, threshold)
+                    if not o:
+                        continue
+                    types = {r[4], s[4]}
+                    if types == {'text', 'paint'}:
+                        continue
+                    if 'text' in types and 'paint' not in types and o[3] - o[1] < tight_ratio * min_font:
+                        soft.append(o)
+                    else:
+                        hard.append(o)
+            if hard:
+                target = intentional if a.get('intentional') or b.get('intentional') else collisions
+                target.append({'a': a['id'], 'b': b['id'], **_bounds(hard)})
+            elif soft:
+                tight.append({'a': a['id'], 'b': b['id'], **_bounds(soft)})
+    return collisions, tight, intentional
+
+
+def find_collisions(blocks, threshold=4):
+    """Pairs of blocks whose drawn content overlaps (see find_overlaps)."""
+    return find_overlaps(blocks, threshold)[0]
+
+
+def find_hidden_text(blocks):
+    """Text hidden by another block drawn on top of it (measured in the
+    browser): {id, by, x0, y0, x1, y1, fraction} where fraction is the part
+    of the samples taken along the lines of text of the block."""
+    result = []
+    for b in blocks:
+        for h in b.get('hidden_text', []):
+            result.append({'id': b['id'], 'by': h['by'], 'x0': h['x'], 'y0': h['y'],
+                           'x1': h['x'] + h['w'], 'y1': h['y'] + h['h'],
+                           'fraction': round(h['samples'] / max(h['total'], 1), 2)})
+    return result
 
 
 def find_background_overlaps(blocks, collisions, threshold=4):
@@ -139,12 +186,15 @@ def find_clipped(blocks, threshold=4):
     return result
 
 
-def find_upscaled_images(blocks, tolerance=1.05):
-    """Images displayed larger than their native size (blurry): {id, src, scale}."""
+def find_upscaled_images(blocks, tolerance=1.25):
+    """Bitmap images displayed noticeably larger than their native size
+    (blurry): {id, src, scale}. Vector images (SVG) are never blurry."""
     result = []
     for b in blocks:
         for m in b.get('media', []):
-            if m.get('natural_w') and m['w'] > m['natural_w'] * tolerance:
+            if m.get('vector') or not m.get('natural_w'):
+                continue
+            if m['w'] > m['natural_w'] * tolerance:
                 result.append({'id': b['id'], 'src': m['src'], 'scale': round(m['w'] / m['natural_w'], 2)})
     return result
 
@@ -156,10 +206,10 @@ def vertical_gaps(blocks):
 
 
 def occupancy(blocks, area, step=10):
-    """Fraction of the usable area covered by at least one block (sampled on a grid)."""
+    """Fraction of the usable area covered by the ink of the blocks (sampled on a grid)."""
     if area['w'] <= 0 or area['h'] <= 0:
         return 0.0
-    rects = [r for b in blocks for r in _ink(b)]
+    rects = [r[:4] for b in blocks for r in _ink(b)]
     covered = total = 0
     for y in range(area['y'] + step // 2, area['y'] + area['h'], step):
         for x in range(area['x'] + step // 2, area['x'] + area['w'], step):
@@ -173,13 +223,20 @@ def analyse(layout, threshold=4):
     """Add an 'analysis' entry to a measured layout and return it."""
     blocks, area = _visible(layout['blocks']), layout['area']
     bottom = max((_rect(b)[3] for b in blocks), default=area['y'])
-    collisions = find_collisions(blocks, threshold)
+    collisions, tight, intentional = find_overlaps(blocks, threshold)
+    hidden_text = find_hidden_text(blocks)
+    # a collision between a text and the block hiding it is reported once, as hidden text
+    hiding = {frozenset((h['id'], h['by'])) for h in hidden_text}
+    collisions = [c for c in collisions if frozenset((c['a'], c['b'])) not in hiding]
     layout['analysis'] = {
         'collisions': collisions,
-        'background_overlaps': find_background_overlaps(blocks, collisions, threshold),
+        'hidden_text': hidden_text,
         'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False)),
         'clipped': find_clipped(blocks, threshold),
         'upscaled_images': find_upscaled_images(blocks),
+        'tight': tight,
+        'intentional': intentional,
+        'background_overlaps': find_background_overlaps(blocks, collisions + intentional, threshold),
         'gaps': vertical_gaps(blocks),  # spacers count as gaps
         'free_bottom': area['y'] + area['h'] - bottom,
         'occupancy': round(occupancy(blocks, area), 2),
@@ -187,9 +244,11 @@ def analyse(layout, threshold=4):
     return layout['analysis']
 
 
+PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images')
+
+
 def count_problems(analysis):
-    return (len(analysis['collisions']) + len(analysis['out_of_area'])
-            + len(analysis['clipped']) + len(analysis['upscaled_images']))
+    return sum(len(analysis.get(k, [])) for k in PROBLEM_KEYS)
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +257,10 @@ def count_problems(analysis):
 
 def _md_cell(text):
     return str(text).replace('|', '\\|').replace('\n', ' ')
+
+
+def _zone(o):
+    return f"x {o['x0']}..{o['x1']}, y {o['y0']}..{o['y1']}"
 
 
 def page_markdown(name, source, layout):
@@ -209,22 +272,24 @@ def page_markdown(name, source, layout):
              f"({area['w']}×{area['h']} px) · occupancy {round(100 * analysis['occupancy'])} % "
              f"· free space at the bottom {analysis['free_bottom']} px", '',
              'Positions and sizes bound the ink of each block: what is actually drawn '
-             '(text lines, images trimmed to their content, backgrounds, borders). '
-             'Collisions are computed on the ink rectangles themselves (layout.json: "ink"), '
+             '(text lines, images reduced to their drawn shape, backgrounds, borders). '
+             'Overlaps are computed on the ink rectangles themselves (layout.json: "ink"), '
              'so the empty corners of a block do not count. Spacers are empty blocks.', '',
              '| # | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
              '|---|------|------|-------|-------------------|----------|------|-----------|']
     for b in layout['blocks']:
         x0, y0, x1, y1 = _rect(b)
-        lines.append(f"| {b['id']} | {b['kind']} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
+        kind = b['kind'] + (' (overlay)' if b.get('intentional') else '')
+        lines.append(f"| {b['id']} | {kind} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
                      f"{' '.join(str(m) for m in b['margin'])} | {b['position']} | {b['font_size']} | "
                      f"{_md_cell(b['signature'])} |")
 
     problems = []
+    for h in analysis.get('hidden_text', []):
+        problems.append(f"- HIDDEN TEXT #{h['id']} under #{h['by']}: {_zone(h)} "
+                        f"({round(100 * h['fraction'])} % of the text of #{h['id']} is covered)")
     for c in analysis['collisions']:
-        problems.append(f"- COLLISION #{c['a']} × #{c['b']}: overlap x {c['x0']}..{c['x1']}, "
-                        f"y {c['y0']}..{c['y1']} ({c.get('area', (c['x1'] - c['x0']) * (c['y1'] - c['y0']))} px² "
-                        f"of drawn content)")
+        problems.append(f"- COLLISION #{c['a']} × #{c['b']}: {_zone(c)} ({c['area']} px² of drawn content)")
     for o in analysis['out_of_area']:
         sides = ', '.join(f'{v} px {k}' for k, v in o.items() if k != 'id')
         problems.append(f"- OUT OF AREA #{o['id']}: {sides}")
@@ -234,9 +299,17 @@ def page_markdown(name, source, layout):
         problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
     lines += ['', '## Problems', ''] + (problems or ['None.'])
 
-    notes = [f"- #{o['other']} overlaps only the background (uniform or transparent) of image "
-             f"{o['src']} in #{o['image']}: not visible, but the image box is reserved there"
-             for o in analysis.get('background_overlaps', [])]
+    warnings = [f"- TIGHT #{t['a']} × #{t['b']}: line box of text overlapping by {t['y1'] - t['y0']} px "
+                f"({_zone(t)}); the glyphs probably do not touch, but the spacing is tight"
+                for t in analysis.get('tight', [])]
+    if warnings:
+        lines += ['', '## Warnings', ''] + warnings
+
+    notes = [f"- #{c['a']} × #{c['b']} overlap ({_zone(c)}): marked as intentional (class overlay)"
+             for c in analysis.get('intentional', [])]
+    notes += [f"- #{o['other']} overlaps only the background (uniform or transparent) of image "
+              f"{o['src']} in #{o['image']}: not visible, but the image box is reserved there"
+              for o in analysis.get('background_overlaps', [])]
     if notes:
         lines += ['', '## Notes', ''] + notes
 
@@ -249,25 +322,33 @@ def page_markdown(name, source, layout):
 SUMMARY_HEADER = '''# Layout summary
 
 One section per page in `<page>/layout.md` (block table + problems), with
-`<page>/overlay.png` (real render, numbered outlines) and `<page>/blocks.png`
-(solid rectangles). Coordinates are CSS pixels, origin at the top-left corner
-of the page; "usable area" is the inside of the slide frame. Block
-numbers (#) match the images. A block is found in the source with its
-signature (tag, inline style, beginning of text, image names).
+`<page>/overlay.png` (real render, outlined ink of each block, hidden text
+dashed) and `<page>/blocks.png` (ink as solid rectangles). Coordinates are
+CSS pixels, origin at the top-left corner of the page; "usable area" is the
+inside of the slide frame. Block numbers (#) match the images. A block is
+found in the source with its signature (tag, inline style, beginning of text,
+image names).
 
-Problems: COLLISION (blocks overlapping), OUT OF AREA (block beyond the
-usable area), CLIPPED (content cut by overflow), UPSCALED IMAGE (blurry).
+Problems: HIDDEN TEXT (text covered by another block drawn on top of it),
+COLLISION (drawn content of two blocks overlapping), OUT OF AREA (block
+beyond the usable area), CLIPPED (content cut by overflow), UPSCALED IMAGE
+(bitmap displayed larger than its native size: blurry).
+Warnings: TIGHT (text very close to another block: line boxes overlap, glyphs
+probably do not).
+An overlap is intentional when one of the blocks has the class `overlay`
+(LHTML: `::(.overlay)[...]`): it is listed in the notes, not as a problem.
 '''
 
 
 def summary_markdown(rows):
     lines = [SUMMARY_HEADER,
-             '| page | problems | collisions | out of area | clipped | upscaled | occupancy | report |',
-             '|------|----------|------------|-------------|---------|----------|-----------|--------|']
+             '| page | problems | hidden text | collisions | out of area | clipped | upscaled | warnings | occupancy | report |',
+             '|------|----------|-------------|------------|-------------|---------|----------|----------|-----------|--------|']
     for name, report_path, a in sorted(rows, key=lambda r: (-count_problems(r[2]), r[0])):
-        lines.append(f"| {name} | {count_problems(a)} | {len(a['collisions'])} | {len(a['out_of_area'])} | "
-                     f"{len(a['clipped'])} | {len(a['upscaled_images'])} | {round(100 * a['occupancy'])} % | "
-                     f"[layout.md]({report_path}) |")
+        lines.append(f"| {name} | {count_problems(a)} | {len(a.get('hidden_text', []))} | "
+                     f"{len(a['collisions'])} | {len(a['out_of_area'])} | {len(a['clipped'])} | "
+                     f"{len(a['upscaled_images'])} | {len(a.get('tight', []))} | "
+                     f"{round(100 * a['occupancy'])} % | [layout.md]({report_path}) |")
     return '\n'.join(lines) + '\n'
 
 

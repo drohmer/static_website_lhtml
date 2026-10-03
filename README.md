@@ -170,18 +170,34 @@ Output in `_layout/` (next to the configuration file):
 
 Coordinates are CSS pixels, origin at the top-left corner of the page
 (1920×1080 for slides); the usable area is the inside of the slide frame.
-Detected problems: `COLLISION` (two blocks overlapping, with the overlap
-rectangle), `OUT OF AREA` (block beyond the frame), `CLIPPED` (content cut by
-`overflow`), `UPSCALED IMAGE` (image displayed larger than its native size).
+Detected problems:
+
+- `HIDDEN TEXT`: text covered by another block drawn on top of it (checked in
+  the browser, along each line of text: an opaque image pixel or a background
+  of another block is visible on top of the text)
+- `COLLISION`: the drawn content of two blocks overlaps (text on text, text
+  on the drawn part of an image, images, backgrounds)
+- `OUT OF AREA`: block beyond the usable area
+- `CLIPPED`: content cut by `overflow`
+- `UPSCALED IMAGE`: bitmap displayed more than 1.25× its native size, hence
+  blurry (vector images such as SVG are ignored)
+
+Warnings: `TIGHT`, when the line box of a text overlaps another text or an
+image by less than 0.4× the font size: the glyphs usually do not touch, but
+the spacing is tight. Text on the background of another block is not an
+overlap (only hidden text matters there).
 
 Only what is actually drawn counts (the *ink* of a block): text lines, images
-trimmed to their drawn content (uniform or transparent background removed),
-backgrounds and borders. Each block is described by a list of ink rectangles
-(`"ink"` in `layout.json`), so invisible full-width boxes and the empty corners
-of an irregular block (short last lines, L-shaped content) do not create
-collisions. A block that overlaps only the background of an image is listed in
-a `Notes` section, not as a problem. Empty blocks (`::nl`, `div[height:...]`)
-are `spacer`s and are ignored by the analysis.
+reduced to their drawn shape (16 px cells; uniform or transparent background
+removed), backgrounds and borders. Each block is described by a list of typed
+ink rectangles (`"ink"` in `layout.json`), so invisible full-width boxes and
+the empty corners of an irregular block do not create collisions. Empty
+blocks (`::nl`, `div[height:...]`) are `spacer`s and are ignored.
+
+An overlap can be intentional (zoom inset over an image, annotation placed on
+a figure): add the class `overlay` to one of the blocks, e.g.
+`::(.overlay)[position:fixed; ...]`. The overlap is then listed in the
+`Notes` section instead of the problems (hidden text is still reported).
 
 A block is a top-level element of the page: title, paragraph or bare text,
 list, code block, image, video, math, or a `div::` / `::[...]` with all its
