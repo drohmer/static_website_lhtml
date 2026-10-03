@@ -87,7 +87,7 @@ def load_config(filename, debug_override=None):
     defaults = Config().to_meta()
     known = set(defaults) | {'cache_video_directory'}
     reserved = {'args', 'log', 'plugin_paths', 'config_file', 'config_directory',
-                'lib_directory', 'current_directory', 'extras'}
+                'lib_directory', 'current_directory', 'published_site_directory', 'extras'}
     extras = {}
     for key in set(data) - known:
         if key in reserved:
@@ -151,3 +151,31 @@ def validate_paths(config, config_file, require_inputs=True):
             raise ConfigError(f"Unsafe 'site_directory': deleting '{output}' would remove '{path}'")
     if output.exists() and not output.is_dir():
         raise ConfigError(f"'site_directory' is not a directory: {output}")
+
+
+def layout_output_directory(meta):
+    """Validate the layout output before any build or plugin deletion."""
+    options = meta.get('plugin_arg', {}).get('layout_report') or {}
+    if not isinstance(options, dict):
+        raise ConfigError("'plugin_arg.layout_report' must be a mapping")
+    value = options.get('output', '.layout/')
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("'plugin_arg.layout_report.output' must be a non-empty path")
+    output = (Path(meta['config_directory']) / Path(value).expanduser()).resolve()
+    for key in ('source_directory', 'theme', 'site_directory', 'published_site_directory', 'cache_video_directory'):
+        if not meta.get(key):
+            continue
+        path = Path(meta[key]).resolve()
+        if path == output or path in output.parents or output in path.parents:
+            raise ConfigError(f"Unsafe layout output '{output}': overlaps '{key}' ({path})")
+    protected = [GENERATOR_DIRECTORY, Path(meta['config_file']),
+                 Path(meta['config_directory']) / 'code',
+                 Path(meta['config_directory']) / 'cache_video_directory']
+    protected += [Path(path) for path in meta.get('plugin_paths', [])]
+    for path in protected:
+        path = path.resolve()
+        if path == output or output in path.parents:
+            raise ConfigError(f"Unsafe layout output '{output}': would remove '{path}'")
+    if output.exists() and not output.is_dir():
+        raise ConfigError(f'Layout output is not a directory: {output}')
+    return output

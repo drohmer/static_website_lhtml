@@ -10,6 +10,8 @@ cd static_website_lhtml
 pip install -r requirements.txt
 ```
 
+**Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
+
 **Dependencies**: `lhtml-markup`, `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`
 
 Optional:
@@ -35,7 +37,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config] [--layout]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config] [--layout] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -43,8 +45,21 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config]
       --check-config   Validate paths and plugin files; display resolved settings
   -c, --clean          Remove only the configured output directory and exit
   -l, --light          Light mode: only convert .html.j2 files (skip asset copy)
-  --layout             Write a layout report of each page in _layout/ (see below)
+  --serve              Serve the generated site on http://127.0.0.1:8000/
+  --watch              Rebuild after source, theme, plugin or configuration edits
+  --port PORT          HTTP port (default: 8000; 0 selects an available port)
+  --layout             Write a layout report of each page in .layout/ (see below)
 ```
+
+## Local preview
+
+```bash
+python generate.py --serve --watch
+```
+
+The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. Use full builds with `--watch` (it cannot be combined with `--light`). Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
+
+Complete and light builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. Light mode copies the existing output into staging to retain its assets. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
 
 ## Configuration
 
@@ -184,7 +199,9 @@ python generate.py --layout          # full generation + layout report
 python generate.py -l --layout       # after editing a slide: light mode + report
 ```
 
-Output in `_layout/` (next to the configuration file):
+Output in `.layout/` (next to the configuration file). Each page has a unique `pages/<relative HTML path>/` directory, for example `pages/chapter/a.html/layout.json`. The output path remains configurable and is checked before deletion: it cannot overlap sources, theme, site or cache, or contain the configuration, generator or plugin files. Paths through symbolic links are checked too.
+
+Files:
 
 - `summary.md`: the usual values of the deck (its style, see below), then all
   pages sorted by number of problems and warnings, with their number `n` in
@@ -193,14 +210,14 @@ Output in `_layout/` (next to the configuration file):
   per sheet, with badges `P` (problems), `W` (warnings), `D` (differences
   with the deck): the whole deck at a glance
 - `deck.json`: the usual values of the deck, for scripts
-- `<page>/layout.md`: one row per top-level block (number, kind, position and
+- `pages/<relative HTML path>/layout.md`: one row per top-level block (number, kind, position and
   size of what is actually drawn, margins, CSS position, font size, signature),
   then the problems, warnings, differences with the deck, density and the
   vertical gaps between blocks
-- `<page>/layout.json`: the same data, for scripts
-- `<page>/render.png`: the real render
-- `<page>/overlay.png`: the real render with the outlined ink of each block and its number
-- `<page>/blocks.png`: the ink of each block as solid rectangles, content hidden
+- `pages/<relative HTML path>/layout.json`: the same data, for scripts
+- `pages/<relative HTML path>/render.png`: the real render
+- `pages/<relative HTML path>/overlay.png`: the real render with the outlined ink of each block and its number
+- `pages/<relative HTML path>/blocks.png`: the ink of each block as solid rectangles, content hidden
 
 Coordinates are CSS pixels, origin at the top-left corner of the page
 (1920×1080 for slides); the usable area is the inside of the slide frame.
@@ -263,7 +280,7 @@ list, code block, image, video, math, or a `div::` / `::[...]` with all its
 content. Its signature (tag, inline style, beginning of the text, image names)
 is enough to find it in `src/.../index.html.j2`.
 
-Typical loop with an LLM (e.g. Claude Code): "read `_layout/summary.md` and
+Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources
 (positions, widths, font sizes), run `python generate.py -l --layout` and
 check the new report".
@@ -279,7 +296,7 @@ plugin_arg:
     height: 1080
     images: true                # write render.png / overlay.png / blocks.png and contact sheets
     threshold: 4                # minimal overlap / overflow reported (px)
-    output: '_layout/'
+    output: '.layout/'
     max_words: 80               # DENSE above this number of words per slide
     min_font: 20                # SMALL FONT below this font size (px)
     contact_columns: 4          # thumbnails per row and rows per contact sheet
@@ -338,10 +355,19 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 ## Tests
 
 ```bash
+pip install -r requirements-dev.txt
 python -m pytest tests -q
 ```
 
-Install `pytest` to run all tests (including layout analysis and style profiles). The tests require Node.js to validate generated menu JavaScript and the heading reader. The suite covers configuration precedence, validation, path protection, read-only diagnostics, plugin context isolation, generation regressions, and simulated PDF tool failures.
+Development dependencies are listed separately in `requirements-dev.txt` and share the version lock. The tests require Node.js to validate generated menu JavaScript and the heading reader. The suite covers configuration precedence, validation, path protection, read-only diagnostics, plugin context isolation, generation regressions, and simulated PDF tool failures.
+
+The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and 3.14 with Node.js 22. It runs the suite and real Chrome/HTTP smoke tests. Run these locally after `npm ci`:
+
+```bash
+LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_integration.py tests/test_development.py -q
+```
+
+The browser and HTTP tests are opt-in locally because they launch Chrome and bind a localhost port. When updating dependencies, update `requirements-lock.txt`, install into a fresh environment, and run both the unit suite and smoke tests before committing. Optional PDF/SASS system tools are not part of the Python lock.
 
 ## License
 

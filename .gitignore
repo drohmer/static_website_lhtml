@@ -5,3 +5,8 @@ configure.yaml
 **/.DS_Store
 node_modules
 _layout/
+.layout/
+.site-build-*/
+.site-backup-*/
+.pytest_cache/
+.venv/

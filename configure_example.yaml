@@ -20,3 +20,8 @@ plugin:
 # include_head: []
 # plugin_arg: {}         # Plugin-specific options.
 # cache_video_directory: 'cache_video_directory/'
+
+# With --layout, reports default to .layout/; override with:
+# plugin_arg:
+#   layout_report:
+#     output: '.layout/'

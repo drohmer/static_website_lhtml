@@ -18,7 +18,8 @@ import traceback
 from lib import filesystem
 from lib import generator_tool
 from lib import logger
-from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
+from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
+from lib.build_output import staged_site
 
 import lhtml
 
@@ -42,8 +43,18 @@ def parse_arguments():
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
-                             'of each page in _layout/ (plugin layout_report.py, requires npm install).')
-    return parser.parse_args()
+                             'of each page in .layout/ (plugin layout_report.py, requires npm install).')
+    parser.add_argument('--serve', action='store_true', help='Serve the generated site on localhost.')
+    parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
+    parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
+    args = parser.parse_args()
+    if not 0 <= args.port <= 65535:
+        parser.error('--port must be between 0 and 65535')
+    if (args.serve or args.watch) and (args.clean or args.check_config):
+        parser.error('--serve/--watch cannot be combined with --clean or --check-config')
+    if args.watch and args.light:
+        parser.error('--watch performs full rebuilds; omit --light')
+    return args
 
 
 
@@ -321,8 +332,7 @@ def clean_directories(meta):
 # Main
 # ---------------------------------------------------------------------------
 
-def main():
-    args = parse_arguments()
+def build_once(args):
     try:
         config, config_file, warnings = load_config(
             args.input_config or 'configure.yaml', debug_override=args.debug)
@@ -347,6 +357,12 @@ def main():
         context.plugin_paths.extend(paths)
         if plugin_failures:
             sys.exit(1)
+    if any(path.endswith('layout_report.py') for path in context.plugin_paths):
+        try:
+            layout_output_directory(meta)
+        except ConfigError as exc:
+            log.error(str(exc))
+            sys.exit(1)
     if args.check_config:
         print(yaml.safe_dump({
             'config_file': str(config_file),
@@ -363,6 +379,18 @@ def main():
         clean_directories(meta)
         return
 
+    try:
+        with staged_site(meta):
+            generate_site(meta)
+    except Exception as exc:
+        log.error(f'Build failed; previous site preserved: {exc}')
+        log.debug(traceback.format_exc())
+        raise SystemExit(1)
+
+
+def generate_site(meta):
+    args, log = meta['args'], meta['log']
+    plugin_failures = 0
     log.display('[bold white]****************************', pre='\n')
     log.display('[bold white]  Start website generator')
     log.display('[bold white]****************************')
@@ -405,7 +433,8 @@ def main():
     # Post-process plugins
     log.title('Post-process', pre='\n')
     log.tic()
-    plugin_failures += run_plugins(meta, 'post_process', log)
+    if not failed and not plugin_failures:
+        plugin_failures += run_plugins(meta, 'post_process', log)
     log.ok_elapsed()
 
     print()
@@ -414,7 +443,16 @@ def main():
     if plugin_failures:
         log.error(f'{plugin_failures} plugin error(s) (see errors above, use -d for details)')
     if failed or plugin_failures:
-        sys.exit(1)
+        raise RuntimeError('Page or plugin errors (see above)')
+
+
+def main():
+    args = parse_arguments()
+    if args.serve or args.watch:
+        from lib.development import develop
+        develop(args, build_once)
+    else:
+        build_once(args)
 
 
 if __name__ == '__main__':

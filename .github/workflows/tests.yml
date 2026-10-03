@@ -1,0 +1,33 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: 'requirements*.txt'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: pip install -r requirements-dev.txt
+      - run: npm ci
+      - name: Unit and regression tests
+        run: python -m pytest tests -q
+      - name: Chrome layout smoke test
+        env:
+          LHTML_BROWSER_TEST: '1'
+          LHTML_PREVIEW_TEST: '1'
+        # Chrome keeps its sandbox; allow its user namespace on Ubuntu runners.
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          python -m pytest tests/test_layout_integration.py tests/test_development.py -q

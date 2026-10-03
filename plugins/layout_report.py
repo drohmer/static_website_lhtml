@@ -2,7 +2,7 @@
 
 The layout is measured in headless Chrome (assets/layout_measure.js,
 requires `npm install`), then analysed here. For each page, the report is
-written to <config_dir>/_layout/<page dir>/:
+written to <config_dir>/.layout/pages/<relative HTML path>/:
 
     layout.md    blocks (position, size, signature), detected problems,
                  warnings, differences with the rest of the deck, density
@@ -11,7 +11,7 @@ written to <config_dir>/_layout/<page dir>/:
     overlay.png  real render with numbered block outlines
     blocks.png   one solid rectangle per block (content hidden)
 
-<config_dir>/_layout/summary.md lists all pages sorted by number of problems,
+<config_dir>/.layout/summary.md lists all pages sorted by number of problems,
 with the usual values of the deck (title position, columns, body font size,
 ...: also in deck.json), and contact_NN.png shows thumbnails of all pages. Coordinates are in CSS pixels, origin at the top-left corner of
 the page (1920x1080 for slides).
@@ -26,7 +26,7 @@ Options (configure.yaml):
         height: 1080
         images: true         # write overlay.png / blocks.png
         threshold: 4         # minimal overlap / overflow (px) reported
-        output: '_layout/'   # output directory, relative to the config directory
+        output: '.layout/'   # output directory, relative to the config directory
         max_words: 80        # DENSE above this number of words per slide
         min_font: 20         # SMALL FONT below this font size (px), slides only
         contact_columns: 4   # thumbnails per row / rows per contact sheet
@@ -40,10 +40,11 @@ import subprocess
 import tempfile
 
 from lib.structure import load_structure
+from lib.configuration import layout_output_directory
 
 
 DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
-            'threshold': 4, 'output': '_layout/', 'max_words': 80, 'min_font': 20,
+            'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
             'contact_columns': 4, 'contact_rows': 4}
 
 FLOW_POSITIONS = ('static', 'relative', 'sticky')
@@ -773,6 +774,8 @@ def _run_node(script, arguments):
                            'in the static_website_lhtml directory')
     if 'Cannot find module' in proc.stderr:
         raise RuntimeError('puppeteer not found: run `npm install` in the static_website_lhtml directory')
+    if proc.returncode:
+        raise RuntimeError(f'{script} failed ({proc.returncode}): {proc.stderr.strip()}')
     return proc
 
 
@@ -801,16 +804,19 @@ def post_process(meta):
     options = _options(meta)
     log = meta['log']
     site_dir = meta['site_directory']
-    output_dir = os.path.join(meta.get('config_directory', ''), options['output'])
+    output_dir = str(layout_output_directory(meta))
     structure = load_structure(site_dir)
 
     pages = []
     for entry in structure:
-        html = site_dir + entry['dir'] + entry['filename']
+        relative = entry['dir'] + entry['filename']
+        if os.path.isabs(relative) or '..' in relative.replace('\\', '/').split('/'):
+            raise ValueError(f'Invalid page path in layout structure: {relative}')
+        html = site_dir + relative
         if os.path.isfile(html):
             pages.append({'html': os.path.abspath(html),
-                          'out': os.path.abspath(os.path.join(output_dir, entry['dir'])),
-                          'name': entry['dir'].rstrip('/') or entry['filename'],
+                          'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
+                          'name': entry['dir'] + entry['filename'],
                           'source': meta['source_directory'] + entry['dir']
                                     + entry['filename'].replace('.html', '.html.j2')})
 

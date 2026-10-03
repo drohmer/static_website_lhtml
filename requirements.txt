@@ -1,3 +1,4 @@
+-c requirements-lock.txt
 lhtml-markup
 Jinja2
 jinja-markdown
