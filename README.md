@@ -35,12 +35,13 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d] [-c] [-l]
+python generate.py [-i config.yaml] [-d] [-c] [-l] [--layout]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
   -c, --clean          Clean output directories and exit
   -l, --light          Light mode: only convert .html.j2 files (skip asset copy)
+  --layout             Write a layout report of each page in _layout/ (see below)
 ```
 
 ## Configuration
@@ -143,7 +144,58 @@ Each hook receives the `meta` dict with the full configuration and runtime state
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
 | `cache_video.py` | pre | Converts and caches videos in multiple codecs |
+| `layout_report.py` | post | Layout report of each page (`--layout`, requires `npm install`) |
 | `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation; put it last) |
+
+## Layout Report (LLM-assisted slide layout)
+
+`--layout` measures the layout of every generated page in headless Chrome and
+writes a text report that an LLM (or any script) can read to find and fix
+layout problems. It requires `npm install` (see Installation).
+
+```bash
+python generate.py --layout          # full generation + layout report
+python generate.py -l --layout       # after editing a slide: light mode + report
+```
+
+Output in `_layout/` (next to the configuration file):
+
+- `summary.md`: all pages sorted by number of problems, with links to the page reports
+- `<page>/layout.md`: one row per top-level block (number, kind, position and
+  size of what is actually drawn, margins, CSS position, font size, signature),
+  then the problems and the vertical gaps between blocks
+- `<page>/layout.json`: the same data, for scripts
+- `<page>/overlay.png`: the real render with a numbered outline per block
+- `<page>/blocks.png`: one solid rectangle per block, content hidden
+
+Coordinates are CSS pixels, origin at the top-left corner of the page
+(1920×1080 for slides); the usable area is the inside of the slide frame.
+Detected problems: `COLLISION` (two blocks overlapping, with the overlap
+rectangle), `OUT OF AREA` (block beyond the frame), `CLIPPED` (content cut by
+`overflow`), `UPSCALED IMAGE` (image displayed larger than its native size).
+
+A block is a top-level element of the page: title, paragraph or bare text,
+list, code block, image, video, math, or a `div::` / `::[...]` with all its
+content. Its signature (tag, inline style, beginning of the text, image names)
+is enough to find it in `src/.../index.html.j2`.
+
+Typical loop with an LLM (e.g. Claude Code): "read `_layout/summary.md`, fix
+the collisions and overflows by editing the sources (positions, widths, font
+sizes), run `python generate.py -l --layout` and check the new report".
+
+Options (`configure.yaml`):
+
+```yaml
+plugin_arg:
+  layout_report:
+    root: 'body'                # content root ('#main-content-centered' for webpage-frame)
+    exclude: 'nav, footer'      # children of the root that are not content
+    width: 1920                 # viewport size
+    height: 1080
+    images: true                # write overlay.png / blocks.png
+    threshold: 4                # minimal overlap / overflow reported (px)
+    output: '_layout/'
+```
 
 ## Error Reporting
 
