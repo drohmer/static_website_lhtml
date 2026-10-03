@@ -85,8 +85,28 @@ def load_config(meta, log):
         meta['cache_video_directory'] = config_dir + meta['cache_video_directory']
 
 
+# Directories renamed in the v2 layout: old path fragment -> new one
+RENAMED_DIRECTORIES = {'theme_templates/': 'themes/', 'src_site_example/': 'example/'}
+
+
 def validate_directories(meta, log):
-    """Check that required directories exist."""
+    """Check that required directories exist.
+
+    Paths using the directory names of the previous layout
+    (theme_templates/, src_site_example/) are redirected to the new ones
+    with a warning, so that existing configure.yaml files keep working.
+    """
+    for key in ('source_directory', 'theme'):
+        path = meta[key]
+        if os.path.isdir(path):
+            continue
+        for old, new in RENAMED_DIRECTORIES.items():
+            if old in path and os.path.isdir(path.replace(old, new)):
+                meta[key] = path.replace(old, new)
+                log.warning(f"'{old}' was renamed '{new}': using '{meta[key]}' "
+                            f"(update '{key}' in your configuration file)")
+                break
+
     for key, label in [('source_directory', 'Source'), ('theme', 'Theme')]:
         if not os.path.isdir(meta[key]):
             log.error(f"{label} directory not found: '{meta[key]}'")
@@ -150,12 +170,13 @@ def prepare_data(meta, log):
 
 
 def render_jinja(meta, template_files, sitemap, log):
-    """Render all Jinja2 templates."""
+    """Render all Jinja2 templates. Returns the list of templates that failed."""
     dir_site = meta['site_directory']
     file_loader = FileSystemLoader(dir_site)
     env = Environment(loader=file_loader, extensions=['jinja_markdown.MarkdownExtension'])
 
     log.keyvalue('Found', f'{len(template_files)} template files')
+    failed = []
     for k, element in enumerate(template_files):
         template_local = element['path'].filepath_local()
         path_to_root = element['path'].path_to_root()
@@ -171,25 +192,37 @@ def render_jinja(meta, template_files, sitemap, log):
             output_html = template.render(**meta['keywords'], pathToRoot=path_to_root, pageID=k)
         except Exception as e:
             log.error(f'Jinja2 error in {template_local}: {e}')
+            failed.append(element)
+            # Do not leave the output of a previous generation for this page
+            stale_output = element['path'].filepath().replace('.html.j2', '.html')
+            if os.path.isfile(stale_output):
+                os.remove(stale_output)
             continue
 
         output_path = element['path'].filepath().replace('.html.j2', '.html')
         with open(output_path, 'w') as fid:
             fid.write(output_html)
 
+    return failed
+
 
 def render_lhtml(meta, template_files, log):
-    """Run LHTML conversion on all rendered templates, with optional HTML tidy."""
+    """Run LHTML conversion on all rendered templates, with optional HTML tidy.
+    Returns the list of templates that failed."""
     tidy_options = {'doctype': 'html5', 'show-warnings': 'no'}
     python_minor = int(platform.python_version_tuple()[1])
     if python_minor >= 8:
         tidy_options['warn-proprietary-attributes'] = 'no'
 
     tidylib.BASE_OPTIONS = {}
+    failed = []
 
     for element in template_files:
         html_path = element['path'].filepath().replace('.html.j2', '.html')
 
+        if not os.path.isfile(html_path):
+            # Jinja2 rendering failed for this page (error already reported)
+            continue
         with open(html_path, 'r') as fid:
             input_html = fid.read()
 
@@ -204,6 +237,7 @@ def render_lhtml(meta, template_files, log):
                 line = input_html[:e.source_pos].count('\n') + 1
                 msg = f'line {line}: {msg}'
             log.error(f'{html_path}: {msg}')
+            failed.append(element)
             continue
 
         if meta['use_tidy']:
@@ -216,9 +250,11 @@ def render_lhtml(meta, template_files, log):
             fid.write(output_html)
 
         if not meta['debug']:
-            j2_path = html_path.replace('.html', '.html.j2')
+            j2_path = element['path'].filepath()
             if os.path.isfile(j2_path):
                 os.remove(j2_path)
+
+    return failed
 
 
 def compile_sass(meta, log):
@@ -301,7 +337,9 @@ def main():
     # Jinja2 rendering
     log.title('Convert HTML', pre='\n')
     log.tic()
-    render_jinja(meta, template_files, sitemap, log)
+    failed = render_jinja(meta, template_files, sitemap, log)
+    if failed:
+        log.error(f'{len(failed)} page(s) not generated because of Jinja2 errors')
 
     # Mid-process plugins
     log.title('Mid-process', pre='\n')
@@ -310,7 +348,7 @@ def main():
     log.ok_elapsed()
 
     # LHTML conversion
-    render_lhtml(meta, template_files, log)
+    failed += render_lhtml(meta, template_files, log)
     log.ok_elapsed()
 
     # SASS compilation
@@ -324,6 +362,9 @@ def main():
     log.ok_elapsed()
 
     print()
+    if failed:
+        log.error(f'{len(failed)} page(s) failed (see errors above)')
+        sys.exit(1)
 
 
 if __name__ == '__main__':

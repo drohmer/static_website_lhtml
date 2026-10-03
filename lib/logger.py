@@ -38,4 +38,7 @@ class Logger:
     def error(self, msg):
         self.display(f'[red] [Error] {msg}', debug_level=0, pre='\n')
 
+    def warning(self, msg):
+        self.display(f'[yellow] [Warning] {msg}', debug_level=0, pre='\n')
+
     

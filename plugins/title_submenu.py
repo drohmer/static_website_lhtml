@@ -5,15 +5,26 @@ import json
 from lib.structure import load_structure
 
 
+TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
+
+
 def generate_new_id(text, id_storage):
+    """Return a unique id for a heading text.
+
+    Same scheme as before the refactoring, so that existing links keep
+    working: lower case, spaces and '-' become '_', ',.:()' are removed,
+    truncated to N_max characters. Characters that are unsafe in an HTML
+    attribute or a URL fragment (< > " & ` and whitespace) are removed too.
+    A repeated id gets the suffix _id2, _id3, ...
+    """
     N_max = 20
-    text_id = re.sub(r'[-,.:() ]', '_', text.lower()).replace('__', '_')
-    if len(text_id) > N_max:
-        text_id = text_id[:N_max]
+    text_id = text.lower().replace(' ', '_').replace('-', '_')
+    text_id = re.sub(r'[,.:()<>"&`\s]', '', text_id)
+    text_id = text_id[:N_max]
 
     if text_id in id_storage:
-        text_id += '_id' + str(id_storage[text_id] + 1)
-
+        id_storage[text_id] += 1
+        return text_id + '_id' + str(id_storage[text_id])
     id_storage[text_id] = 1
     return text_id
 
@@ -32,9 +43,7 @@ def pre_process(meta):
 
         title_id_summary[entry['dir']] = []
 
-        r_title = r'^(=+)(?:\((.*?)\))? (.*?)$'
-        regex_title = re.compile(r_title, re.MULTILINE)
-        for it in regex_title.finditer(file_content):
+        def add_id(it, dir_entry=entry['dir']):
             n = str(len(it.group(1)))
             class_id = (it.group(2) or '').strip()
             title = it.group(3)
@@ -43,10 +52,12 @@ def pre_process(meta):
             if not class_id:
                 class_id = '#' + generated_id
 
-            new_link = '=' * int(n) + '(' + class_id + ') ' + title
-            file_content = file_content.replace(it.group(0), new_link)
+            title_id_summary[dir_entry].append({'level': n, 'title': title, 'id': class_id[1:]})
+            # Each heading is replaced at its own position (identical
+            # headings get distinct ids)
+            return '=' * int(n) + '(' + class_id + ') ' + title
 
-            title_id_summary[entry['dir']].append({'level': n, 'title': title, 'id': class_id[1:]})
+        file_content = TITLE_REGEX.sub(add_id, file_content)
 
         with open(file_path, 'w') as fid:
             fid.write(file_content)
