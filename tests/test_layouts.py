@@ -23,6 +23,10 @@ class LayoutDesignTests(unittest.TestCase):
         reference = design.design_markdown(SLIDES)
         self.assertIn('## Layouts', reference)
         self.assertIn("{% set layout = 'name' %}", reference)
+        css = design.design_css(SLIDES)
+        self.assertIn('anchor(--layout-intro bottom, var(--layout-top))', css)     # intro:: in side
+        self.assertIn('.media.here', css)
+        self.assertTrue({'intro', 'placeholder', 'large', 'media'} <= set(SLIDES['macros']))
 
     def test_invalid_layouts(self):
         for layouts in ({'side': 'x'}, {'side': {'css': '', 'width': 1}}, {'a b': {}}):

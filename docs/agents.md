@@ -96,6 +96,11 @@ credit:: Image: Wikimedia Commons ::
 - `(.fill)`: enlarge small figures.
 - `(.top)`, `(.middle)`, `(.bottom)`: vertical position.
 - `(.auto)` in `stack`: take only the height of the figures.
+- `(.here)` in `side`: in the right column, facing the text that follows it
+  (write it just before that text); several figures can face several parts.
+
+In `side`, `intro:: ... ::` holds text on the whole width above the columns;
+the figures start below it.
 
 Put a figure and its caption in a `col::` inside a row. A `placeholder:: text ::`
 stands for a figure that does not exist yet.

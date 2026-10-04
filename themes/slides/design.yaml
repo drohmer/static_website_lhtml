@@ -180,7 +180,9 @@ macros:
       Its children are stacked (a figure, then its credit::, centered); `media::(.row)` puts
       them side by side (a row of figures of the same height; `(.row .even)`: equal widths; a
       figure and its caption in a `col::`). A `media::` or `cols::` inside it shares its space.
-      `media::(.top)`, `(.middle)`, `(.bottom)`: vertical position in its area.
+      `media::(.top)`, `(.middle)`, `(.bottom)`: vertical position in its area. In layout side,
+      `media::(.here)` is placed in the right column at its place in the text (facing the
+      text that follows it), instead of filling the column.
     css: |
       .media { display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: var(--space-s); min-width: 0; min-height: 0; }
@@ -197,6 +199,7 @@ macros:
       .media.row > img, .media.row > video, .media.row > .col { height: 100%; width: auto; }
       .media.row > .col > img, .media.row > .col > video { flex: 1 1 0; height: auto; }
       .media.row.even > * { flex: 1 1 0; width: 0; }
+      .media.row.even > .col > img, .media.row.even > .col > video { flex: 0 1 auto; width: 100%; height: auto; }
       .media > iframe, .media > .demo { flex: 1 1 0; width: 100%; height: auto; min-height: 0; }
       .media > .col { display: flex; flex-direction: column; align-items: center; min-height: 0;
                       max-height: 100%; gap: var(--space-s); }
@@ -213,6 +216,12 @@ macros:
       `::[font-size:120%]` (110-130 %).
     css: |
       .large { font-size: var(--font-large); }
+
+  intro:
+    class: intro
+    doc: |
+      Text above the columns of layout side, on the whole width (a first sentence, a
+      definition): `intro::` ... `::`. The figures of media:: start below the last intro::.
 
   placeholder:
     class: placeholder
@@ -250,7 +259,9 @@ layouts:
       Text on the left, figures on the right (36 % of the slides, also code + figure): the
       blocks of the page are the text, and `media::` holds the figures, placed in the right
       column below the title and fitted in it (at its top; `media::(.middle)` or `(.bottom)`
-      to place them lower). `side-s` and `side-l` give a narrower or wider column. Replaces
+      to place them lower). `side-s` and `side-l` give a narrower or wider column. Text on the
+      whole width above the columns: `intro::` (the column starts below it). A figure facing
+      a given part of the text: `media::(.here)` written just before that text. Replaces
       `div::[position:fixed; top:...; left:...]` and aside::.
     css: |
       body.layout-side { --layout-width: var(--layout-side); }
@@ -259,10 +270,19 @@ layouts:
       /* the text column: the frame keeps its size (main.css: width 1920 - 3 x 30 - 80 px, padding 30 px) */
       body.layout-side { padding-right: calc(30px + var(--layout-width) + var(--layout-gap));
                          width: calc(1920px - 30px * 3 - 80px - var(--layout-width) - var(--layout-gap)); }
-      body.layout-side > h1 { margin-right: calc(-1 * (var(--layout-width) + var(--layout-gap))); }
-      body.layout-side > .media { position: absolute; top: var(--layout-top); right: var(--layout-right);
-                                  bottom: var(--layout-bottom); width: var(--layout-width); }
+      body.layout-side > h1, body.layout-side > .intro {
+          margin-right: calc(-1 * (var(--layout-width) + var(--layout-gap))); }
+      body.layout-side > .intro { anchor-name: --layout-intro; }
+      body.layout-side > .media:not(.here) { position: absolute; right: var(--layout-right);
+          top: var(--layout-top); top: anchor(--layout-intro bottom, var(--layout-top));
+          bottom: var(--layout-bottom); width: var(--layout-width); }
       body.layout-side > .media:not(.middle):not(.bottom) { justify-content: flex-start; }
+      /* media::(.here): in the right column, at its place in the text */
+      body.layout-side > .media.here { float: right; clear: right; width: var(--layout-width);
+          margin-right: calc(-1 * (var(--layout-width) + var(--layout-gap))); }
+      body.layout-side > .media.here > img, body.layout-side > .media.here > video {
+          flex: none; height: auto; max-height: none; }
+      body.layout-side > .media.here > img[src$=".svg"] { width: 100%; }
 
   stack:
     doc: |

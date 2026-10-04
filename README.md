@@ -366,8 +366,9 @@ Macros of the slide themes: `gap::` (`gap::s`, `gap::l`, `gap::xl`),
 (figure in the right column, `aside::[top:400px;]`), `cols::` / `col::`
 (`.even`, `.spread`, `.middle`; `col::(.fixed)` keeps its width), `box::`
 (`.good`, `.bad`, `.warn`, `.key`), `section::`, `demo::url` (iframe),
-`placeholder:: text ::` (a planned figure), `media::` (the figures of a
-layout: `.row`, `.even`, `.fill`, `.top`/`.middle`/`.bottom`, `.auto`).
+`placeholder:: text ::` (a planned figure), `intro::` (text above the columns of
+`side`), `media::` (the figures of a layout: `.row`, `.even`, `.fill`,
+`.top`/`.middle`/`.bottom`, `.auto`, `.here`).
 Brackets still work for exceptions; the classes, style and attributes of
 the source are added to those of the macro.
 
