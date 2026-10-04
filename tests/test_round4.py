@@ -43,7 +43,7 @@ class OnlyTests(DeckProjectsTests):
     def test_only_unknown_pointer(self):
         self.build(self.DECK)
         output = self.build(self.DECK, '--only', '01_b', ok=False)
-        self.assertIn("did you mean '01_a'", output)
+        self.assertIn("did you mean '01_a'", ' '.join(output.split()))
 
     def test_only_keeps_the_previous_version_of_a_failed_page(self):
         self.build(self.DECK)
@@ -129,7 +129,7 @@ class ReservedConfigTests(unittest.TestCase):
             result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(root / 'c.yaml')],
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('reserved key(s) template', result.stdout + result.stderr)
+            self.assertIn('reserved key(s) template', ' '.join((result.stdout + result.stderr).split()))
 
 
 if __name__ == '__main__':

@@ -220,7 +220,7 @@ class DeckProjectsTests(unittest.TestCase):
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         if ok:
             return yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
-        return result.stdout + result.stderr
+        return ' '.join((result.stdout + result.stderr).split())     # independent of the terminal width
 
     DECK = {'sources': {'course': '../course/src'},
             'slides': [{'path': '00_plan', 'params': {'current': 1}}, '01_a', 'course:05_b/01_c',
@@ -353,7 +353,7 @@ class DeckBuildRegressionTests(DeckProjectsTests):
         (self.root / 'talk/deck.yaml').write_text("slides: ['!*']\n")
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config)],
                                 capture_output=True, text=True)
-        self.assertIn('no page selected', result.stdout + result.stderr)
+        self.assertIn('no page selected', ' '.join((result.stdout + result.stderr).split()))
 
 
 class DeckRound2Tests(unittest.TestCase):
@@ -436,4 +436,4 @@ class DeckBuildRound2Tests(DeckProjectsTests):
         (self.root / 'talk/deck.yaml').write_text("sources: {x: ../nowhere}\nslides: []\n")
         result = self.run_generator('--check-config')
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('directory not found', result.stdout + result.stderr)
+        self.assertIn('directory not found', ' '.join((result.stdout + result.stderr).split()))
