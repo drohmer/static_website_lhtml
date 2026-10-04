@@ -675,12 +675,14 @@ def page_markdown(name, source, layout):
              '(text lines, images reduced to their drawn shape, backgrounds, borders). '
              'Overlaps are computed on the ink rectangles themselves (layout.json: "ink"), '
              'so the empty corners of a block do not count. Spacers are empty blocks.', '',
-             '| # | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
-             '|---|------|------|-------|-------------------|----------|------|-----------|']
+             'Line: line of the source where the block starts (- for text directly in the page).', '',
+             '| # | line | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
+             '|---|------|------|------|-------|-------------------|----------|------|-----------|']
     for b in layout['blocks']:
         x0, y0, x1, y1 = _rect(b)
-        kind = b['kind'] + (' (overlay)' if b.get('intentional') else '')
-        lines.append(f"| {b['id']} | {kind} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
+        kind = b['kind'] + (' (overlay)' if b.get('intentional') else '') \
+            + (f" in #{b['inside']}" if b.get('inside') else '')
+        lines.append(f"| {b['id']} | {b.get('line') or '-'} | {kind} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
                      f"{' '.join(str(m) for m in b['margin'])} | {b['position']} | {b['font_size']} | "
                      f"{_md_cell(b['signature'])} |")
 
@@ -847,35 +849,46 @@ def layout_changes(old, new, threshold=4):
                          ('values written by hand', lambda x: len(x.get('lint', [])))):
         if count(a) != count(b):
             lines.append(f'- {label}: {count(a)} -> {count(b)}')
-    remaining = {}
-    for block in old.get('blocks', []):
-        remaining.setdefault(block['signature'], []).append(block)
-    for block in new.get('blocks', []):
-        same = remaining.get(block['signature'])
-        if not same:
-            lines.append(f"- new block #{block['id']}: {_md_cell(block['signature'])}")
-            continue
-        before = same.pop(0)
+    old_blocks, new_blocks = list(old.get('blocks', [])), list(new.get('blocks', []))
+    pairs = []
+    # pairs of blocks: same signature, then (text or style changed) same line of
+    # the source, or same tag and kind, in order
+    for key in (lambda b: b['signature'],
+                lambda b: ('line', b['line']) if b.get('line') else None,
+                lambda b: (b['kind'], b['signature'].split('[')[0].split(' ')[0], b.get('inside') is not None)):
+        for block in list(new_blocks):
+            k = key(block)
+            match = next((o for o in old_blocks if k is not None and key(o) == k), None)
+            if match is not None:
+                pairs.append((match, block, match['signature'] != block['signature']))
+                old_blocks.remove(match)
+                new_blocks.remove(block)
+    for before, block, edited in sorted(pairs, key=lambda p: p[1]['id']):
         r0, r1 = _rect(before), _rect(block)
         dx, dy = r1[0] - r0[0], r1[1] - r0[1]
         size0, size1 = (r0[2] - r0[0], r0[3] - r0[1]), (r1[2] - r1[0], r1[3] - r1[1])
         moved = abs(dx) >= threshold or abs(dy) >= threshold
         resized = abs(size1[0] - size0[0]) >= threshold or abs(size1[1] - size0[1]) >= threshold
-        if moved or resized:
+        if moved or resized or edited:
             change = [f'moved by ({dx:+d}, {dy:+d}) px'] if moved else []
             if resized:
                 change.append(f'{size0[0]}×{size0[1]} -> {size1[0]}×{size1[1]} px')
-            lines.append(f"- #{block['id']} {', '.join(change)}: {_md_cell(block['signature'])[:80]}")
-    for blocks in remaining.values():
-        lines += [f"- removed block #{blk['id']}: {_md_cell(blk['signature'])[:80]}" for blk in blocks]
+            if edited:
+                change.append('text or style changed')
+            where = f" (line {block['line']})" if block.get('line') else ''
+            lines.append(f"- #{block['id']}{where} {', '.join(change)}: {_md_cell(block['signature'])[:80]}")
+    for block in new_blocks:
+        where = f" (line {block['line']})" if block.get('line') else ''
+        lines.append(f"- new block #{block['id']}{where}: {_md_cell(block['signature'])[:80]}")
+    lines += [f"- removed block #{blk['id']}: {_md_cell(blk['signature'])[:80]}" for blk in old_blocks]
     return lines
 
 
 def changes_markdown(changes, measured):
     """changes: [(page name, lines)] of the pages that changed."""
     out = ['# Changes since the previous report', '',
-           f'{measured} page(s) measured, {len(changes)} changed. Blocks are matched by signature; '
-           'a block whose text or style changed appears as removed and new.', '']
+           f'{measured} page(s) measured, {len(changes)} changed. Blocks are matched by signature, '
+           'then by line of the source, then by tag and kind.', '']
     for name, lines in changes:
         out += [f'## {name}', ''] + lines + ['']
     return '\n'.join(out) + '\n'

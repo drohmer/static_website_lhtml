@@ -3,6 +3,7 @@ import re
 import json
 from collections import Counter
 
+from lib.source_map import strip as strip_markers
 from lib.structure import built_pages, structure, template_path
 
 
@@ -65,11 +66,11 @@ def pre_process(meta):
             class_id = (it.group(2) or '').strip()
             title = it.group(3)
 
-            generated_id = generate_new_id(title, id_storage) + '_l' + str(n)
+            generated_id = generate_new_id(strip_markers(title), id_storage) + '_l' + str(n)
             if not class_id:
                 class_id = '#' + generated_id
 
-            title_id_summary[page].append({'level': n, 'title': title, 'id': class_id[1:]})
+            title_id_summary[page].append({'level': n, 'title': strip_markers(title), 'id': class_id[1:]})
             # Each heading is replaced at its own position (identical
             # headings get distinct ids)
             return '=' * int(n) + '(' + class_id + ') ' + title

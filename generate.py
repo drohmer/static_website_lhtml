@@ -21,6 +21,7 @@ from lib import design
 from lib import filesystem
 from lib import generator_tool
 from lib import lint
+from lib import source_map
 from lib import logger
 from lib import pages
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
@@ -240,7 +241,12 @@ def prepare_data(meta, selected, built, log):
             if os.path.isfile(dir_site + page.site_html):
                 with open(dir_site + page.site_html, 'rb') as fid:
                     meta['previous_pages'][page.site_html] = fid.read()
-    warnings += pages.place(built, dir_site, project_assets=only)
+    transform = None
+    if meta.get('source_map'):
+        tags = source_map.value_tags(design.lhtml_macros(design.load_design(
+            meta['theme'], meta.get('design'), meta['config_directory'])))
+        transform = lambda text: source_map.add_markers(text, tags)
+    warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
     for warning in warnings:
         log.warning(warning)
 
@@ -379,6 +385,8 @@ def render_lhtml(meta, selected, log):
 
         try:
             output_html = lhtml.run(input_html, meta)
+            if meta.get('source_map'):
+                output_html = source_map.apply(output_html, os.path.relpath(page.src, meta['config_directory']))
         except Exception as e:
             # Enrich error with line number if position is available
             msg = str(e)
@@ -464,6 +472,8 @@ def build_once(args):
     context = BuildContext(config, config_file, args, log)
     meta = context.meta
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
+    # data-src="file:line" on the blocks (lib/source_map.py) in the builds for development
+    meta['source_map'] = bool(args.layout or args.serve or args.watch)
     if args.layout:
         add_layout_plugin(meta)
 

@@ -105,7 +105,7 @@ def test_markdown_report_and_summary():
     layout = {'area': AREA, 'blocks': [block(1, 0, 0, 100, 100), block(2, 50, 50, 100, 100, position='fixed')]}
     layout_report.analyse(layout)
     md = layout_report.page_markdown('content/a', 'src/content/a/index.html.j2', layout)
-    assert '| 2 | div | 50, 50 | 100 × 100 |' in md
+    assert '| 2 | - | div | 50, 50 | 100 × 100 |' in md
     assert 'COLLISION #1 × #2' in md
     summary = layout_report.summary_markdown([('content/a', 'content/a/layout.md', layout['analysis'])])
     assert '| content/a | 1 | 0 | 1 | 0 | 0 | 0 | 0 |' in summary

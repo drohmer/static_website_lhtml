@@ -123,8 +123,11 @@ stands for a figure that does not exist yet.
 
 ## Reading the layout report
 
-`layout.md` gives one row per top-level block: number, kind, position and
-size of what is drawn, font, and a signature to find the block in the source.
+`layout.md` gives one row per top-level block: number, the line of the source
+where it starts, kind, position and size of what is drawn, font, and a
+signature. An element in `position: fixed`/`absolute` inside a block is a
+block of its own (`in #n`): its overlaps with the text of its block are
+reported.
 
 **Problems** must be fixed:
 - `HIDDEN TEXT`: text covered by another block.

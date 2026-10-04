@@ -184,7 +184,21 @@ function extractBlocks(rootSelector, excludeSelector) {
     // Ink of an element: text lines, media (image shapes) and descendants
     // painting a background or a border, as typed rectangles. Invisible
     // layout boxes (full-width blocks, struts) are ignored.
-    function inkRects(el, fontSize, stats) {
+    // Elements placed out of the flow (position fixed or absolute) inside a
+    // block are measured as blocks of their own, so that their overlaps with
+    // the rest of the block are found; `skip`: those of the block.
+    const inside = (node, skip) => skip.some(s => s.contains(node));
+    function positionedDescendants(el) {
+        const found = [];
+        for (const d of el.querySelectorAll('*')) {
+            if (found.some(f => f.contains(d)) || d.closest('.katex')) continue;     // KaTeX: internal layout
+            const cs = getComputedStyle(d);
+            if ((cs.position === 'fixed' || cs.position === 'absolute') && isVisible(d)) found.push(d);
+        }
+        return found;
+    }
+
+    function inkRects(el, fontSize, stats, skip = []) {
         const rects = [];
         const own = (e) => {
             if (e.tagName === 'IMG') rects.push(...imageShape(e).cells);
@@ -196,7 +210,7 @@ function extractBlocks(rootSelector, excludeSelector) {
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         let node, count = 0;
         while ((node = walker.nextNode()) && count < 5000) {
-            if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
+            if (!node.textContent.trim() || isHiddenText(node.parentElement) || inside(node, skip)) continue;
             if (stats) countText(node, stats);
             range.selectNodeContents(node);
             for (const r of range.getClientRects()) rects.push(toRect(r, 'text'));
@@ -204,6 +218,7 @@ function extractBlocks(rootSelector, excludeSelector) {
         }
         const descendants = el.getElementsByTagName('*');
         for (let i = 0; i < descendants.length && i < 3000; i++) {
+            if (inside(descendants[i], skip)) continue;
             const cs = getComputedStyle(descendants[i]);
             if (cs.display === 'none' || cs.visibility === 'hidden') continue;
             own(descendants[i]);
@@ -276,8 +291,9 @@ function extractBlocks(rootSelector, excludeSelector) {
     const sourceOf = (el) => el.dataset.layoutSrc || el.getAttribute('src')
         || (el.querySelector && el.querySelector('source') ? el.querySelector('source').getAttribute('src') : '') || '';
 
-    function mediaInfo(el) {
-        const items = ['IMG', 'VIDEO'].includes(el.tagName) ? [el] : [...el.querySelectorAll('img, video')];
+    function mediaInfo(el, skip = []) {
+        const items = (['IMG', 'VIDEO'].includes(el.tagName) ? [el] : [...el.querySelectorAll('img, video')])
+            .filter(m => !inside(m, skip));
         return items.slice(0, 6).map(img => {
             const box = toRect(img.getBoundingClientRect());
             const src = sourceOf(img);
@@ -358,15 +374,15 @@ function extractBlocks(rootSelector, excludeSelector) {
         return rows;
     }
 
-    function describe(el) {
+    function describe(el, skip = []) {
         const cs = getComputedStyle(el);
         const box = toRect(el.getBoundingClientRect());
         delete box.t;
         const fontSize = parseFloat(cs.fontSize) || 16;
         const stats = newStats();
-        const ink = inkRects(el, fontSize, stats);
+        const ink = inkRects(el, fontSize, stats, skip);
         const visual = unionRects(ink);
-        const media = mediaInfo(el);
+        const media = mediaInfo(el, skip);
         elementStats(el, stats);
         let signature = el.tagName.toLowerCase();
         if (el.className && typeof el.className === 'string') signature += '.' + el.className.trim().split(/\s+/).join('.');
@@ -374,9 +390,12 @@ function extractBlocks(rootSelector, excludeSelector) {
         const text = excerpt(el.innerText);
         if (text) signature += ` "${text}"`;
         if (media.length) signature += ' ' + media.map(m => m.src).join(', ');
+        // line of the source (data-src="file:line" of the builds for development)
+        const source = el.getAttribute('data-src');
         return {
             kind: visual ? kindOf(el) : 'spacer',
             signature,
+            line: source ? parseInt(source.split(':').pop()) || null : null,
             box,
             visual,
             ink,
@@ -435,13 +454,21 @@ function extractBlocks(rootSelector, excludeSelector) {
         if (isInline(node)) { run.push(node); continue; }
         flushRun();
         if (isVisible(node)) {
-            const block = describe(node);
+            const positioned = node.matches('.overlay') ? [] : positionedDescendants(node);
+            const block = describe(node, positioned);
             blocks.push(block);
             blockOf.set(node, block);
+            for (const child of positioned) {
+                const nested = describe(child);
+                nested.inside = block;          // replaced by its number below
+                blocks.push(nested);
+                blockOf.set(child, nested);
+            }
         }
     }
     flushRun();
     blocks.forEach((b, i) => { b.id = i + 1; });
+    blocks.forEach(b => { if (b.inside) b.inside = b.inside.id; });
 
     // Hidden text: along each line of text, find the topmost element that
     // actually paints at that point (opaque image pixel, background,

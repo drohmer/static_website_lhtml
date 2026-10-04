@@ -612,8 +612,18 @@ a figure): add the class `overlay` to one of the blocks, e.g.
 
 A block is a top-level element of the page: title, paragraph or bare text,
 list, code block, image, video, math, or a `div::` / `::[...]` with all its
-content. Its signature (tag, inline style, beginning of the text, image names)
-is enough to find it in `src/.../index.html.j2`.
+content. An element placed out of the flow (`position: fixed` or `absolute`)
+inside a block is measured as a block of its own (`in #n` in the table), so
+that it collides with the text of its block. Each block gives the line of the
+source where it starts (column `line`, from the source map below), and its
+signature (tag, inline style, beginning of the text, image names).
+
+**Source map.** In the builds for development (`--layout`, `--serve`,
+`--watch`), the top-level elements of the pages carry
+`data-src="<file>:<line>"`: the line of the template where they start. The
+generator marks the lines of the templates with invisible characters before
+Jinja and LHTML, then moves them to the attribute (`lib/source_map.py`); the
+HTML is otherwise the same as in a normal build.
 
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources
