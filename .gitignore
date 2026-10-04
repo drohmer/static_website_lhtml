@@ -10,3 +10,4 @@ _layout/
 .site-backup-*/
 .pytest_cache/
 .venv/
+.feedback/

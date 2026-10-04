@@ -64,6 +64,14 @@ python generate.py --serve --watch
 
 The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
 
+**Comments on the render.** With `--serve`, the pages have a button 💬 (or
+the key `c`): click a block, write a comment, save. The comments are kept next
+to the configuration in `.feedback/comments.md` (and `comments.jsonl`), with
+the page and the file and line of the block (source map), for an agent or the
+author to treat; open comments are shown on the pages as numbered pins (click:
+read, "Done"). Only the script of the served pages can write them (custom
+header and JSON, refused to other sites).
+
 Builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
 
 ### Generating some pages (`--only`)
@@ -169,7 +177,9 @@ static_website_lhtml/
   lib/
     build_output.py        # Build in a staging directory, published only on success
     configuration.py       # Validated Config and BuildContext plugin adapter
-    development.py         # --serve / --watch
+    development.py         # --serve / --watch, server of the comments
+    feedback.py, feedback.js  # Comments on the render (--serve)
+    source_map.py          # data-src="file:line" on the blocks (builds for development)
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)

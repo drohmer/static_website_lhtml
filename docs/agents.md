@@ -161,6 +161,14 @@ there is a real change.
 
 An intended overlap (an inset over a figure) takes the class `overlay`.
 
+## Comments of the author
+
+With `generate.py --serve`, the author can click a block of a page and write a
+comment. They are in `.feedback/comments.md` (next to `configure.yaml`), each
+with its page and the file and line of the block. Treat the open ones (the
+edit, then `--only <slide> --layout`), then set their `"status"` to `"done"`
+in `.feedback/comments.jsonl`, and say what you did for each.
+
 ## When to stop
 
 A slide is done when:

@@ -18,6 +18,7 @@ import traceback
 
 from lib import deck
 from lib import design
+from lib import feedback
 from lib import filesystem
 from lib import generator_tool
 from lib import lint
@@ -387,6 +388,8 @@ def render_lhtml(meta, selected, log):
             output_html = lhtml.run(input_html, meta)
             if meta.get('source_map'):
                 output_html = source_map.apply(output_html, os.path.relpath(page.src, meta['config_directory']))
+            if meta.get('feedback'):
+                output_html = feedback.add_script(output_html)
         except Exception as e:
             # Enrich error with line number if position is available
             msg = str(e)
@@ -474,6 +477,7 @@ def build_once(args):
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
     # data-src="file:line" on the blocks (lib/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
+    meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
     if args.layout:
         add_layout_plugin(meta)
 

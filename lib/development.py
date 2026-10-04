@@ -1,12 +1,15 @@
 """Local HTTP preview and polling watcher; no additional runtime dependency."""
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+import json
 import os
 import threading
 import time
 
 from lib import deck
 from lib import design
+from lib import feedback
 from lib.configuration import ConfigError, GENERATOR_DIRECTORY, load_config
 
 
@@ -20,6 +23,58 @@ def watch_paths(config, filename, deck_arg=None):
     paths += design.design_files(config.theme, config.design, filename.parent)
     paths += deck.watched_paths(deck.deck_source(deck_arg, config.deck, filename.parent), filename.parent)
     return paths
+
+
+class PreviewHandler(SimpleHTTPRequestHandler):
+    """Serves the site, and the comments on the render (lib/feedback.py) under
+    /__feedback/: the script, the comments of a page, new comments, done."""
+    feedback_directory = None
+    MAX_BODY = 100_000
+
+    def log_message(self, format, *args):        # quiet: the build log is enough
+        pass
+
+    def _send(self, status, body, content_type='application/json; charset=utf-8'):
+        data = body.encode('utf-8') if isinstance(body, str) else body
+        self.send_response(status)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        url = urlsplit(self.path)
+        if url.path == feedback.URL + 'feedback.js':
+            return self._send(200, feedback.SCRIPT.read_bytes(), 'text/javascript; charset=utf-8')
+        if url.path == feedback.URL + 'comments':
+            page = parse_qs(url.query).get('page', [None])[0]
+            comments = [c for c in feedback.load(self.feedback_directory) if page is None or c.get('page') == page]
+            return self._send(200, json.dumps(comments, ensure_ascii=False))
+        return super().do_GET()
+
+    def do_POST(self):
+        url = urlsplit(self.path)
+        # only the script of the served pages: a custom header and JSON (another
+        # site cannot send them without a CORS preflight, which is refused)
+        origin = self.headers.get('Origin')
+        if (self.headers.get('X-Feedback') != '1'
+                or not self.headers.get('Content-Type', '').startswith('application/json')
+                or (origin and urlsplit(origin).netloc != self.headers.get('Host'))):
+            return self._send(403, '{"error": "forbidden"}')
+        length = int(self.headers.get('Content-Length') or 0)
+        if length > self.MAX_BODY:
+            return self._send(413, '{"error": "too large"}')
+        try:
+            data = json.loads(self.rfile.read(length) or b'{}')
+            if url.path == feedback.URL + 'comment':
+                return self._send(200, json.dumps(feedback.add(self.feedback_directory, data), ensure_ascii=False))
+            if url.path == feedback.URL + 'resolve':
+                return self._send(200, json.dumps(feedback.resolve(self.feedback_directory, int(data.get('id'))),
+                                                  ensure_ascii=False))
+        except (ValueError, TypeError) as exc:
+            return self._send(400, json.dumps({'error': str(exc)}))
+        return self._send(404, '{"error": "not found"}')
 
 
 def snapshot(paths):
@@ -66,12 +121,15 @@ def develop(args, build):
     server = None
     thread = None
     if args.serve:
+        PreviewHandler.feedback_directory = filename.parent / feedback.DIRECTORY
+
         def handler(*handler_args, **kwargs):
-            return SimpleHTTPRequestHandler(*handler_args, directory=state['directory'], **kwargs)
+            return PreviewHandler(*handler_args, directory=state['directory'], **kwargs)
         server = ThreadingHTTPServer(('127.0.0.1', args.port), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        print(f'Serving http://127.0.0.1:{server.server_port}/ (Ctrl+C to stop)', flush=True)
+        print(f'Serving http://127.0.0.1:{server.server_port}/ (Ctrl+C to stop); comments on the '
+              f'pages (button 💬 or key c) go to {PreviewHandler.feedback_directory}/comments.md', flush=True)
     if args.watch:
         print('Watching sources, theme, plugins and configuration.', flush=True)
     try:
