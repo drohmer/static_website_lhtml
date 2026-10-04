@@ -195,7 +195,7 @@ class DeckProjectsTests(unittest.TestCase):
         head = "{% extends 'theme/template/base.html' %}\n{% block content %}\n"
         self.write('talk/src/00_plan/index.html.j2',
                    head + "= Plan\n{% for s in ['A', 'B'] %}"
-                   "{% if loop.index == current %}**{{ s }}**{% else %}muted:: {{ s }} ::{% endif %}\n"
+                   "{% if loop.index == params.current %}**{{ s }}**{% else %}muted:: {{ s }} ::{% endif %}\n"
                    "{% endfor %}\n{% endblock %}\n")
         self.write('talk/src/01_a/index.html.j2', head + "= A\n{% endblock %}\n")
         self.write('course/src/05_b/01_c/index.html.j2', head + "= C\nimg::assets/c.png\n{% endblock %}\n")

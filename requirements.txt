@@ -1,5 +1,5 @@
 -c requirements-lock.txt
-lhtml-markup
+lhtml-markup>=2.5
 Jinja2
 jinja-markdown
 pytidylib

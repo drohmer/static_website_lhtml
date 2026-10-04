@@ -84,13 +84,15 @@ def _check(design, origin):
     return design
 
 
-def _load(source, base, origin, depth=0):
-    """A design given as a YAML file path or a mapping, with what it extends."""
+def _load(source, base, origin, files, depth=0):
+    """A design given as a YAML file path or a mapping, with what it extends
+    (the files read are added to `files`)."""
     if depth > MAX_EXTENDS:
         raise DesignError(f"{origin}: too many 'extends' (loop?)")
     if isinstance(source, (str, Path)):
         origin = str(source)
         base = Path(source).parent
+        files.append(Path(source))
         source = _read_yaml(source)
     design = _check(dict(source), origin)
     parent = design.pop('extends', None)
@@ -101,19 +103,31 @@ def _load(source, base, origin, depth=0):
     path = Path(parent).expanduser()
     if not path.is_absolute():
         path = Path(base) / path
-    return merge(_load(path, path.parent, str(path), depth + 1), design)
+    return merge(_load(path, path.parent, str(path), files, depth + 1), design)
 
 
-def load_design(theme_directory, override=None, base_directory='.'):
+def load_design(theme_directory, override=None, base_directory='.', files=None):
     """Design of the theme merged with `override` (a mapping, a YAML file path,
-    or None); relative paths of a mapping are resolved from `base_directory`."""
+    or None); relative paths of a mapping are resolved from `base_directory`.
+    The design files read are added to the list `files`."""
     design = {}
+    files = [] if files is None else files
     theme_file = Path(theme_directory) / DESIGN_FILE
     if theme_file.is_file():
-        design = _load(theme_file, theme_directory, str(theme_file))
+        design = _load(theme_file, theme_directory, str(theme_file), files)
     if override:
-        design = merge(design, _load(override, base_directory, "'design' of the configuration"))
+        design = merge(design, _load(override, base_directory, "'design' of the configuration", files))
     return {section: design.get(section) or {} for section in SECTIONS}
+
+
+def design_files(theme_directory, override=None, base_directory='.'):
+    """Files a design depends on (for --watch); those read before an error."""
+    files = []
+    try:
+        load_design(theme_directory, override, base_directory, files)
+    except DesignError:
+        pass
+    return files
 
 
 def flatten_tokens(tokens, prefix=''):

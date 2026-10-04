@@ -6,6 +6,7 @@ import threading
 import time
 
 from lib import deck
+from lib import design
 from lib.configuration import ConfigError, GENERATOR_DIRECTORY, load_config
 
 
@@ -16,8 +17,7 @@ def watch_paths(config, filename, deck_arg=None):
         paths.append(candidate if candidate.is_file() else GENERATOR_DIRECTORY / plugin)
     for include in config.plugin_arg.get('pre_include', []):
         paths.append(filename.parent / include)
-    if isinstance(config.design, str):
-        paths.append(Path(config.design))
+    paths += design.design_files(config.theme, config.design, filename.parent)
     paths += deck.watched_paths(deck.deck_source(deck_arg, config.deck, filename.parent), filename.parent)
     return paths
 

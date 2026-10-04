@@ -4,7 +4,8 @@ Pipeline: copy sources → Jinja2 rendering → LHTML conversion → SASS compil
 with plugin hooks at pre/mid/post stages.
 """
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, TemplateError
+from jinja2 import meta as jinja_meta
 import tidylib
 import yaml
 import os
@@ -13,7 +14,6 @@ import argparse
 import sys
 import importlib.util
 import platform
-import re
 import traceback
 
 from lib import deck
@@ -156,11 +156,12 @@ def load_deck(meta):
 
 def select_pages(meta, loaded_deck, log, scaffold=False):
     """Pages to generate, in order: the pages of the project in file order, or
-    the pages of the deck (from the project and other projects). With
-    `scaffold`, the planned slides of the deck are created first."""
+    the pages of the deck (from the project and other projects); and the pages
+    of the project not generated (not in the deck). With `scaffold`, the
+    planned slides of the deck are created first."""
     found = pages.discover(pages.Source(None, meta['source_directory']))
     if loaded_deck is None:
-        return found
+        return found, []
     for name, root in loaded_deck.sources.items():
         if any(e.source == name for e in loaded_deck.entries):
             found += pages.discover(pages.Source(name, root))
@@ -182,15 +183,15 @@ def select_pages(meta, loaded_deck, log, scaffold=False):
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
         log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
                              f'{names}{more}', indent_level=1)
-    return result.pages
+    return result.pages, result.unlisted
 
 
-def remove_stale_pages(dir_site, template_files):
+def remove_stale_pages(dir_site, selected):
     """Light mode: remove the pages of the previous generation no longer generated."""
     structure_path = os.path.join(dir_site, 'structure/structure.yaml')
     if not os.path.isfile(structure_path):
         return
-    current = {e['path'].filepath_local().replace('.html.j2', '.html') for e in template_files}
+    current = {page.site_html for page in selected}
     with open(structure_path) as fid:
         previous = yaml.safe_load(fid) or []
     for entry in previous:
@@ -204,128 +205,144 @@ def remove_stale_pages(dir_site, template_files):
 
 def prepare_data(meta, log):
     """Select the pages (deck), copy them with the sources and theme into the
-    site, extract their titles and export the structure."""
+    site, extract their titles and export the structure. Returns the pages,
+    the sitemap and the templates copied only for Jinja includes (partials)."""
     dir_source = meta['source_directory']
     dir_site = meta['site_directory']
     light = meta['args'].light
-    selected = select_pages(meta, load_deck(meta), log, scaffold=getattr(meta['args'], 'scaffold', False))
+    selected, unlisted = select_pages(meta, load_deck(meta), log,
+                                      scaffold=getattr(meta['args'], 'scaffold', False))
 
+    warnings = []
     if light:
         log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
     else:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        filesystem.copy_directories(dir_source, dir_site, templates=False)
+        warnings += filesystem.copy_directories(dir_source, dir_site, templates=False,
+                                                exclude=[meta.get('published_site_directory')])
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
-        filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
+        warnings += filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
     pages.name_outputs(selected)
-    template_files = pages.place(selected, dir_site, light=light)
+    warnings += pages.place(selected, dir_site, light=light)
+    partials = pages.place_partials(unlisted, dir_site)
+    for warning in warnings:
+        log.warning(warning)
     if light:
-        remove_stale_pages(dir_site, template_files)
+        remove_stale_pages(dir_site, selected)
 
-    log.debug(f"Found {len(template_files)} template files in '{dir_site}'")
-    sitemap = generator_tool.extract_titles(template_files)
+    log.debug(f"Found {len(selected)} template files in '{dir_site}'")
+    sitemap = generator_tool.extract_titles(selected, dir_site)
     sitemap_dir = os.path.join(dir_site, 'sitemap')
     if light and os.path.isdir(sitemap_dir):
         shutil.rmtree(sitemap_dir)
-    generator_tool.export_sitemap(sitemap, dir_site + '/sitemap/', meta)
-    generator_tool.export_structure(template_files, dir_site + '/structure/', dir_site)
+    generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
+    generator_tool.export_structure(selected, dir_site + 'structure/')
 
-    return template_files, sitemap
+    return selected, sitemap, partials
 
 
-def discard_page(meta, element):
-    """Remove the outputs of a page that failed (kept in debug mode)."""
-    if meta['debug']:
-        return
-    j2_path = element['path'].filepath()
-    for path in (j2_path, j2_path.replace('.html.j2', '.html')):
+def discard_page(meta, page):
+    """Remove the outputs of a page that failed (the template is kept in debug mode)."""
+    paths = [page.site_html] + ([] if meta['debug'] else [page.site_template])
+    for path in paths:
+        path = meta['site_directory'] + path
         if os.path.isfile(path):
             os.remove(path)
 
 
-SITEMAP_KEYWORD = re.compile(r'\b(?:pathTo|linkTo)_\w+')
-
-
-def sitemap_keywords_used(dir_site):
-    """Names pathTo_<id> / linkTo_<id> used by the templates of the site (only
-    these are computed for each page)."""
-    used = set()
-    for directory, _, names in os.walk(dir_site):
-        for name in names:
-            if name.endswith(('.html', '.j2', '.htm')):
-                with open(os.path.join(directory, name), encoding='utf-8', errors='replace') as fid:
-                    used.update(SITEMAP_KEYWORD.findall(fid.read()))
+def sitemap_keywords_used(env, templates):
+    """Names pathTo_<id> / linkTo_<id> used by the templates and by the
+    templates they extend, include or import (only these are computed for
+    each page); None when a template is chosen at run time (all are used)."""
+    used, seen, pending = set(), set(), list(templates)
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            source = env.loader.get_source(env, name)[0]
+            ast = env.parse(source)
+        except TemplateError:
+            continue                    # reported when the page is rendered
+        used.update(n for n in jinja_meta.find_undeclared_variables(ast)
+                    if n.startswith(('pathTo_', 'linkTo_')))
+        for reference in jinja_meta.find_referenced_templates(ast):
+            if reference is None:
+                return None
+            pending.append(reference)
     return used
 
 
-def render_jinja(meta, template_files, sitemap, log):
-    """Render all Jinja2 templates. Returns the list of templates that failed."""
+def render_jinja(meta, selected, sitemap, log):
+    """Render all Jinja2 templates. Returns the list of pages that failed."""
     dir_site = meta['site_directory']
     file_loader = FileSystemLoader(dir_site)
     env = Environment(loader=file_loader, extensions=['jinja_markdown.MarkdownExtension'])
-    used = sitemap_keywords_used(dir_site)
-    targets = {id_site: entry['path'].filepath_local().replace('.html.j2', '.html')
-               for id_site, entry in sitemap.items()
-               if 'pathTo_' + id_site in used or 'linkTo_' + id_site in used}
+    used = sitemap_keywords_used(env, [page.site_template for page in selected])
+    targets = {id_site: page.site_html for id_site, page in sitemap.items()
+               if used is None or 'pathTo_' + id_site in used or 'linkTo_' + id_site in used}
 
-    log.keyvalue('Found', f'{len(template_files)} template files')
+    log.keyvalue('Found', f'{len(selected)} template files')
     failed = []
-    for k, element in enumerate(template_files):
-        template_local = element['path'].filepath_local()
-        path_to_root = element['path'].path_to_root()
+    for k, page in enumerate(selected):
         links = {}
         for id_site, target in targets.items():
-            url = path_to_root + target
+            url = page.path_to_root + target
             links['pathTo_' + id_site] = url
             links['linkTo_' + id_site] = f'<a href="{url}">{id_site}</a>'
 
-        log.debug(f'- {template_local}')
+        log.debug(f'- {page.site_template}')
         try:
-            template = env.get_template(template_local)
-            params = element['page'].params if 'page' in element else {}
-            variables = {**meta['keywords'], **links, **params, 'pathToRoot': path_to_root, 'pageID': k}
-            if params or 'params' not in variables:    # a keyword 'params' stays without deck params
-                variables['params'] = params
-            output_html = template.render(variables)
+            template = env.get_template(page.site_template)
+            output_html = template.render({**meta['keywords'], **links, 'params': page.params,
+                                           'pathToRoot': page.path_to_root, 'pageID': k})
         except Exception as e:
-            log.error(f'Jinja2 error in {template_local}: {e}')
-            failed.append(element)
-            # Remove the template and any output of a previous generation
-            stale_output = element['path'].filepath().replace('.html.j2', '.html')
-            if os.path.isfile(stale_output):
-                os.remove(stale_output)
-            discard_page(meta, element)
+            log.error(f'Jinja2 error in {page.site_template}: {e}')
+            failed.append(page)
+            discard_page(meta, page)
             continue
 
-        output_path = element['path'].filepath().replace('.html.j2', '.html')
-        with open(output_path, 'w') as fid:
-            fid.write(output_html)
+        filesystem.write_file(dir_site + page.site_html, output_html)
 
     return failed
+
+
+def remove_partials(meta, partials):
+    """Remove the templates copied only for the Jinja includes (kept in debug mode)."""
+    if meta['debug']:
+        return
+    for path in partials:
+        if os.path.isfile(path):
+            os.remove(path)
+
+
+def load_design(meta):
+    """The design (theme design.yaml + 'design' of the configuration), its
+    macros validated by LHTML."""
+    loaded = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+    if loaded['macros']:
+        try:
+            lhtml.registry_with_macros(loaded['macros'])
+        except lhtml.LHTMLError as exc:
+            raise design.DesignError(str(exc)) from exc
+    return loaded
 
 
 def prepare_design(meta, log):
     """Load the design (theme design.yaml + 'design' of the configuration),
     write theme/css/design.css and structure/design.md, give the macros to LHTML."""
-    meta['design'] = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+    meta['design'] = load_design(meta)
     meta['macros'] = meta['design']['macros']
-    if meta['macros']:
-        if not hasattr(lhtml, 'registry_with_macros'):
-            raise design.DesignError('the macros of the design require lhtml-markup >= 2.5 '
-                                     '(pip install -U lhtml-markup)')
-        try:
-            lhtml.registry_with_macros(meta['macros'])  # validate once, before the pages
-        except lhtml.LHTMLError as exc:
-            raise design.DesignError(str(exc)) from exc
     # Always written (even empty): the theme may link it, and a light build
     # must not keep the design.css of a previous design.
     path = design.write_design(meta, meta['design'])
     log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
 
 
-def render_lhtml(meta, template_files, log):
+def render_lhtml(meta, selected, log):
     """Run LHTML conversion on all rendered templates, with optional HTML tidy.
-    Returns the list of templates that failed."""
+    Returns the list of pages that failed."""
     tidy_options = {'doctype': 'html5', 'show-warnings': 'no'}
     python_minor = int(platform.python_version_tuple()[1])
     if python_minor >= 8:
@@ -334,8 +351,8 @@ def render_lhtml(meta, template_files, log):
     tidylib.BASE_OPTIONS = {}
     failed = []
 
-    for element in template_files:
-        html_path = element['path'].filepath().replace('.html.j2', '.html')
+    for page in selected:
+        html_path = meta['site_directory'] + page.site_html
 
         if not os.path.isfile(html_path):
             # Jinja2 rendering failed for this page (error already reported)
@@ -344,7 +361,7 @@ def render_lhtml(meta, template_files, log):
         with open(html_path, 'r') as fid:
             input_html = fid.read()
 
-        meta['current_directory'] = element['path'].root_directory + element['path'].path_local
+        meta['current_directory'] = meta['site_directory'] + page.site_directory
 
         try:
             output_html = lhtml.run(input_html, meta)
@@ -355,8 +372,8 @@ def render_lhtml(meta, template_files, log):
                 line = input_html[:e.source_pos].count('\n') + 1
                 msg = f'line {line}: {msg}'
             log.error(f'{html_path}: {msg}')
-            failed.append(element)
-            discard_page(meta, element)
+            failed.append(page)
+            discard_page(meta, page)
             continue
 
         if meta['use_tidy']:
@@ -368,11 +385,10 @@ def render_lhtml(meta, template_files, log):
                         log.display(f'{k + 1}: {line}', debug_level=0)
             output_html = tidy_html
 
-        with open(html_path, 'w') as fid:
-            fid.write(output_html)
+        filesystem.write_file(html_path, output_html)
 
         if not meta['debug']:
-            j2_path = element['path'].filepath()
+            j2_path = meta['site_directory'] + page.site_template
             if os.path.isfile(j2_path):
                 os.remove(j2_path)
 
@@ -397,9 +413,8 @@ def compile_sass(meta, log):
         path_sass = element['path'].filepath()
         css_txt = sass.compile(filename=path_sass)
 
-        path_css = path_sass.replace('.sass', '.css')
-        with open(path_css, 'w') as fid:
-            fid.write(css_txt)
+        path_css = path_sass[:-len('.sass')] + '.css'
+        filesystem.write_file(path_css, css_txt)
 
         os.remove(path_sass)
 
@@ -455,10 +470,8 @@ def build_once(args):
         # The deck and the design are read (not the pages): errors before any build
         try:
             loaded_deck = load_deck(meta)
-            loaded_design = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
-            if loaded_design['macros'] and hasattr(lhtml, 'registry_with_macros'):
-                lhtml.registry_with_macros(loaded_design['macros'])
-        except (deck.DeckError, design.DesignError, lhtml.LHTMLError) as exc:
+            loaded_design = load_design(meta)
+        except (deck.DeckError, design.DesignError) as exc:
             log.error(str(exc))
             sys.exit(1)
         print(yaml.safe_dump({
@@ -502,7 +515,7 @@ def generate_site(meta):
     # Data preparation
     log.title('Data preparation', pre='\n')
     log.tic()
-    template_files, sitemap = prepare_data(meta, log)
+    selected, sitemap, partials = prepare_data(meta, log)
     prepare_design(meta, log)
     log.ok_elapsed()
 
@@ -515,7 +528,8 @@ def generate_site(meta):
     # Jinja2 rendering
     log.title('Convert HTML', pre='\n')
     log.tic()
-    failed = render_jinja(meta, template_files, sitemap, log)
+    failed = render_jinja(meta, selected, sitemap, log)
+    remove_partials(meta, partials)
     if failed:
         log.error(f'{len(failed)} page(s) not generated because of Jinja2 errors')
 
@@ -526,7 +540,7 @@ def generate_site(meta):
     log.ok_elapsed()
 
     # LHTML conversion
-    failed += render_lhtml(meta, template_files, log)
+    failed += render_lhtml(meta, selected, log)
     log.ok_elapsed()
 
     # SASS compilation
@@ -550,6 +564,8 @@ def generate_site(meta):
 
 
 def main():
+    if not hasattr(lhtml, 'registry_with_macros'):
+        sys.exit('static_website_lhtml requires lhtml-markup >= 2.5 (pip install -U lhtml-markup)')
     args = parse_arguments()
     if args.serve or args.watch:
         from lib.development import develop

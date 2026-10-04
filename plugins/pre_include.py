@@ -1,7 +1,7 @@
 import os
 import yaml
 
-from lib.structure import load_structure
+from lib.structure import load_structure, template_path
 
 
 def pre_process(meta):
@@ -16,7 +16,7 @@ def pre_process(meta):
             content_to_include.append(fid.read())
 
     for entry in structure:
-        file_path = meta['site_directory'] + entry['dir'] + entry['filename'].replace('.html', '.html.j2')
+        file_path = template_path(meta, entry)
 
         with open(file_path, 'r') as fid:
             file_content = fid.read()

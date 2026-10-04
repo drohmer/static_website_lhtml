@@ -4,7 +4,7 @@ import json
 import shutil
 from collections import Counter
 
-from lib.structure import load_structure
+from lib.structure import load_structure, template_path
 
 
 TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
@@ -39,7 +39,7 @@ def pre_process(meta):
     pages_per_directory = Counter(entry['dir'] for entry in structure)
 
     for entry in structure:
-        file_path = meta['site_directory'] + entry['dir'] + entry['filename'].replace('.html', '.html.j2')
+        file_path = template_path(meta, entry)
 
         with open(file_path, 'r') as fid:
             file_content = fid.read()

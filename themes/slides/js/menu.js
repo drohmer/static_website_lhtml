@@ -44,7 +44,7 @@ const linkPrevElement = document.querySelector('#link-prev');
 
 if(page_index+1<counter){
     const url = toc[page_index+1]["path"];
-    linkNextElement.innerHTML = `<a href="${encodeURI(path_to_root+url)}"><div class="next"></div></a>`;
+    linkNextElement.innerHTML = `<a href="${pathURL(path_to_root+url)}"><div class="next"></div></a>`;
 }
 else {
     linkNextElement.innerHTML = `<div class="next-inactive"></div>`;
@@ -52,10 +52,14 @@ else {
 
 if(page_index-1>=0) {
     const url = toc[page_index-1]["path"];
-    linkPrevElement.innerHTML = `<a href="${encodeURI(path_to_root+url)}"><div class="prev"></div></a>`;
+    linkPrevElement.innerHTML = `<a href="${pathURL(path_to_root+url)}"><div class="prev"></div></a>`;
 }
 else {
     linkPrevElement.innerHTML = `<div class="prev-inactive"></div>`;
 }
 console.log(toc);
 console.log(linkPrevElement.innerHTML, page_index, counter);
+// URL of a site path: each segment escaped (also #, ? and quotes)
+function pathURL(path) {
+    return path.split("/").map(encodeURIComponent).join("/");
+}

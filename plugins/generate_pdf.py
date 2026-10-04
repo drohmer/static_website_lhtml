@@ -5,7 +5,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from tempfile import TemporaryDirectory
 
-from lib.structure import load_structure
+from lib.structure import load_structure, template_path
 
 # Requires: puppeteer (npm i puppeteer), minimist (npm i minimist)
 
@@ -14,7 +14,7 @@ path_current_file = os.path.dirname(os.path.abspath(__file__)) + '/'
 
 def remove_controls(meta, structure):
     for entry in structure:
-        filepath = meta['site_directory'] + entry['dir'] + entry['filename'].replace('.html', '.html.j2')
+        filepath = template_path(meta, entry)
 
         with open(filepath, 'r') as fid:
             file_content = fid.read()

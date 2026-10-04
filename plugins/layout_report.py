@@ -821,8 +821,7 @@ def post_process(meta):
             pages.append({'html': os.path.abspath(html),
                           'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
                           'name': entry['dir'] + entry['filename'],
-                          'source': entry.get('src') or (meta['source_directory'] + entry['dir']
-                                                         + entry['filename'].replace('.html', '.html.j2'))})
+                          'source': entry['src']})
 
     if os.path.isdir(output_dir):
         shutil.rmtree(output_dir)

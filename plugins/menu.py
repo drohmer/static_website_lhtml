@@ -20,7 +20,7 @@ def post_process(meta):
     toc = []
     for entry in structure:
         item = {key: str(value) for key, value in entry.items()
-                if key not in ('dir', 'filename')}
+                if key not in ('dir', 'filename', 'template', 'src')}   # src: local path
         item['path'] = entry['dir'] + entry['filename']
         toc.append(item)
     toc_txt = json.dumps(toc)

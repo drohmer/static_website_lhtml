@@ -1,7 +1,7 @@
 import json
 import os
 
-from lib.structure import load_structure
+from lib.structure import load_structure, template_path
 
 # The title is written as a Jinja string literal (JSON escapes: quotes, backslashes)
 template_auto_wrap = '''
@@ -22,7 +22,7 @@ def pre_process(meta):
     structure = load_structure(meta['site_directory'])
 
     for entry in structure:
-        file_path = meta['site_directory'] + entry['dir'] + entry['filename'].replace('.html', '.html.j2')
+        file_path = template_path(meta, entry)
 
         with open(file_path, 'r') as fid:
             file_content = fid.read()

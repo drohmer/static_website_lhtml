@@ -8,3 +8,8 @@ def load_structure(site_directory):
     structure_path = site_directory + '/structure/structure.yaml'
     with open(structure_path) as fid:
         return yaml.safe_load(fid)
+
+
+def template_path(meta, entry):
+    """Template of a page of the structure in the site (before rendering)."""
+    return meta['site_directory'] + entry['template']

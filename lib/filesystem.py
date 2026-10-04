@@ -77,8 +77,8 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None):
     return files_found
 
 
-def _ignore_hidden(root, templates=True):
-    """copytree filter: hidden files at the top level of `root` (as the
+def ignore_hidden(root, templates=True):
+    """Filter of copy_tree: hidden files at the top level of `root` (as the
     previous 'cp -r root/*'), .git / .DS_Store everywhere, and the page
     templates (.html.j2) unless `templates`."""
     root = os.path.abspath(root)
@@ -91,32 +91,85 @@ def _ignore_hidden(root, templates=True):
     return ignore
 
 
-def copy_directories(dir_source, dir_target, templates=True):
-    """Copy source directory to target, replacing target if it exists.
-    A symbolic link to a directory is copied as a directory (the generator
-    writes into the site: it must never write through a link into the
-    sources); other symbolic links are copied as links (dangling links are
-    kept as is). With templates=False, the page templates (.html.j2) are not
-    copied."""
-    if os.path.isdir(dir_target):
-        shutil.rmtree(dir_target)
-    ignore = _ignore_hidden(dir_source, templates)
+def _inside(path, directory):
+    return path == directory or path.startswith(os.path.join(directory, ''))
 
-    def copy(source, target, ancestors):
-        os.makedirs(target)
-        names = os.listdir(source)
-        skipped = ignore(source, names)
+
+def copy_tree(source, target, ignore=None, exclude=()):
+    """Copy the directory `source` into `target` (created, or completed).
+
+    The generator writes into the copy: it must never write through a link
+    into the sources. A symbolic link to a directory is thus copied as a
+    directory; a link to a file stays a link, relative if it still leads to
+    the same file from the copy, else absolute. A link to a directory being
+    copied (an ancestor) stays a link if it is relative and inside `source`,
+    else it is not copied. The directories `exclude` and `target` itself
+    (e.g. the site, reached through a link) are not copied.
+    `ignore(directory, names)` gives the names not to copy (as copytree).
+    Returns the warnings (links not copied)."""
+    os.makedirs(target, exist_ok=True)
+    root = os.path.abspath(source)
+    real_root = os.path.realpath(source)
+    excluded = {os.path.realpath(p) for p in exclude if p} | {os.path.realpath(target)}
+    warnings = []
+
+    def copy_link(path, destination):
+        link = os.readlink(path)
+        if not os.path.isabs(link) and os.path.exists(path):
+            mirrored = os.path.normpath(os.path.join(os.path.dirname(path), link))
+            if not (_inside(mirrored, root)
+                    and os.path.realpath(mirrored) == os.path.realpath(path)):
+                link = os.path.realpath(path)   # the relative link would lead elsewhere
+        if os.path.lexists(destination):
+            os.remove(destination)
+        os.symlink(link, destination)
+
+    def copy(directory, destination, ancestors):
+        os.makedirs(destination, exist_ok=True)
+        names = sorted(os.listdir(directory))
+        skipped = ignore(directory, names) if ignore else set()
         for name in names:
             if name in skipped:
                 continue
-            path, destination = os.path.join(source, name), os.path.join(target, name)
+            path, path_target = os.path.join(directory, name), os.path.join(destination, name)
             if os.path.isdir(path):
                 real = os.path.realpath(path)
-                if real not in ancestors:       # a link to an ancestor would loop
-                    copy(path, destination, ancestors | {real})
+                if real in excluded:
+                    continue
+                if real in ancestors:       # copying it would never end
+                    link = os.readlink(path) if os.path.islink(path) else ''
+                    if link and not os.path.isabs(link) and _inside(
+                            os.path.normpath(os.path.join(directory, link)), root) and _inside(real, real_root):
+                        copy_link(path, path_target)
+                    else:
+                        warnings.append(f"'{path}' leads to a directory containing it: not copied")
+                    continue
+                copy(path, path_target, ancestors | {real})
             elif os.path.islink(path):
-                os.symlink(os.readlink(path), destination)
+                copy_link(path, path_target)
             else:
-                shutil.copy2(path, destination)
+                if os.path.islink(path_target):
+                    os.remove(path_target)
+                shutil.copy2(path, path_target)
 
-    copy(dir_source, dir_target, frozenset({os.path.realpath(dir_source)}))
+    copy(source, target, frozenset({real_root}))
+    return warnings
+
+
+def copy_directories(dir_source, dir_target, templates=True, exclude=()):
+    """Copy source directory to target, replacing target if it exists (see
+    copy_tree). Hidden files at the top level, .git and .DS_Store are not
+    copied, nor the page templates (.html.j2) with templates=False.
+    Returns the warnings."""
+    if os.path.isdir(dir_target):
+        shutil.rmtree(dir_target)
+    return copy_tree(dir_source, dir_target, ignore_hidden(dir_source, templates), exclude)
+
+
+def write_file(path, text):
+    """Write a generated file; a symbolic link at its place is replaced (not
+    written through)."""
+    if os.path.islink(path):
+        os.remove(path)
+    with open(path, 'w', encoding='utf-8') as fid:
+        fid.write(text)

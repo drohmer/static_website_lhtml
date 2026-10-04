@@ -45,7 +45,7 @@ GLOB_CHARS = set('*?[')
 NAME = re.compile(r'[A-Za-z][A-Za-z0-9_-]*$')
 ALIAS = re.compile(r'([A-Za-z][A-Za-z0-9_-]*):(?!/)(.*)$')
 # Keys of structure.yaml written by the generator
-RESERVED = {'path', 'dir', 'filename', 'level', 'title_id', 'src', 'source', 'occurrence'}
+RESERVED = {'path', 'dir', 'filename', 'template', 'level', 'title_id', 'src', 'source', 'occurrence'}
 # Directories of the site written by the generator (not available as source names)
 GENERATOR_DIRECTORIES = {'theme', 'structure', 'sitemap'}
 
@@ -128,7 +128,7 @@ def _load_sources(sources, base, origin):
         where = f"{origin}, source '{name}'"
         if not isinstance(name, str) or not NAME.match(name):
             raise DeckError(f'{where}: invalid name (letters, digits, - and _)')
-        if name in GENERATOR_DIRECTORIES:
+        if name.lower() in GENERATOR_DIRECTORIES:
             raise DeckError(f"{where}: '{name}/' is a directory of the generator; choose another name")
         if not isinstance(path, str):
             raise DeckError(f'{where}: expected the path of a source directory')
@@ -203,8 +203,6 @@ def check_sources(deck, source_directory, site_directory=None):
     directory of the project. A source must not contain the site (it would
     read the pages being generated)."""
     for name, root in deck.sources.items():
-        if name.lower() in GENERATOR_DIRECTORIES:
-            raise DeckError(f"source '{name}': '{name}/' is a directory of the generator; choose another name")
         if (Path(source_directory) / name).exists():
             raise DeckError(f"source '{name}': the project already has a directory '{name}/' "
                             f"(where its pages would be generated); rename the source")
@@ -228,8 +226,8 @@ def deck_source(cli_value, configured, config_directory):
 
 def watched_paths(source, config_directory):
     """Files and directories a deck depends on (for --watch): the deck file and,
-    in the other projects, the directories its pointers name (not the whole
-    projects). An invalid deck gives only its file."""
+    in the other projects, the directories its pointers name (the directory of
+    a page file; not the whole projects). An invalid deck gives only its file."""
     paths = [Path(source)] if isinstance(source, (str, Path)) else []
     try:
         loaded = load_deck(source, config_directory) if source is not None else None
@@ -240,7 +238,8 @@ def watched_paths(source, config_directory):
             fixed = re.split(r'[*?\[]', e.pointer)[0]
             if e.is_glob:
                 fixed = fixed.rpartition('/')[0]
-            paths.append(Path(loaded.sources[e.source]) / fixed)
+            path = Path(loaded.sources[e.source]) / fixed
+            paths.append(path if path.is_dir() else path.parent)
     return paths
 
 
@@ -372,10 +371,11 @@ def scaffold(entries, source_directory):
             if page.exists() or any(target.rglob('*' + TEMPLATE_SUFFIX)):
                 continue
         page.parent.mkdir(parents=True, exist_ok=True)
-        lines = [f"= {_raw(e.meta['title'])}", '']
+        title = str(e.meta['title']).strip().splitlines() or ['']
+        lines = [f"= {_raw(title[0])}", '']
         for key, value in e.meta.items():
             if key != 'title':
-                lines += [f'::# {line}' for line in f'{key}: {value}'.splitlines()]
+                lines += [f'::# {_raw(line)}' for line in f'{key}: {value}'.splitlines()]
         page.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
         created.append(str(page))
     return created

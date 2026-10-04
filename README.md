@@ -12,7 +12,7 @@ pip install -r requirements.txt
 
 **Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
 
-**Dependencies**: `lhtml-markup`, `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`
+**Dependencies**: `lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`
 
 Optional:
 - **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Put `generate_pdf.py` last in the plugin list: after the export, it removes the site directory (kept with `-d`).
@@ -60,7 +60,7 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config]
 python generate.py --serve --watch
 ```
 
-The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files, configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. Use full builds with `--watch` (it cannot be combined with `--light`). Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
+The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. Use full builds with `--watch` (it cannot be combined with `--light`). Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
 
 Complete and light builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. Light mode copies the existing output into staging to retain its assets. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
 
@@ -201,7 +201,8 @@ slides:
   for the page of a directory that also holds other pages), or a glob.
   Accented names match whatever the form the file system stores (Unicode
   NFC); `name:path` refers to another project only if `name` is one of the
-  `sources` (otherwise it is a path). Hidden directories (`.name`) are ignored.
+  `sources` (otherwise it is a path). Hidden files and directories at the top
+  level of a source (`.name`) are ignored, as they are not copied.
 - A pointer that names a page (its directory or its file) takes precedence
   over parent directories and globs: the page is placed there, and skipped by
   the directories and globs.
@@ -211,11 +212,13 @@ slides:
   title in the menu; `duration` (minutes) is summed in the build log;
   `params` (see below); every other key (`message`, `notes`, ...) is exported
   in `structure.yaml`, like the page `config.yaml` (`structure.yaml` also gives
-  the origin of each page: `src`, its template, `source`, `occurrence`). The metadata of a
+  the template of each page in the site, `template`, and its origin: `src`,
+  its source file, `source`, `occurrence`). The metadata of a
   directory or a glob applies to each of its pages, except `duration`, which
   is the duration of all its pages together.
 - Pages that are not in the deck are not generated (they are listed in the
-  build log); the files of their directory (assets) are still copied.
+  build log); the files of their directory (assets) are still copied, and
+  their templates can still be included (`{% include 'parts/box.html.j2' %}`).
 - A pointer that matches no page is an error (with a suggestion), unless the
   slide has a `title`: it is a planned slide, reported in the log.
   `--scaffold` creates its source, `<path>/index.html.j2` (or `<file>.j2` for
@@ -228,7 +231,8 @@ slides:
 project (`name: path`); its pages are named `name:path`. They are generated
 under `name/` in the site, with the files and asset directories of their
 directory and their `config.yaml` (in light mode, the assets of a page are
-copied when its directory is not in the site yet). The name must not be a
+copied when its directory is not in the site yet; hidden files are not
+copied, and linked directories are copied as directories). The name must not be a
 directory of the project nor of the generator (`theme`, `structure`,
 `sitemap`). The other project is only read: nothing is copied into its
 sources or yours. A source must not contain the site. `--watch` also watches the deck file and, in the other
@@ -240,13 +244,14 @@ from this site and from the page directory, not from the root of its project.
 creates another occurrence: it is generated next to the first one
 (`index-2.html`, `index-3.html`, ..., skipping the names of the pages of
 that directory, so that the names are the same in every build), so its relative assets still work, with
-its own place in the navigation and its own metadata. `params` are Jinja
-variables of the occurrence (also available as `params`), e.g. a plan that
+its own place in the navigation and its own metadata. The `params` of an
+occurrence are given to Jinja as the variable `params` (empty for the other
+pages; `params` is thus not a name for `keywords`), e.g. a plan that
 highlights the current part:
 
 ```
 {% set parts = ["Introduction", "Rotations", "Skeleton"] %}
-{% set current = current | default(0) %}
+{% set current = params.current | default(0) %}
 div::[margin-left:600px;]
 {%- for p in parts %}
 * {% if loop.index == current %}**{{ p }}**{% else %}muted:: {{ p }} ::{% endif %}
@@ -261,7 +266,6 @@ The menu, the previous/next navigation, the redirection to the first page,
 the PDF export and the layout report follow the deck. The sitemap ids
 (`pathTo_<id>`, `linkTo_<id>`) are given to the pages of the project first,
 so adding pages of other projects or repeated slides does not change them.
-A deck keyword `params` from `keywords` is kept for pages without parameters.
 `--check-config` also reads the deck and the design (sources, macros). Several decks can share
 the same sources (`python generate.py --deck deck_short.yaml`).
 
@@ -270,7 +274,7 @@ the same sources (`python generate.py --deck deck_short.yaml`).
 A theme can describe its design in `design.yaml`: **tokens** (sizes, colors,
 spacing) and **macros** (LHTML tags such as `gap::`, `aside::`, `box::`). The
 `slides` and `slides-pdf` themes provide one, built from the most frequent
-idioms of 904 existing slides. Macros require `lhtml-markup` 2.5 or later.
+idioms of 904 existing slides.
 
 ```
 = Inverse kinematics
@@ -356,7 +360,9 @@ Each hook still receives a real mutable `meta` dictionary with configuration and
 
 With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 
-Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit and skips directory symlink cycles. A symbolic link to a directory of the sources is copied into the site as a directory (the generator never writes through a link into the sources); other symbolic links are copied as links.
+Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit and skips directory symlink cycles. A symbolic link to a directory of the sources is copied into the site as a directory (the generator never writes through a link into the sources: a linked library of videos is thus copied into each build); a link to a directory containing it is kept only if it is relative and stays in the sources, and the site itself is never copied. Other symbolic links are copied as links (made absolute when the relative link would lead elsewhere from the site).
+
+Plugins read the pages from `structure/structure.yaml` (`lib.structure.load_structure`); `lib.structure.template_path(meta, entry)` gives the template of a page in the site, for the pre-process hooks.
 
 ### Built-in Plugins
 

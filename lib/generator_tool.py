@@ -47,50 +47,44 @@ def generate_unique_id(title_id, sitemap):
     return title_id
 
 
-def _sitemap_priority(entry):
+def _sitemap_priority(page):
     """Pages of the project first, in file order, then those of other projects,
     then the repeated pages: adding them to a deck does not change the ids
     (pathTo_<id>) of the pages of the project."""
-    page = entry.get('page')
-    if page is None:
-        return (False, False, entry['path'].filepath())
-    return (page.occurrence > 1, page.source.name is not None, str(page.src))
+    return (page.occurrence > 1, page.source.name is not None, page.source.name or '', page.position)
 
 
-def extract_titles(template_files):
+RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
+TITLE_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']
+
+
+def extract_titles(pages, site_directory):
+    """Title of each page (page.title) and the sitemap {id: page}."""
     sitemap = {}
-    for entry in sorted(template_files, key=_sitemap_priority):
-        path = entry['path'].filepath()
-        regex = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']
-        title = extract_data_from_file(path, regex)
-        title_id = extract_title_id_from_file(path, title)
-
-        entry['title'] = clean_string(title)
-        title_id = generate_unique_id(title_id, sitemap)
-        entry[title_id] = title_id
-        sitemap[title_id] = {'title': title, 'path': entry['path']}
-
+    for page in sorted(pages, key=_sitemap_priority):
+        path = site_directory + page.site_template
+        title = extract_data_from_file(path, TITLE_REGEX)
+        if title is not None:
+            title = RAW_MARKERS.sub('', title)
+        title_id = generate_unique_id(extract_title_id_from_file(path, title), sitemap)
+        page.title = clean_string(title)
+        sitemap[title_id] = page
     return sitemap
 
 
-def export_structure(template_files, structure_path, root_path):
+def export_structure(pages, structure_path):
+    """structure.yaml (and .json): one entry per page, in order, for the plugins
+    and the theme: its place in the site (dir, filename, template), title,
+    level, configuration and deck metadata, and origin (src, source, occurrence)."""
     structure_to_export = []
-    for entry in template_files:
-        dir_path = entry['path'].path_local
-        file_path = entry['path'].filename.replace('.html.j2', '.html')
-
-        structure = {'dir': dir_path, 'filename': file_path, 'level': entry['path'].level, 'title': entry['title']}
-        if 'extra-config' in entry:
-            for extra_element in entry['extra-config']:
-                structure[extra_element] = entry['extra-config'][extra_element]
-        page = entry.get('page')
-        if page is not None:
-            # Origin of the page: its template, its source, its occurrence
-            structure['src'] = str(page.src)
-            if page.source.name:
-                structure['source'] = page.source.name
-            if page.occurrence > 1:
-                structure['occurrence'] = page.occurrence
+    for page in pages:
+        structure = {'dir': page.site_directory, 'filename': os.path.basename(page.site_html),
+                     'template': page.site_template, 'level': page.site_directory.count('/'),
+                     'title': page.title, **page.config, **page.meta, 'src': str(page.src)}
+        if page.source.name:
+            structure['source'] = page.source.name
+        if page.occurrence > 1:
+            structure['occurrence'] = page.occurrence
         structure_to_export.append(structure)
 
     os.makedirs(structure_path, exist_ok=True)
@@ -101,16 +95,9 @@ def export_structure(template_files, structure_path, root_path):
         json.dump(structure_to_export, fid, indent=4, default=str)
 
 
-def print_debug(msg, debug, level_base=0, level=0):
-    if debug:
-        level_str = '\t' * (level_base + level)
-        print(level_str + msg)
-
-
-def export_sitemap(sitemap, dir_sitemap, meta):
+def export_sitemap(sitemap, dir_sitemap):
     os.makedirs(dir_sitemap, exist_ok=True)
 
-    for id in sitemap:
-        path_dest = '../' + sitemap[id]['path'].filepath_local().replace('.html.j2', '.html')
+    for id, page in sitemap.items():
         with open(dir_sitemap + id + '.html', 'w') as fid:
-            fid.write(f'<html><head><meta http-equiv="refresh" content="0; url={path_dest}"></head></html>')
+            fid.write(f'<html><head><meta http-equiv="refresh" content="0; url=../{page.site_html}"></head></html>')
