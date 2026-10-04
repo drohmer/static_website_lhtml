@@ -93,8 +93,30 @@ def _ignore_hidden(root, templates=True):
 
 def copy_directories(dir_source, dir_target, templates=True):
     """Copy source directory to target, replacing target if it exists.
-    Symbolic links are copied as links (dangling links are kept as is).
-    With templates=False, the page templates (.html.j2) are not copied."""
+    A symbolic link to a directory is copied as a directory (the generator
+    writes into the site: it must never write through a link into the
+    sources); other symbolic links are copied as links (dangling links are
+    kept as is). With templates=False, the page templates (.html.j2) are not
+    copied."""
     if os.path.isdir(dir_target):
         shutil.rmtree(dir_target)
-    shutil.copytree(dir_source, dir_target, symlinks=True, ignore=_ignore_hidden(dir_source, templates))
+    ignore = _ignore_hidden(dir_source, templates)
+
+    def copy(source, target, ancestors):
+        os.makedirs(target)
+        names = os.listdir(source)
+        skipped = ignore(source, names)
+        for name in names:
+            if name in skipped:
+                continue
+            path, destination = os.path.join(source, name), os.path.join(target, name)
+            if os.path.isdir(path):
+                real = os.path.realpath(path)
+                if real not in ancestors:       # a link to an ancestor would loop
+                    copy(path, destination, ancestors | {real})
+            elif os.path.islink(path):
+                os.symlink(os.readlink(path), destination)
+            else:
+                shutil.copy2(path, destination)
+
+    copy(dir_source, dir_target, frozenset({os.path.realpath(dir_source)}))

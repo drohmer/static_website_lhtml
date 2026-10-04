@@ -91,7 +91,7 @@ class DeckTests(unittest.TestCase):
     def test_invalid_decks(self):
         for bad in ({'slides': 'a'}, {'pages': []}, ['../x'], ['a/../../x'], [{'title': 'T'}], [3],
                     [{'path': 'a', 'level': 2}], [{'path': 'a', 'duration': 'long'}],
-                    [{'path': 'a', 'params': [1]}], ['other:a'],
+                    [{'path': 'a', 'params': [1]}],
                     {'sources': {'x': '/does/not/exist'}, 'slides': []}):
             with self.assertRaises(deck.DeckError, msg=repr(bad)):
                 deck.load_deck(bad)
@@ -252,7 +252,7 @@ class DeckProjectsTests(unittest.TestCase):
     def test_mount_conflict_and_unknown_source(self):
         (self.root / 'talk/src/course').mkdir()
         self.assertIn('rename the source', self.build(self.DECK, ok=False))
-        self.assertIn("unknown source 'other'", self.build({'slides': ['other:x']}, ok=False))
+        self.assertIn("no source named", self.build({'slides': ['other:x']}, ok=False))
 
 
 class DeckRegressionTests(unittest.TestCase):
@@ -292,7 +292,7 @@ class DeckRegressionTests(unittest.TestCase):
             paths = [p.resolve() for p in deck.watched_paths(str(Path(root) / 'deck.yaml'), root)]
             ext = Path(root, 'ext').resolve()
             self.assertEqual(paths[1:], [ext / 'c/d', ext / 'c'])   # pointed directories, not the project
-            self.assertEqual(deck.deck_source('deck.yaml', None, root), str(Path(root) / 'deck.yaml'))
+            self.assertEqual(deck.deck_source('deck.yaml', None, root), str((Path(root) / 'deck.yaml').resolve()))
             self.assertEqual(deck.deck_source(None, 'conf.yaml', root), 'conf.yaml')
 
 
@@ -350,3 +350,86 @@ class DeckBuildRegressionTests(DeckProjectsTests):
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config)],
                                 capture_output=True, text=True)
         self.assertIn('no page selected', result.stdout + result.stderr)
+
+
+class DeckRound2Tests(unittest.TestCase):
+    """Second review: one test per bug."""
+
+    def test_directory_with_own_page_and_subpages(self):
+        source = pages('sec/index.html.j2', 'sec/s1/index.html.j2', 'sec/s2/index.html.j2', 'z/index.html.j2')
+        ids, _ = order(['sec', 'z'], source)
+        self.assertEqual(ids, ['sec', 'sec/s1', 'sec/s2', 'z'])
+        ids, _ = order(['sec/index.html', 'z'], source)       # the page itself, by its file
+        self.assertEqual(ids, ['sec', 'z'])
+
+    def test_unicode_normalization(self):
+        import unicodedata
+        source = pages(unicodedata.normalize('NFD', '01_été') + '/index.html.j2')
+        ids, _ = order([unicodedata.normalize('NFC', '01_été')], source)
+        self.assertEqual(len(ids), 1)
+
+    def test_colon_in_local_path(self):
+        ids, _ = order(['part:1'], pages('part:1/index.html.j2'))
+        self.assertEqual(ids, ['part:1'])
+
+    def test_scaffold_metadata_file_and_jinja(self):
+        with tempfile.TemporaryDirectory() as root:
+            entries = deck.load_deck([{'path': 'a/09_new', 'title': 'x {{ y }}', 'notes': 'l1\nl2 **b**'},
+                                      {'path': 'a/extra.html', 'title': 'Extra'}]).entries
+            created = deck.scaffold(entries, root)
+            self.assertEqual(Path(created[0]).read_text(),
+                             '= {% raw %}x {{ y }}{% endraw %}\n\n::# notes: l1\n::# l2 **b**\n')
+            self.assertEqual(created[1], str(Path(root) / 'a/extra.html.j2'))
+
+    def test_source_containing_the_site(self):
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / 'src').mkdir()
+            loaded = deck.load_deck({'sources': {'me': '.'}, 'slides': []}, root)
+            with self.assertRaisesRegex(deck.DeckError, 'contains the site'):
+                deck.check_sources(loaded, Path(root) / 'src', Path(root) / 'site')
+
+
+class DeckBuildRound2Tests(DeckProjectsTests):
+    def run_generator(self, *args):
+        return subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config), *args],
+                              capture_output=True, text=True)
+
+    def test_symlinked_directory_is_never_modified(self):
+        for name in ('a', 'b'):
+            self.write(f'shared/{name}/index.html.j2', '{% extends "theme/template/base.html" %}'
+                                                       '{% block content %}= S{% endblock %}\n')
+        (self.root / 'talk/src/shared').symlink_to(self.root / 'shared')
+        self.build({'slides': ['01_a', 'shared/a']})
+        self.assertTrue((self.root / 'shared/a/index.html.j2').is_file())
+        self.assertTrue((self.root / 'shared/b/index.html.j2').is_file())
+        self.assertFalse((self.root / 'shared/a/index.html').exists())
+        self.assertTrue((self.site / 'shared/a/index.html').is_file())
+
+    def test_emoji_and_date(self):
+        self.write('talk/src/02_raw/index.html.j2', '= Party 🎉\n')
+        config = yaml.safe_load(self.config.read_text())
+        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        self.config.write_text(yaml.safe_dump(config))
+        import datetime
+        structure = self.build({'slides': ['02_raw', {'path': '01_a', 'title': 'Fête 🎉',
+                                                      'date': datetime.date(2026, 10, 4)}]})
+        self.assertIn('<title> Party 🎉 </title>', (self.site / '02_raw/index.html').read_text())
+        self.assertEqual(structure[1]['title'], 'Fête 🎉')
+
+    def test_sitemap_ids_of_the_project_are_stable(self):
+        uses = "{% extends 'theme/template/base.html' %}{% block content %}\n= Plan\n[{{ pathTo_plan }}]{% endblock %}\n"
+        self.write('talk/src/00_plan/index.html.j2', uses)
+        self.build({'slides': ['00_plan']})
+        alone = (self.site / '00_plan/index.html').read_text()
+        self.write('course/src/06_p/index.html.j2', "{% extends 'theme/template/base.html' %}"
+                                                    "{% block content %}\n= Plan\n{% endblock %}\n")
+        self.build({'sources': {'course': '../course/src'},
+                    'slides': ['course:06_p', '00_plan', '00_plan']})
+        self.assertIn('[../00_plan/index.html]', alone)
+        self.assertIn('[../00_plan/index.html]', (self.site / '00_plan/index.html').read_text())
+
+    def test_check_config_reads_the_deck(self):
+        (self.root / 'talk/deck.yaml').write_text("sources: {x: ../nowhere}\nslides: []\n")
+        result = self.run_generator('--check-config')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('directory not found', result.stdout + result.stderr)

@@ -35,6 +35,7 @@ from pathlib import Path
 import difflib
 import fnmatch
 import re
+import unicodedata
 
 import yaml
 
@@ -111,7 +112,7 @@ class DeckResult:
 
 
 def _normalize(pointer):
-    pointer = str(pointer).strip().replace('\\', '/')
+    pointer = unicodedata.normalize('NFC', str(pointer).strip().replace('\\', '/'))
     while pointer.startswith('./'):
         pointer = pointer[2:]
     return pointer.strip('/')
@@ -162,10 +163,8 @@ def _load_entry(item, sources, where):
         raise DeckError(f'{where}: expected a path or a mapping, got {item!r}')
     alias = None
     m = ALIAS.match(str(raw).strip())
-    if m:
+    if m and m.group(1) in sources:      # name:path (otherwise a path containing ':')
         alias, raw = m.group(1), m.group(2)
-        if alias not in sources:
-            raise DeckError(f"{where}: unknown source '{alias}' (sources: {', '.join(sorted(sources)) or 'none'})")
     pointer = _normalize(raw)
     if (not pointer and not alias) or '..' in pointer.split('/'):
         raise DeckError(f'{where}: invalid path {item!r} (relative to the source directory)')
@@ -199,13 +198,21 @@ def load_deck(source, base_directory='.'):
                 sources)
 
 
-def check_sources(deck, source_directory):
+def check_sources(deck, source_directory, site_directory=None):
     """The pages of a source are generated under <name>/: it must not be a
-    directory of the project."""
-    for name in deck.sources:
+    directory of the project. A source must not contain the site (it would
+    read the pages being generated)."""
+    for name, root in deck.sources.items():
+        if name.lower() in GENERATOR_DIRECTORIES:
+            raise DeckError(f"source '{name}': '{name}/' is a directory of the generator; choose another name")
         if (Path(source_directory) / name).exists():
             raise DeckError(f"source '{name}': the project already has a directory '{name}/' "
                             f"(where its pages would be generated); rename the source")
+        if site_directory is not None:
+            site = Path(site_directory).resolve()
+            if site == Path(root) or Path(root) in site.parents:
+                raise DeckError(f"source '{name}': its directory '{root}' contains the site "
+                                f"'{site}'; point to the source directory of the project")
 
 
 def deck_source(cli_value, configured, config_directory):
@@ -216,7 +223,7 @@ def deck_source(cli_value, configured, config_directory):
     path = Path(cli_value).expanduser()
     if not path.is_absolute() and not path.exists() and (Path(config_directory) / path).exists():
         path = Path(config_directory) / path
-    return str(path)
+    return str(path.resolve())
 
 
 def watched_paths(source, config_directory):
@@ -243,19 +250,37 @@ class _Index:
     def __init__(self, pages):
         self.pages = pages
         self.order = {id(p): k for k, p in enumerate(pages)}
-        self.by_name = defaultdict(list)
+        self.by_id = defaultdict(list)
+        self.by_file = defaultdict(list)
         self.by_source = defaultdict(list)
         for page in pages:
             source = page.source.name
             self.by_source[source].append(page)
-            for key in {page.id, page.file, page.file + '.j2', page.file[:-len('.html')]}:
-                self.by_name[(source, key)].append(page)
+            self.by_id[(source, page.id)].append(page)
+            for key in {page.file, page.file + '.j2', page.file[:-len('.html')]}:
+                self.by_file[(source, key)].append(page)
         self.sorted_ids = {source: sorted((p.id, self.order[id(p)]) for p in ps)
                            for source, ps in self.by_source.items()}
 
+    def _under(self, source, pointer):
+        """Order numbers of the pages in subdirectories of `pointer`."""
+        ids = self.sorted_ids.get(source, [])
+        if not pointer:
+            return [k for pid, k in ids if pid]
+        return [k for _, k in ids[bisect_left(ids, (pointer + '/', -1)):
+                                  bisect_left(ids, (pointer + '0', -1))]]   # '0' follows '/'
+
     def named(self, entry):
-        """Pages named by the pointer itself (their directory or file)."""
-        return [] if entry.is_glob else self.by_name.get((entry.source, entry.pointer), [])
+        """Pages named by the pointer itself: their file, or their directory
+        when it holds no other page below it (else the pointer is a parent
+        directory: all its pages)."""
+        if entry.is_glob:
+            return []
+        key = (entry.source, entry.pointer)
+        pages = list(self.by_file.get(key, []))
+        if not self._under(entry.source, entry.pointer):
+            pages += [p for p in self.by_id.get(key, []) if p not in pages]
+        return pages
 
     def matching(self, entry):
         """Pages named by the pointer, under it (directory), or matching it (glob)."""
@@ -265,9 +290,8 @@ class _Index:
             return list(pages)
         if entry.is_glob:
             return [q for q in pages if fnmatch.fnmatchcase(q.id, p) or fnmatch.fnmatchcase(q.file, p)]
-        ids = self.sorted_ids.get(entry.source, [])
-        under = ids[bisect_left(ids, (p + '/', -1)):bisect_left(ids, (p + '0', -1))]  # '0' follows '/'
-        hits = {k for _, k in under} | {self.order[id(q)] for q in self.named(entry)}
+        hits = set(self._under(entry.source, p)) | {self.order[id(q)] for q in self.by_id.get((entry.source, p), [])} \
+            | {self.order[id(q)] for q in self.by_file.get((entry.source, p), [])}
         return [self.pages[k] for k in sorted(hits)]
 
 
@@ -314,8 +338,10 @@ def apply_deck(deck, pages):
                 missing.append(e)
                 continue
             hint = difflib.get_close_matches(e.label, sorted({p.label for p in pages}), n=1)
+            alias = ALIAS.match(e.pointer)
             raise DeckError(f"{e.line}: no page matches '{e.label}'"
-                            + (f" (did you mean '{hint[0]}'?)" if hint else ''))
+                            + (f" (did you mean '{hint[0]}'?)" if hint else '')
+                            + (f" (no source named '{alias.group(1)}')" if alias and not e.source else ''))
         # Pages named explicitly in the deck are placed there, not here.
         for page in hits:
             if id(page) in placed or id(page) in excluded or id(page) in named_pages:
@@ -334,15 +360,28 @@ def scaffold(entries, source_directory):
     depth, is never modified. Returns the paths."""
     created = []
     for e in entries:
+        if e.source:
+            continue
         target = Path(source_directory) / e.pointer
-        if e.source or target.suffix in ('.html', '.j2'):
-            continue
-        page = target / ('index' + TEMPLATE_SUFFIX)
-        if page.exists() or any(target.rglob('*' + TEMPLATE_SUFFIX)):
-            continue
+        if target.name.endswith(('.html', '.html.j2')):          # a page file: dir/extra.html
+            page = target.with_name(target.name if target.name.endswith('.j2') else target.name + '.j2')
+            if page.exists():
+                continue
+        else:
+            page = target / ('index' + TEMPLATE_SUFFIX)
+            if page.exists() or any(target.rglob('*' + TEMPLATE_SUFFIX)):
+                continue
         page.parent.mkdir(parents=True, exist_ok=True)
-        lines = [f"= {e.meta['title']}", '']
-        lines += [f'::# {key}: {value}' for key, value in e.meta.items() if key != 'title']
+        lines = [f"= {_raw(e.meta['title'])}", '']
+        for key, value in e.meta.items():
+            if key != 'title':
+                lines += [f'::# {line}' for line in f'{key}: {value}'.splitlines()]
         page.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
         created.append(str(page))
     return created
+
+
+def _raw(text):
+    """Text kept as is by Jinja (a title may contain {{ or {%)."""
+    text = str(text)
+    return f'{{% raw %}}{text}{{% endraw %}}' if ('{{' in text or '{%' in text or '{#' in text) else text

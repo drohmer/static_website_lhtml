@@ -196,8 +196,12 @@ slides:
 ```
 
 - A pointer is a path relative to the source directory: the directory of a
-  page, a parent directory (all its pages, in file order), a page file
-  (`course/intro.html`, when a directory holds several pages), or a glob.
+  page, a parent directory (all its pages, in file order, including its own
+  page if it has one), a page file (`course/intro.html`, or `sec/index.html`
+  for the page of a directory that also holds other pages), or a glob.
+  Accented names match whatever the form the file system stores (Unicode
+  NFC); `name:path` refers to another project only if `name` is one of the
+  `sources` (otherwise it is a path). Hidden directories (`.name`) are ignored.
 - A pointer that names a page (its directory or its file) takes precedence
   over parent directories and globs: the page is placed there, and skipped by
   the directories and globs.
@@ -214,9 +218,10 @@ slides:
   build log); the files of their directory (assets) are still copied.
 - A pointer that matches no page is an error (with a suggestion), unless the
   slide has a `title`: it is a planned slide, reported in the log.
-  `--scaffold` creates its source, `<path>/index.html.j2`, with the title and
-  the other metadata as LHTML comments (existing files are never modified,
-  and nothing is created in a directory that holds pages).
+  `--scaffold` creates its source, `<path>/index.html.j2` (or `<file>.j2` for
+  a pointer to a file), with the title and the other metadata as LHTML
+  comments (existing files are never modified, and nothing is created in a
+  directory that holds pages).
 - A deck that selects no page gives a warning.
 
 **Other projects.** `sources` gives a name to the source directory of another
@@ -226,7 +231,7 @@ directory and their `config.yaml` (in light mode, the assets of a page are
 copied when its directory is not in the site yet). The name must not be a
 directory of the project nor of the generator (`theme`, `structure`,
 `sitemap`). The other project is only read: nothing is copied into its
-sources or yours. `--watch` also watches the deck file and, in the other
+sources or yours. A source must not contain the site. `--watch` also watches the deck file and, in the other
 projects, the directories the deck points to. A page of another project is
 rendered in this site: Jinja `extends`/`include` and LHTML `include::` resolve
 from this site and from the page directory, not from the root of its project.
@@ -253,7 +258,11 @@ div::[margin-left:600px;]
 LHTML list.) Directories and globs never repeat a page.
 
 The menu, the previous/next navigation, the redirection to the first page,
-the PDF export and the layout report follow the deck. Several decks can share
+the PDF export and the layout report follow the deck. The sitemap ids
+(`pathTo_<id>`, `linkTo_<id>`) are given to the pages of the project first,
+so adding pages of other projects or repeated slides does not change them.
+A deck keyword `params` from `keywords` is kept for pages without parameters.
+`--check-config` also reads the deck and the design (sources, macros). Several decks can share
 the same sources (`python generate.py --deck deck_short.yaml`).
 
 ## Design: tokens and macros
@@ -347,7 +356,7 @@ Each hook still receives a real mutable `meta` dictionary with configuration and
 
 With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 
-Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit and skips directory symlink cycles.
+Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit and skips directory symlink cycles. A symbolic link to a directory of the sources is copied into the site as a directory (the generator never writes through a link into the sources); other symbolic links are copied as links.
 
 ### Built-in Plugins
 

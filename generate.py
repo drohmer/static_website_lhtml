@@ -149,7 +149,8 @@ def load_deck(meta):
     if meta.get('deck') is None:
         return None
     loaded = deck.load_deck(meta['deck'], meta['config_directory'])
-    deck.check_sources(loaded, meta['source_directory'])
+    deck.check_sources(loaded, meta['source_directory'], meta.get('published_site_directory')
+                       or meta['site_directory'])
     return loaded
 
 
@@ -282,8 +283,10 @@ def render_jinja(meta, template_files, sitemap, log):
         try:
             template = env.get_template(template_local)
             params = element['page'].params if 'page' in element else {}
-            output_html = template.render({**meta['keywords'], **links, **params, 'params': params,
-                                           'pathToRoot': path_to_root, 'pageID': k})
+            variables = {**meta['keywords'], **links, **params, 'pathToRoot': path_to_root, 'pageID': k}
+            if params or 'params' not in variables:    # a keyword 'params' stays without deck params
+                variables['params'] = params
+            output_html = template.render(variables)
         except Exception as e:
             log.error(f'Jinja2 error in {template_local}: {e}')
             failed.append(element)
@@ -449,12 +452,25 @@ def build_once(args):
             log.error(str(exc))
             sys.exit(1)
     if args.check_config:
+        # The deck and the design are read (not the pages): errors before any build
+        try:
+            loaded_deck = load_deck(meta)
+            loaded_design = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+            if loaded_design['macros'] and hasattr(lhtml, 'registry_with_macros'):
+                lhtml.registry_with_macros(loaded_design['macros'])
+        except (deck.DeckError, design.DesignError, lhtml.LHTMLError) as exc:
+            log.error(str(exc))
+            sys.exit(1)
         print(yaml.safe_dump({
             'config_file': str(config_file),
             'source_directory': config.source_directory,
             'site_directory': config.site_directory,
             'theme': config.theme,
-            'deck': meta['deck'],
+            'deck': meta['deck'] if loaded_deck is None else {
+                'file': meta['deck'] if isinstance(meta['deck'], str) else '(inline)',
+                'slides': len(loaded_deck.entries), 'sources': loaded_deck.sources},
+            'design': {'tokens': len(design.flatten_tokens(loaded_design['tokens'])),
+                       'macros': sorted(loaded_design['macros'])},
             'plugin_paths': context.plugin_paths,
             'debug': config.debug,
             'level_print': config.level_print,

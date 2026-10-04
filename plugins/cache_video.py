@@ -29,8 +29,10 @@ def generate_cache_videos(meta, cache_video_directory, structure):
         if os.path.isdir(meta['site_directory'] + asset_path):
             asset_files = os.listdir(meta['site_directory'] + asset_path)
             for f in asset_files:
-                if f.endswith('.mp4') or f.endswith('.webm') or f.endswith('.mkv'):
-                    videos_candidate.append({'path': asset_path, 'name': f})
+                candidate = {'path': asset_path, 'name': f}
+                # several pages of a directory (or occurrences of a page) share its assets
+                if f.endswith(('.mp4', '.webm', '.mkv')) and candidate not in videos_candidate:
+                    videos_candidate.append(candidate)
 
     print(f'\t Total videos found in assets: {len(videos_candidate)}')
 

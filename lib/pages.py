@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import os
 import shutil
+import unicodedata
 
 import yaml
 
@@ -50,13 +51,14 @@ class Page:
 
     @property
     def id(self):
-        """Directory relative to the source, without trailing slash."""
-        return self.directory.strip('/')
+        """Directory relative to the source, without trailing slash (Unicode NFC,
+        as typed in a deck, whatever the file system stores)."""
+        return unicodedata.normalize('NFC', self.directory.strip('/'))
 
     @property
     def file(self):
-        """File relative to the source, as generated (a/index.html)."""
-        return (self.directory + html_name(self.template)).strip('/')
+        """File relative to the source, as generated (a/index.html), NFC."""
+        return unicodedata.normalize('NFC', (self.directory + html_name(self.template)).strip('/'))
 
     @property
     def label(self):
@@ -100,7 +102,8 @@ def discover(source):
     cache = {}
     return [Page(source, f['path'].path_local, f['path'].filename,
                  config=_read_config(source.root + f['path'].path_local, cache))
-            for f in find_files_in_hierarchy(source.root, lambda name: name.endswith(TEMPLATE_SUFFIX))]
+            for f in find_files_in_hierarchy(source.root, lambda name: name.endswith(TEMPLATE_SUFFIX))
+            if not any(part.startswith('.') for part in f['path'].path_local.split('/'))]
 
 
 def name_outputs(pages):
@@ -147,13 +150,18 @@ def place(pages, site_directory, light=False):
     yet; the assets of the project are copied with its whole directory).
     Returns the template entries."""
     site = os.path.join(site_directory, '')
+    real_site = os.path.join(os.path.realpath(site), '')
     copied = set()
     for page in pages:
         target_dir = site + page.site_directory
+        new_directory = not os.path.isdir(target_dir)
+        os.makedirs(target_dir, exist_ok=True)
+        if not os.path.join(os.path.realpath(target_dir), '').startswith(real_site):
+            raise ValueError(f"'{target_dir}' leads out of the site directory (symbolic link?): "
+                             f"refusing to write {page.label} there")
         if page.source.name and target_dir not in copied:
-            if not (light and os.path.isdir(target_dir)):
+            if new_directory or not light:
                 copy_assets(str(page.src.parent), target_dir)
             copied.add(target_dir)
-        os.makedirs(target_dir, exist_ok=True)
         shutil.copy2(page.src, target_dir + page.name)
     return [page.entry(site) for page in pages]

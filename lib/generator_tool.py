@@ -47,9 +47,19 @@ def generate_unique_id(title_id, sitemap):
     return title_id
 
 
+def _sitemap_priority(entry):
+    """Pages of the project first, in file order, then those of other projects,
+    then the repeated pages: adding them to a deck does not change the ids
+    (pathTo_<id>) of the pages of the project."""
+    page = entry.get('page')
+    if page is None:
+        return (False, False, entry['path'].filepath())
+    return (page.occurrence > 1, page.source.name is not None, str(page.src))
+
+
 def extract_titles(template_files):
     sitemap = {}
-    for entry in template_files:
+    for entry in sorted(template_files, key=_sitemap_priority):
         path = entry['path'].filepath()
         regex = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']
         title = extract_data_from_file(path, regex)
@@ -88,26 +98,13 @@ def export_structure(template_files, structure_path, root_path):
     with open(structure_path + 'structure.yaml', 'w') as fid:
         yaml.dump(structure_to_export, fid)
     with open(structure_path + 'structure.json', 'w') as fid:
-        json.dump(structure_to_export, fid, indent=4)
+        json.dump(structure_to_export, fid, indent=4, default=str)
 
 
 def print_debug(msg, debug, level_base=0, level=0):
     if debug:
         level_str = '\t' * (level_base + level)
         print(level_str + msg)
-
-
-def extract_additional_config(template_files):
-    for k, entry in enumerate(template_files):
-        config_path = entry['path'].root_directory + entry['path'].path_local + 'config.yaml'
-        if os.path.isfile(config_path):
-            with open(config_path, 'r') as fid:
-                config = yaml.safe_load(fid)
-            if config is None:
-                config = {}
-            if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
-                raise ValueError(f"Invalid page configuration '{config_path}': expected key: value pairs")
-            template_files[k]['extra-config'] = config
 
 
 def export_sitemap(sitemap, dir_sitemap, meta):

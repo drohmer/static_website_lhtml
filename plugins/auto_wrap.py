@@ -29,6 +29,6 @@ def pre_process(meta):
 
         # Do not change files that are already wrapped
         if '{% block content %}' not in file_content:
-            content = template_auto_wrap.format(title=json.dumps(str(entry['title'])), content=file_content)
+            content = template_auto_wrap.format(title=json.dumps(str(entry['title']), ensure_ascii=False), content=file_content)
             with open(file_path, 'w') as fid:
                 fid.write(content)
