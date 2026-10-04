@@ -215,6 +215,10 @@ def only_pages(meta, selected, log):
     return built
 
 
+# Guide of the procedure for AI agents, copied into each site (structure/agents.md)
+AGENTS_GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs', 'agents.md')
+
+
 def prepare_data(meta, selected, built, log):
     """Copy the pages to generate with the sources and theme into the site
     (only their templates and assets for --only), extract the titles of all
@@ -244,6 +248,7 @@ def prepare_data(meta, selected, built, log):
     sitemap = generator_tool.extract_titles(selected)
     generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
     meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/')
+    shutil.copy2(AGENTS_GUIDE, dir_site + 'structure/agents.md')
     built_ids = {id(page) for page in built}
     meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if id(page) in built_ids]
     return sitemap

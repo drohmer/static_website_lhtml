@@ -718,8 +718,9 @@ def summary_markdown(rows, norms=None, design=None):
     reference of the design (macros and tokens), relative to the summary."""
     lines = [SUMMARY_HEADER]
     if design:
-        lines.append(f'Macros and tokens of the design (use them instead of inline styles): '
-                     f'`{design}`.\n')
+        lines.append(f'Macros, layouts and tokens of the design (use them instead of inline styles): '
+                     f'`{design}`. Procedure for editing the slides: '
+                     f'`{os.path.join(os.path.dirname(design), "agents.md")}`.\n')
     if norms:
         lines.append(norms_markdown(norms))
     debt = sum(len(r[2].get('lint', [])) for r in rows)

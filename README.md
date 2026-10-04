@@ -197,6 +197,7 @@ static_website_lhtml/
     webpage-frame/         # Default web page theme
     slides/                # Presentation slides theme
     slides-pdf/            # PDF export slides theme
+  docs/agents.md           # Procedure for AI agents writing slides (copied into structure/)
   example/                 # Example source content
 ```
 
@@ -209,6 +210,19 @@ Three built-in themes are available:
 - **`slides-pdf/`** — Presentation slides optimized for PDF export
 
 Themes use Jinja2 template inheritance. The base template (`template/base.html`) provides blocks that content pages can override.
+
+## Writing slides with an AI agent
+
+[`docs/agents.md`](docs/agents.md) is the procedure for an agent (LLM) that
+writes or edits slides: plan in the deck, layouts and macros, `--only
+--layout`, `--lint`, how to read the report and when to stop. It does not
+depend on the agent used. Each build copies it into `structure/agents.md` of
+the site, and the layout report links to it. In a slide project, one line in
+the file that your agent reads (`AGENTS.md`, `CLAUDE.md`, ...) is enough:
+
+```
+To write or edit the slides, follow <site>/structure/agents.md (e.g. _site/structure/agents.md).
+```
 
 ## Deck: order of the slides
 
