@@ -38,7 +38,7 @@ class DesignTests(unittest.TestCase):
         loaded = design.load_design(theme, str(override))
         self.assertEqual(loaded['tokens'], {'space': {'m': '30px'}})
         self.assertEqual(loaded['macros'], {'box': {'class': 'box'}})
-        self.assertEqual(design.load_design(self.root / 'none'), {'tokens': {}, 'macros': {}})
+        self.assertEqual(design.load_design(self.root / 'none'), {'tokens': {}, 'macros': {}, 'layouts': {}})
 
     def test_invalid_design(self):
         with self.assertRaises(design.DesignError):
@@ -67,7 +67,9 @@ class DesignTests(unittest.TestCase):
             self.assertIn('gap', d['macros'])
             design.flatten_tokens(d['tokens'])
             lhtml.registry_with_macros(design.lhtml_macros(d))
-            for name in set(re.findall(r'var\(--([\w-]+)\)', design.design_css(d))):
+            css = design.design_css(d)
+            local = set(re.findall(r'(?<![\w-])--([\w-]+)\s*:', css))     # variables set by the css itself
+            for name in set(re.findall(r'var\(--([\w-]+)\)', css)) - local:
                 self.assertIn(name, design.flatten_tokens(d['tokens']), f'{theme}: undefined token --{name}')
 
     def test_config_design_key(self):
@@ -123,8 +125,8 @@ class DesignRegressionTests(unittest.TestCase):
 
     def test_empty_design_still_writes_css(self):
         with tempfile.TemporaryDirectory() as root:
-            d = design.load_design(REPO / 'themes/slides', {'tokens': None, 'macros': None})
-            self.assertEqual(d, {'tokens': {}, 'macros': {}})
+            d = design.load_design(REPO / 'themes/slides', {'tokens': None, 'macros': None, 'layouts': None})
+            self.assertEqual(d, {'tokens': {}, 'macros': {}, 'layouts': {}})
             path = design.write_design({'site_directory': root}, d)
             self.assertIn(':root {', path.read_text())
 

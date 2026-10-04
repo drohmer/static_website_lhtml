@@ -129,8 +129,9 @@ def load_config(filename, debug_override=None):
     for key in ('keywords', 'plugin_arg'):
         if not isinstance(values[key], dict) or any(not isinstance(k, str) for k in values[key]):
             raise ConfigError(f"'{key}' must be a mapping with string keys")
-    if 'params' in values['keywords']:
-        raise ConfigError("'keywords': 'params' is reserved (Jinja variable of the deck parameters of a page)")
+    for name in sorted({'params', 'page'} & set(values['keywords'])):
+        raise ConfigError(f"'keywords': '{name}' is reserved (Jinja variable of the generator: "
+                          f"params, the deck parameters of a page; page, its metadata)")
     plugins = values['plugin']
     if isinstance(plugins, str):
         plugins = [plugins]

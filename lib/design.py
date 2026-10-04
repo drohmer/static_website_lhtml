@@ -1,4 +1,5 @@
-"""Design of a site or deck: tokens (sizes, colors, spacing) and LHTML macros.
+"""Design of a site or deck: tokens (sizes, colors, spacing), LHTML macros and
+layouts of the pages.
 
 The theme provides defaults in `<theme>/design.yaml`; the `design` key of the
 configuration (a mapping, or the path of a YAML file) overrides them, key by
@@ -10,6 +11,9 @@ key. Example:
     macros:
       small: {class: small, css: '.small { font-size: var(--font-small); }',
               doc: 'Smaller text. small:: text ::'}
+    layouts:                         # a page chooses one: {% set layout = 'side' %}
+      side: {css: 'body.layout-side > .media { position: absolute; ... }',
+             doc: 'Text on the left, media:: on the right.'}
 
 A design file may start from another one: `extends: ../slides/design.yaml`
 (relative to the file), then override it key by key.
@@ -31,7 +35,8 @@ import yaml
 DESIGN_FILE = 'design.yaml'
 CSS_PATH = 'theme/css/design.css'
 REFERENCE_PATH = 'structure/design.md'
-SECTIONS = ('tokens', 'macros')
+SECTIONS = ('tokens', 'macros', 'layouts')
+LAYOUT_FIELDS = {'css', 'doc'}
 MAX_EXTENDS = 10
 TOKEN_NAME = re.compile(r'[A-Za-z0-9_-]+$')
 
@@ -82,6 +87,12 @@ def _check(design, origin):
         if spec is not None and not isinstance(spec, dict):
             raise DesignError(f"{origin}: macro '{name}' must be a mapping (or null to remove it), "
                               f"got {spec!r}")
+    for name, spec in (design.get('layouts') or {}).items():
+        if not isinstance(name, str) or not TOKEN_NAME.match(name):
+            raise DesignError(f"{origin}: invalid layout name {name!r} (letters, digits, - and _ only)")
+        if spec is not None and (not isinstance(spec, dict) or set(spec) - LAYOUT_FIELDS):
+            raise DesignError(f"{origin}: layout '{name}' must be a mapping with css and doc "
+                              f"(or null to remove it), got {spec!r}")
     return design
 
 
@@ -167,6 +178,10 @@ def design_css(design):
         css = (spec or {}).get('css')
         if css:
             lines += ['', f'/* {name}:: */', str(css).strip()]
+    for name, spec in design.get('layouts', {}).items():
+        css = (spec or {}).get('css')
+        if css:
+            lines += ['', f'/* layout {name} */', str(css).strip()]
     return '\n'.join(lines) + '\n'
 
 
@@ -208,6 +223,18 @@ def design_markdown(design):
         if css:
             out += ['', '```css', _resolve(str(css).strip(), tokens), '```']
         out.append('')
+    if design.get('layouts'):
+        out += ['## Layouts', '',
+                'A page chooses its layout with `{% set layout = \'name\' %}` at the top of its file',
+                '(or `layout: name` in its `config.yaml` or its deck entry). The layout places and',
+                'sizes the blocks: write no positions, sizes or spacers for them.', '']
+        for name, spec in design['layouts'].items():
+            spec = spec or {}
+            out += [f'### `{name}`', '']
+            if spec.get('doc'):
+                out += [str(spec['doc']).strip(), '']
+            if spec.get('css'):
+                out += ['```css', _resolve(str(spec['css']).strip(), tokens), '```', '']
     out += ['## Tokens', '', 'CSS variables (`var(--name)`), in `theme/css/design.css`.', '',
             '| token | value |', '|---|---|']
     out += [f'| `--{name}` | `{value}` |' for name, value in tokens.items()]

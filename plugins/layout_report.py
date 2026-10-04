@@ -39,6 +39,7 @@ import shutil
 import subprocess
 import tempfile
 
+from lib.lint import Linter
 from lib.structure import built_pages, structure
 from lib.configuration import layout_output_directory
 
@@ -628,6 +629,11 @@ def page_markdown(name, source, layout):
                   f"{d['min_font'] if d['min_font'] is not None else '-'} px; text covers "
                   f"{round(100 * d['text_area'])} %, images {round(100 * d['media_area'])} % of the area"]
 
+    if analysis.get('lint'):
+        lines += ['', '## Values written by hand (design lint)', '',
+                  'Replace them with the layout or macro given (see structure/design.md of the site):', '']
+        lines += [f"- line {f['line']}, {f['kind']}: `{f['text']}` -> {f['advice']}" for f in analysis['lint']]
+
     if analysis['gaps']:
         lines += ['', '## Vertical gaps between in-flow blocks', '',
                   ', '.join(f'#{a}→#{b}: {g} px' for a, b, g in analysis['gaps'])]
@@ -712,16 +718,22 @@ def summary_markdown(rows, norms=None, design=None):
                      f'`{design}`.\n')
     if norms:
         lines.append(norms_markdown(norms))
+    debt = sum(len(r[2].get('lint', [])) for r in rows)
+    if debt:
+        lines.append(f"Values written by hand (design lint, column `lint`): {debt} in "
+                     f"{sum(1 for r in rows if r[2].get('lint'))} of {len(rows)} pages; each page report "
+                     f"gives the layout or macro that replaces them.\n")
     lines += ['| n | page | problems | hidden text | collisions | out of area | clipped | upscaled | warnings '
-              '| deviations | words | min font | occupancy | report |',
+              '| deviations | lint | words | min font | occupancy | report |',
               '|---|------|----------|-------------|------------|-------------|---------|----------|----------'
-              '|------------|-------|----------|-----------|--------|']
+              '|------------|------|-------|----------|-----------|--------|']
     numbered = [(n, *row) for n, row in enumerate(rows, 1)]
     for n, name, report_path, a in sorted(numbered, key=lambda r: (-count_problems(r[3]), -count_warnings(r[3]), r[0])):
         d = a.get('density') or {}
         lines.append(f"| {n} | {name} | {count_problems(a)} | {len(a.get('hidden_text', []))} | "
                      f"{len(a['collisions'])} | {len(a['out_of_area'])} | {len(a['clipped'])} | "
                      f"{len(a['upscaled_images'])} | {count_warnings(a)} | {len(a.get('deviations', []))} | "
+                     f"{len(a.get('lint', []))} | "
                      f"{d.get('words', '-')} | {d.get('min_font') or '-'} | "
                      f"{round(100 * a['occupancy'])} % | [layout.md]({report_path}) |")
     return '\n'.join(lines) + '\n'
@@ -826,7 +838,7 @@ def post_process(meta):
         html = site_dir + relative
         page = {'html': os.path.abspath(html),
                 'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
-                'name': relative, 'source': entry['src']}
+                'name': relative, 'source': entry['src'], 'layout': entry.get('layout')}
         if relative not in built:
             if partial and os.path.isfile(os.path.join(page['out'], 'layout.json')):
                 previous.append(page)
@@ -862,6 +874,7 @@ def post_process(meta):
     limits = {k: options[k] for k in ('max_words', 'min_font')}
 
     rows = []
+    linter = Linter(meta['design']) if meta.get('design') else None
     order = {entry['dir'] + entry['filename']: k for k, entry in enumerate(structure(meta))}
     measured.sort(key=lambda m: order[m[0]['name']])
     for p, layout_path, layout in measured:
@@ -870,6 +883,8 @@ def post_process(meta):
                          layout['analysis']))
             continue
         analyse(layout, options['threshold'], norms, limits)
+        if linter is not None and os.path.isfile(p['source']):
+            layout['analysis']['lint'] = [f.as_dict() for f in linter.lint_file(p['source'], p['layout'])]
         layout['source'] = os.path.relpath(p['source'], meta.get('config_directory') or '.')
         with open(layout_path, 'w') as fid:
             json.dump(layout, fid, indent=1)

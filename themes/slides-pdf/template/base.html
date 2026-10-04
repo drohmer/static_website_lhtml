@@ -41,7 +41,10 @@
 
 
 
-  <body>
+  {#- Layout of the page (design.yaml, layouts): {% set layout = 'side' %} in the page, or
+      `layout` in its config.yaml or deck entry; side-s gives the classes layout-side layout-side-s #}
+  {%- set slide_layout = layout if layout is defined else (page.layout if page is defined and page.layout else '') %}
+  <body{% if slide_layout %} class="layout-{{ slide_layout.split('-')[0] }}{% if '-' in slide_layout %} layout-{{ slide_layout }}{% endif %}"{% endif %}>
 
     <nav>
       <div id="current-page-title" class="hidden">{{tocTitle}}</div>

@@ -43,6 +43,14 @@ tokens:
   demo:
     width: 1750px
     height: 750px
+  layout:              # layouts: area of media:: (px from the slide frame), text beside it
+    top: 120px         # below the title: media at y = 150 px of the slide (corpus: 150-200)
+    right: 70px        # right edge at x = 1820 px (as aside::)
+    bottom: 80px       # above the navigation
+    side: 700px        # width of media:: in layout side (corpus: 720 px)
+    side-s: 500px
+    side-l: 900px
+    gap: 60px          # between the text and media::
 
 macros:
 
@@ -153,6 +161,27 @@ macros:
       .section { text-align: center; margin-top: var(--section-top); margin-bottom: var(--section-bottom);
                  font-size: var(--font-section); line-height: var(--line-section); }
 
+  media:
+    class: media
+    doc: |
+      The figures of a page with a layout (`side`, `stack`): `media::` with the images, videos
+      or demos, then `::`. The layout places and sizes it: write no position, width or height
+      (the figures fit in it). Its children are stacked (a figure, then its credit::); with
+      `media::(.row)` they are side by side (a row of figures; put a figure and its credit in a
+      `col::`).
+    css: |
+      .media { display: flex; flex-direction: column; align-items: center; justify-content: center;
+               gap: var(--space-s); min-width: 0; min-height: 0; }
+      .media.row { flex-direction: row; gap: var(--cols-gap); }
+      .media.row > img, .media.row > video, .media.row > .col { height: 100%; width: auto; }
+      .media.row > .col > img, .media.row > .col > video { flex: 1 1 0; height: auto; }
+      .media > img, .media > video, .media > iframe, .media > svg, .media > .col > img,
+      .media > .col > video { flex: 0 1 auto; min-width: 0; min-height: 0; max-width: 100%;
+                              max-height: 100%; object-fit: contain; }
+      .media > .col { display: flex; flex-direction: column; align-items: center; min-height: 0;
+                      max-height: 100%; gap: var(--space-s); }
+      .media > .center { min-height: 0; }
+
   demo:
     tag: iframe
     class: demo
@@ -164,3 +193,46 @@ macros:
       `demo::url[height:600px;]`. Replaces `<iframe style="overflow:hidden; border:0; width:1750px; height:750px;" ...>`.
     css: |
       .demo { display: block; overflow: hidden; border: 0; width: var(--demo-width); height: var(--demo-height); }
+
+# Layouts of a page: {% set layout = 'side' %} at the top of its file, or `layout: side`
+# in its config.yaml or its deck entry (default: the blocks in the flow, as written).
+# Types measured on 780 slides: side 36 %, stack 21 %, section 11 %, the others (text,
+# text and code, columns) in the flow with the macros.
+layouts:
+
+  side:
+    doc: |
+      Text on the left, figures on the right (36 % of the slides, also code + figure): the
+      blocks of the page are the text, and `media::` holds the figures, placed in the right
+      column below the title and fitted in it. `side-s` and `side-l` give a narrower or wider
+      column. Replaces `div::[position:fixed; top:...; left:...]` and aside::.
+    css: |
+      body.layout-side { --layout-width: var(--layout-side); }
+      body.layout-side-s { --layout-width: var(--layout-side-s); }
+      body.layout-side-l { --layout-width: var(--layout-side-l); }
+      /* the text column: the frame keeps its size (main.css: width 1920 - 3 x 30 - 80 px, padding 30 px) */
+      body.layout-side { padding-right: calc(30px + var(--layout-width) + var(--layout-gap));
+                         width: calc(1920px - 30px * 3 - 80px - var(--layout-width) - var(--layout-gap)); }
+      body.layout-side > h1 { margin-right: calc(-1 * (var(--layout-width) + var(--layout-gap))); }
+      body.layout-side > .media { position: absolute; top: var(--layout-top); right: var(--layout-right);
+                                  bottom: var(--layout-bottom); width: var(--layout-width);
+                                  justify-content: flex-start; }
+
+  stack:
+    doc: |
+      Text, then figures that take the rest of the slide (21 %: text then figure, a large
+      figure, a row of figures with `media::(.row)`). `media::` may also come first.
+    css: |
+      body.layout-stack { display: flex; flex-direction: column; }
+      body.layout-stack > .media { flex: 1 1 0; margin: var(--space-s) 0 var(--layout-bottom) 0; }
+
+  section:
+    doc: |
+      Section or title slide (11 %): the content is centered on the slide, the title larger.
+      `= Title`, then a few words.
+    css: |
+      body.layout-section { display: flex; flex-direction: column; justify-content: center;
+                            align-items: center; text-align: center; font-size: var(--font-section);
+                            line-height: var(--line-section); }
+      body.layout-section > h1 { margin: 0 0 var(--space-m) 0; }
+

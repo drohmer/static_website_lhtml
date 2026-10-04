@@ -20,6 +20,7 @@ from lib import deck
 from lib import design
 from lib import filesystem
 from lib import generator_tool
+from lib import lint
 from lib import logger
 from lib import pages
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
@@ -44,6 +45,9 @@ def parse_arguments():
     parser.add_argument('--only', metavar='POINTER', action='append',
                         help='Generate only these pages (deck pointer: directory, file, glob; repeatable) '
                              'in the existing site; a full build when the pages of the site changed.')
+    parser.add_argument('--lint', action='store_true',
+                        help='List the values written by hand in the pages (positions, spacers, font sizes) '
+                             'with the layout or macro of the design that replaces them; no generation.')
     parser.add_argument('--check-config', action='store_true',
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
@@ -63,6 +67,8 @@ def parse_arguments():
         parser.error('--serve/--watch cannot be combined with --clean or --check-config')
     if args.only and (args.clean or args.check_config):
         parser.error('--only cannot be combined with --clean or --check-config')
+    if args.lint and (args.clean or args.check_config or args.serve or args.watch):
+        parser.error('--lint cannot be combined with --clean, --check-config, --serve or --watch')
     return args
 
 
@@ -308,6 +314,7 @@ def render_jinja(meta, selected, built, sitemap, log):
     log.keyvalue('Found', f'{len(built)} template files')
     failed = []
     built_ids = {id(page) for page in built}
+    entries = {id(page): entry for page, entry in zip(selected, meta['structure'])}
     for k, page in enumerate(selected):
         if id(page) not in built_ids:
             continue
@@ -321,6 +328,7 @@ def render_jinja(meta, selected, built, sitemap, log):
         try:
             template = env.get_template(page.site_template)
             output_html = template.render({**meta['keywords'], **links, 'params': page.params,
+                                           'page': entries[id(page)],
                                            'pathToRoot': page.path_to_root, 'pageID': k})
         except Exception as e:
             log.error(f'Jinja2 error in {page.site_template}: {e}')
@@ -494,6 +502,18 @@ def build_once(args):
     if args.clean:
         clean_directories(meta)
         return
+    if args.lint:
+        try:
+            selected = select_pages(meta, log)
+            if args.only:
+                sources = {p.source.name: p.source.root for p in selected if p.source.name}
+                selected = deck.named_pages(selected, args.only, sources)
+            loaded_design = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+        except (deck.DeckError, design.DesignError, ValueError) as exc:
+            log.error(str(exc))
+            sys.exit(1)
+        lint_pages(selected, loaded_design, log, details=True)
+        return
 
     built = None
     try:
@@ -513,6 +533,31 @@ def build_once(args):
         raise SystemExit(1)
 
 
+def lint_pages(selected, loaded_design, log, details=False):
+    """Design lint of the pages (lib/lint.py): the summary, and with `details`
+    each finding (path:line). Returns the number of findings."""
+    linter = lint.Linter(loaded_design)
+    total, pages_with, seen = 0, 0, set()
+    for page in selected:
+        if page.src in seen:            # occurrences of a page: once
+            continue
+        seen.add(page.src)
+        findings = linter.lint_file(page.src, {**page.config, **page.meta}.get('layout'))
+        total += len(findings)
+        pages_with += bool(findings)
+        if details:
+            path = os.path.relpath(page.src)
+            for f in findings:
+                print(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
+    summary = (f'{total} value(s) written by hand in {pages_with} of {len(seen)} page(s)' if total
+               else f'no value written by hand in {len(seen)} page(s)')
+    if details:
+        print(f'\nLint: {summary}')
+    elif total:
+        log.keyvalue('info', f'Lint: {summary} (python generate.py --lint)', indent_level=1)
+    return total
+
+
 def generate_site(meta, selected, built):
     """Generate the pages `built` among the pages of the site `selected` (all
     of them, except with --only)."""
@@ -529,6 +574,7 @@ def generate_site(meta, selected, built):
     log.tic()
     sitemap = prepare_data(meta, selected, built, log)
     prepare_design(meta, log)
+    lint_pages(built, meta['design'], log)
     log.ok_elapsed()
 
     # Pre-process plugins
