@@ -160,7 +160,8 @@ Each page is rendered by Jinja2 with:
 | `params` | Parameters of the occurrence given by the deck (`params.current`), empty otherwise |
 | `page` | Metadata of the page: its `config.yaml` and deck entry (`page.notes`, `page.layout`), title, place in the site |
 | `layout` | Layout of the page, when the page sets it (`{% set layout = 'side' %}`, see [Design](#design-tokens-macros-and-layouts)) |
-| keys of `keywords` | Values of the configuration (`params` and `page` are reserved) |
+| `credit(file)`, `credits` | Credit of a file of the page, credits of all the pages (see [Credits](#credits-origin-of-the-slides-figures-in-code)) |
+| keys of `keywords` | Values of the configuration (`params`, `page`, `credit`, `credits` are reserved) |
 
 `{% extends %}`, `{% include %}` and `{% import %}` read the templates of the
 project (relative to its source directory), then of the other projects of the
@@ -184,6 +185,8 @@ static_website_lhtml/
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
     lint.py                # Design lint: values written by hand in the pages
+    credits.py             # Credits, origin of the slides, planned figures (structure/credits.md, todo.md)
+    figures.py             # Figures made from code (*.svg.py, *.svg.tex)
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
@@ -475,6 +478,56 @@ Macro fields (see the LHTML README): `tag` (default `div`), `class`, `style`,
 `attrs`, `empty`, `url`, `variant`, `default`, plus `css` and `doc` used by
 the generator. The `design` key may also be the path of a YAML file with
 the same structure.
+
+## Credits, origin of the slides, figures in code
+
+**Credits.** A page declares the credits of its images in its `config.yaml`
+(or deck entry), and its `origin` (the slide it was copied from):
+
+```yaml
+origin: csc_43043/course_slides/src/08_transformations/02_rotation/01_definition
+credits:
+  assets/euler.jpg:
+    author: J. E. Handmann, 1753
+    source: Wikimedia Commons
+    license: public domain
+    url: https://commons.wikimedia.org/wiki/File:...
+  assets/plaque.jpg: Brendan Ward, CC0      # a text is the whole credit
+```
+
+In the page, `credit:: {{ credit('assets/euler.jpg') }} ::` writes the
+caption from it ("J. E. Handmann, 1753, Wikimedia Commons, public domain"; an
+error if the file has no credit), and `credits` lists the credits of all the
+pages, for a credits slide:
+
+```
+= Credits
+small::
+{%- for c in credits %}
+* {{ c.title }}: {{ c.text }}
+{%- endfor %}
+::
+```
+
+Each build writes `structure/credits.md`: the origin of each page (`origin`,
+or its project), the credits, and the images and videos used by the pages
+without credit (to check: your own figures need none).
+
+**To do.** `placeholder:: video of the walk cycle ::` draws a planned figure;
+each build lists the planned figures (with their line) and the planned slides
+of the deck in `structure/todo.md`, and gives their number in the log.
+
+**Figures in code.** A file `<name>.<format>.py` of the sources (`svg`, `png`,
+`pdf`, `jpg`), e.g. `assets/curve.svg.py`, is a script that writes the figure
+`assets/curve.svg`: it gets the file to write as its argument and runs in its
+directory, with the Python of the generator (install what it imports, e.g.
+matplotlib). `<name>.svg.tex` is a standalone LaTeX document (TikZ) made into
+SVG with `latex` and `dvisvgm`. The page uses the figure as any other
+(`img::assets/curve.svg`). Figures are made in the site, never in the
+sources, and kept in `.figures/` next to the configuration under the hash of
+their script: a figure is made again when its script changes (delete
+`.figures/` after a change of the data it reads). A figure that fails gives a
+warning with the error.
 
 ## Plugins
 

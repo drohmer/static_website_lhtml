@@ -11,3 +11,4 @@ _layout/
 .pytest_cache/
 .venv/
 .feedback/
+.figures/

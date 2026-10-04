@@ -17,8 +17,10 @@ import importlib.util
 import traceback
 
 from lib import deck
+from lib import credits
 from lib import design
 from lib import feedback
+from lib import figures
 from lib import filesystem
 from lib import generator_tool
 from lib import lint
@@ -195,6 +197,7 @@ def select_pages(meta, log, scaffold=False):
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
         log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
                              f'{names}{more}', indent_level=1)
+    meta['planned_slides'] = result.missing
     pages.name_outputs(result.pages)
     return result.pages
 
@@ -250,6 +253,12 @@ def prepare_data(meta, selected, built, log):
     warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
     for warning in warnings:
         log.warning(warning)
+    directories = sorted({dir_site + page.site_directory for page in built}) if only else [dir_site]
+    made, cached, errors = figures.build_figures(directories, meta['config_directory'] + figures.CACHE)
+    if made or cached:
+        log.keyvalue('info', f'Figures: {made} made, {cached} from the cache', indent_level=1)
+    for script, error in errors:
+        log.warning(f"Figure not made: {os.path.relpath(script, dir_site)}: {error}")
 
     log.debug(f"Found {len(selected)} template files")
     sitemap = generator_tool.extract_titles(selected)
@@ -258,7 +267,28 @@ def prepare_data(meta, selected, built, log):
     shutil.copy2(AGENTS_GUIDE, dir_site + 'structure/agents.md')
     built_ids = {id(page) for page in built}
     meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if id(page) in built_ids]
-    return sitemap
+    credits_of = write_credits_and_todo(meta, selected, log)
+    return sitemap, credits_of
+
+
+def write_credits_and_todo(meta, selected, log):
+    """structure/credits.md (origin of the pages, credits of the images) and
+    structure/todo.md (planned figures and slides). Returns the credits of
+    each page (lib/credits.py)."""
+    credits_of = {id(page): credits.page_credits(page) for page in selected}
+    structure_dir = meta['site_directory'] + 'structure/'
+    text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'])
+    with open(structure_dir + 'credits.md', 'w', encoding='utf-8') as fid:
+        fid.write(text)
+    planned_figures = credits.placeholders(selected)
+    planned_slides = meta.get('planned_slides') or []
+    with open(structure_dir + 'todo.md', 'w', encoding='utf-8') as fid:
+        fid.write(credits.todo_markdown(planned_figures, planned_slides, meta['config_directory']))
+    log.debug(f'Credits: {credited} credited, {missing} image(s) without credit (structure/credits.md)')
+    if planned_figures or planned_slides:
+        log.keyvalue('info', f'To do: {len(planned_figures)} planned figure(s), {len(planned_slides)} planned '
+                             f'slide(s) (structure/todo.md)', indent_level=1)
+    return credits_of
 
 
 def discard_page(meta, page):
@@ -314,7 +344,7 @@ def jinja_environment(meta, selected, built):
     return Environment(loader=loader, extensions=['jinja_markdown.MarkdownExtension'])
 
 
-def render_jinja(meta, selected, built, sitemap, log):
+def render_jinja(meta, selected, built, sitemap, log, credits_of=None):
     """Render the Jinja2 templates of the pages to generate (`built`, among the
     pages of the site `selected`). Returns the list of pages that failed."""
     dir_site = meta['site_directory']
@@ -327,6 +357,8 @@ def render_jinja(meta, selected, built, sitemap, log):
     failed = []
     built_ids = {id(page) for page in built}
     entries = {id(page): entry for page, entry in zip(selected, meta['structure'])}
+    credits_of = credits_of or {id(page): {} for page in selected}
+    deck_credits = credits.all_credits(selected, credits_of)
     for k, page in enumerate(selected):
         if id(page) not in built_ids:
             continue
@@ -341,6 +373,8 @@ def render_jinja(meta, selected, built, sitemap, log):
             template = env.get_template(page.site_template)
             output_html = template.render({**meta['keywords'], **links, 'params': page.params,
                                            'page': entries[id(page)],
+                                           'credit': credits.credit_function(page, credits_of[id(page)]),
+                                           'credits': deck_credits,
                                            'pathToRoot': page.path_to_root, 'pageID': k})
         except Exception as e:
             log.error(f'Jinja2 error in {page.site_template}: {e}')
@@ -595,7 +629,7 @@ def generate_site(meta, selected, built):
     # Data preparation
     log.title('Data preparation', pre='\n')
     log.tic()
-    sitemap = prepare_data(meta, selected, built, log)
+    sitemap, credits_of = prepare_data(meta, selected, built, log)
     prepare_design(meta, log)
     lint_pages(built, meta['design'], log)
     log.ok_elapsed()
@@ -609,7 +643,7 @@ def generate_site(meta, selected, built):
     # Jinja2 rendering
     log.title('Convert HTML', pre='\n')
     log.tic()
-    failed = render_jinja(meta, selected, built, sitemap, log)
+    failed = render_jinja(meta, selected, built, sitemap, log, credits_of)
     if failed:
         log.error(f'{len(failed)} page(s) not generated because of Jinja2 errors')
 

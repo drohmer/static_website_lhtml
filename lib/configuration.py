@@ -111,7 +111,7 @@ def load_config(filename, debug_override=None):
     known = set(defaults) | {'cache_video_directory', 'design', 'deck'}
     reserved = {'args', 'log', 'plugin_paths', 'config_file', 'config_directory',
                 'lib_directory', 'current_directory', 'published_site_directory', 'extras',
-                'only', 'structure', 'built', 'previous_pages', 'macros', 'source_map', 'feedback'}
+                'only', 'structure', 'built', 'previous_pages', 'macros', 'source_map', 'feedback', 'planned_slides'}
     extras = {}
     for key in set(data) - known:
         if key in reserved:
@@ -129,9 +129,9 @@ def load_config(filename, debug_override=None):
     for key in ('keywords', 'plugin_arg'):
         if not isinstance(values[key], dict) or any(not isinstance(k, str) for k in values[key]):
             raise ConfigError(f"'{key}' must be a mapping with string keys")
-    for name in sorted({'params', 'page'} & set(values['keywords'])):
+    for name in sorted({'params', 'page', 'credit', 'credits'} & set(values['keywords'])):
         raise ConfigError(f"'keywords': '{name}' is reserved (Jinja variable of the generator: "
-                          f"params, the deck parameters of a page; page, its metadata)")
+                          f"params, the deck parameters of a page; page, its metadata; credit, credits)")
     plugins = values['plugin']
     if isinstance(plugins, str):
         plugins = [plugins]

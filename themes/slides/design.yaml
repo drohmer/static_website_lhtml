@@ -234,7 +234,7 @@ macros:
                      min-height: var(--placeholder-height); min-width: 300px; padding: var(--space-s);
                      border: 2px dashed var(--color-muted); color: var(--color-muted); font-style: italic;
                      text-align: center; }
-      .media > .placeholder { flex: 1 1 0; width: 100%; min-height: 0; }
+      .media > .placeholder { flex: 1 1 0; width: 100%; min-height: 4em; }
 
   demo:
     tag: iframe

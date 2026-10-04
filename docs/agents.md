@@ -117,6 +117,14 @@ stands for a figure that does not exist yet.
 - Do not change the text of a slide unless asked. Do not edit the generated
   site, other projects (deck `sources`), or `design.yaml` of the theme. Design
   changes go in the `design` key of `configure.yaml` (tokens, new macros).
+- An image you did not make needs a credit: `credits:` in the `config.yaml`
+  of its slide (author, source, license, url), and its caption
+  `credit:: {{ credit('assets/file.jpg') }} ::`. `structure/credits.md` lists
+  the images without credit. A slide copied from another one gets `origin:`.
+- A figure that does not exist yet: `placeholder:: what it shows ::`
+  (listed in `structure/todo.md`). A figure that can be computed (a plot, a
+  diagram) is better written as code: `assets/plot.svg.py` (writes the file
+  given as argument) or `assets/diagram.svg.tex` (TikZ), made at the build.
 - A repeated slide reads its parameters as `params.name`
   (`{% set current = params.current | default(0) %}`).
 - Jinja loops inside an LHTML list need `{%-` to avoid breaking the list.
