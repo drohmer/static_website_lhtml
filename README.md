@@ -37,7 +37,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -45,6 +45,8 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--c
       --check-config   Validate paths and plugin files; display resolved settings
   -c, --clean          Remove only the configured output directory and exit
   --only POINTER       Generate only these pages in the existing site (see below; repeatable)
+  --lint               List the values written by hand in the pages, with the layout or macro
+                       replacing them (see Design); no generation (with --only: some pages)
   --serve              Serve the generated site on http://127.0.0.1:8000/
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
@@ -123,7 +125,7 @@ Optional keys:
 | `plugin_arg` | Arguments passed to specific plugins |
 | `title_id` | Generate heading IDs (default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
-| `design` | Tokens and macros overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-and-macros)) |
+| `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
 
 ## Pipeline
 
@@ -148,7 +150,9 @@ Each page is rendered by Jinja2 with:
 | `pathTo_<id>` | Relative link to the page `<id>` of the sitemap (`<id>`: its title in lower case with `_` for spaces, or the value of `{% set title_id = '...' %}`; `_1`, `_2`... for repeated titles) |
 | `linkTo_<id>` | `<a href="...">` to that page |
 | `params` | Parameters of the occurrence given by the deck (`params.current`), empty otherwise |
-| keys of `keywords` | Values of the configuration (`params` is reserved) |
+| `page` | Metadata of the page: its `config.yaml` and deck entry (`page.notes`, `page.layout`), title, place in the site |
+| `layout` | Layout of the page, when the page sets it (`{% set layout = 'side' %}`, see [Design](#design-tokens-macros-and-layouts)) |
+| keys of `keywords` | Values of the configuration (`params` and `page` are reserved) |
 
 `{% extends %}`, `{% include %}` and `{% import %}` read the templates of the
 project (relative to its source directory), then of the other projects of the
@@ -168,7 +172,8 @@ static_website_lhtml/
     development.py         # --serve / --watch
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
-    design.py              # Design tokens and macros (design.yaml -> design.css)
+    design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
+    lint.py                # Design lint: values written by hand in the pages
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
@@ -318,12 +323,12 @@ so adding pages of other projects or repeated slides does not change them.
 `--check-config` also reads the deck and the design (sources, macros). Several decks can share
 the same sources (`python generate.py --deck deck_short.yaml`).
 
-## Design: tokens and macros
+## Design: tokens, macros and layouts
 
 A theme can describe its design in `design.yaml`: **tokens** (sizes, colors,
-spacing) and **macros** (LHTML tags such as `gap::`, `aside::`, `box::`). The
-`slides` and `slides-pdf` themes provide one, built from the most frequent
-idioms of 904 existing slides.
+spacing), **macros** (LHTML tags such as `gap::`, `aside::`, `box::`) and
+**layouts** of the pages. The `slides` and `slides-pdf` themes provide one,
+built from the most frequent idioms of 904 existing slides.
 
 ```
 = Inverse kinematics
@@ -346,8 +351,59 @@ Macros of the slide themes: `gap::` (`gap::s`, `gap::l`, `gap::xl`),
 `small::`, `tiny::`, `credit::`, `muted::`, `center::`, `aside::` (figure in
 the right column, `aside::[top:400px;]`), `cols::` / `col::` (`.even`,
 `.spread`, `.middle`), `box::` (`.good`, `.bad`, `.warn`), `section::`,
-`demo::url` (iframe). Brackets still work for exceptions; the classes, style
-and attributes of the source are added to those of the macro.
+`demo::url` (iframe), `media::` (the figures of a layout). Brackets still work
+for exceptions; the classes, style and attributes of the source are added to
+those of the macro.
+
+**Layouts.** A page chooses a layout with `{% set layout = 'side' %}` as its
+first line (or `layout: side` in its `config.yaml` or its deck entry); the
+theme then places and sizes its blocks, and `media::` holds its figures,
+fitted in the area of the layout: no positions, widths or spacers to write.
+
+```
+{% set layout = 'side' %}
+= Forward kinematics
+
+* Each joint angle is set by hand
+* Rotations are interpolated
+
+media::
+img::assets/fk.jpg
+credit:: Image: Wikimedia Commons ::
+::
+```
+
+Layouts of the slide themes (measured on 780 slides, they cover 68 % of
+them; the others, text, text and code, columns, stay in the flow with the
+macros):
+
+| Layout | Page |
+|--------|------|
+| `side` (`side-s`, `side-l`) | Text on the left, figures in the right column below the title (36 % of the slides, also code + figure) |
+| `stack` | Text, then figures taking the rest of the slide; `media::(.row)` for a row of figures (21 %) |
+| `section` | Section or title slide, centered (11 %) |
+
+A layout is a class of `<body>` (`layout-side`, plus `layout-side-s` for a
+variant) styled by its `css` in `design.yaml` (`layouts:` with `css` and
+`doc`, documented in `structure/design.md`); the `design` key adds or
+removes layouts like macros.
+
+**Lint.** `python generate.py --lint` lists the values written by hand in the
+pages, with what replaces them in the design: positions (`position:fixed`,
+`top`, `left`), spacers (`div::[height:25px;]::` → `gap::`), font sizes in
+percent (→ `small::`, `tiny::`), offsets in pixels, `display:flex` (→ `cols::`),
+`text-align:center` (→ `center::`), gray text (→ `muted::`), and unknown
+layouts or layouts without `media::`:
+
+```
+src/03_squelette/04_ik/index.html.j2:9: spacer: div::[height:25px;]::
+    -> gap::
+```
+
+Each build gives their number (the style debt of the deck), and the layout
+report lists them per page (column `lint` of `summary.md`). Code blocks are
+not linted; a value that nothing in the design covers (an annotation drawn
+over a figure) can stay.
 
 The generator:
 
@@ -355,8 +411,8 @@ The generator:
    configuration (a value `null` removes a token or a macro),
 2. writes `theme/css/design.css`: the tokens as CSS variables
    (`font: {small: 85%}` gives `--font-small`), then the `css` of each macro,
-3. writes their reference in `structure/design.md` of the site (for authors
-   and LLMs; the layout report links to it),
+3. writes their reference in `structure/design.md` of the site (macros,
+   layouts, tokens: for authors and LLMs; the layout report links to it),
 4. validates the tokens and the macros (with LHTML), and gives the macros to LHTML without their `css`.
 
 A design file may start from another one with `extends` (relative to the
