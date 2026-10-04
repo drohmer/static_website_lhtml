@@ -127,7 +127,7 @@ macros:
     doc: |
       Blocks side by side, aligned on their top: `cols::` with `col::` children.
       `cols::(.even)`: equal widths; `cols::(.spread)`: spread over the width (row of figures);
-      `cols::(.middle)`: vertically centered. Several classes: `(.spread .middle)` (with spaces).
+      `cols::(.middle)`: vertically centered. Several classes: `(.spread .middle)` or `(.spread.middle)`.
       Replaces `::[display:inline-block; vertical-align:top; margin-left:2em;]` and
       `div::[display:flex; justify-content:space-around;]`.
     css: |

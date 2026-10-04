@@ -108,7 +108,7 @@ stands for a figure that does not exist yet.
   `display:flex`. `--lint` names the replacement of each value.
 - Keep an inline value only when nothing in the design expresses it (an
   annotation drawn over a figure, for example), and keep it minimal.
-- Several classes are written with spaces: `(.a .b)`.
+- Several classes: `(.a .b)` or `(.a.b)`.
 - Do not change the text of a slide unless asked. Do not edit the generated
   site, other projects (deck `sources`), or `design.yaml` of the theme. Design
   changes go in the `design` key of `configure.yaml` (tokens, new macros).
