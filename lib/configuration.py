@@ -30,6 +30,7 @@ class Config:
     include_head: list[str] = field(default_factory=list)
     plugin_arg: dict = field(default_factory=dict)
     cache_video_directory: str | None = None
+    design: dict | str | None = None
     # Legacy extensions stay available to custom plugins, with a warning.
     extras: dict = field(default_factory=dict)
 
@@ -38,6 +39,8 @@ class Config:
         values.update(values.pop('extras'))
         if values['cache_video_directory'] is None:
             del values['cache_video_directory']
+        if values['design'] is None:
+            del values['design']
         return values
 
 
@@ -85,7 +88,7 @@ def load_config(filename, debug_override=None):
         data['plugin'] = data.pop('plugin_post')
 
     defaults = Config().to_meta()
-    known = set(defaults) | {'cache_video_directory'}
+    known = set(defaults) | {'cache_video_directory', 'design'}
     reserved = {'args', 'log', 'plugin_paths', 'config_file', 'config_directory',
                 'lib_directory', 'current_directory', 'published_site_directory', 'extras'}
     extras = {}
@@ -114,6 +117,18 @@ def load_config(filename, debug_override=None):
     for key in ('plugin', 'include_head'):
         if not isinstance(values[key], list) or any(not isinstance(v, str) or not v.strip() for v in values[key]):
             raise ConfigError(f"'{key}' must be a list of non-empty strings")
+
+    design = values.get('design')
+    if design is not None:
+        if isinstance(design, str) and design.strip():
+            design_file = Path(design).expanduser()
+            if not design_file.is_absolute():
+                design_file = path.parent / design_file
+            if not design_file.is_file():
+                raise ConfigError(f"'design' file not found: '{design_file}'")
+            values['design'] = str(design_file.resolve())
+        elif not isinstance(design, dict) or any(not isinstance(k, str) for k in design):
+            raise ConfigError("'design' must be a mapping (tokens, macros) or the path of a YAML file")
 
     for key in ('source_directory', 'site_directory', 'theme', 'cache_video_directory'):
         if key not in values:

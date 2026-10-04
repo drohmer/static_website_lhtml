@@ -1,0 +1,166 @@
+# Design of the slides theme: tokens and LHTML macros.
+#
+# Override any value in the `design` key of configure.yaml (or give the path of
+# another YAML file there); a value null removes a macro. The generator writes
+# theme/css/design.css (tokens as CSS variables, then the css of each macro)
+# and `--layout` writes the reference of the macros in .layout/design.md.
+#
+# Default values: most frequent idioms of 904 slides (4 decks, 2026).
+# Coordinates in px of the 1920x1080 slide.
+
+tokens:
+  font:
+    small: 85%          # font-size:85%   (368 uses), 80% (178), 90% (120)
+    tiny: 70%           # font-size:65-75% (109 uses)
+    credit: 75%         # captions under figures: font-size:75%; color:gray
+    section: 150%
+  line:
+    tight: 1.3em        # line-height:1.3em (230 uses)
+    section: 1.8em
+  space:
+    s: 0.5em
+    m: 25px             # div::[height:25px;]:: (527 uses)
+    l: 50px             # height:50px (284 uses)
+    xl: 75px
+  color:
+    muted: gray
+    box-bg: rgb(240,240,240)
+    box-border: black
+    good-bg: '#eafaf1'
+    good-border: '#27ae60'
+    bad-bg: '#fdecea'
+    bad-border: '#c0392b'
+    warn-bg: '#fff3cd'
+    warn-border: '#e0a800'
+  aside:
+    top: 150px          # figure in the right column: top 100-250 px (40 %)
+    right: 100px        # right edge at x = 1820 (median of the corpus: 1800)
+  cols:
+    gap: 2em
+  section:
+    top: 300px
+    bottom: 30px
+  demo:
+    width: 1750px
+    height: 750px
+
+macros:
+
+  gap:
+    class: gap
+    empty: true
+    variant: [s, m, l, xl]
+    default: m
+    doc: |
+      Vertical space between blocks: `gap::` (medium), `gap::s`, `gap::l`, `gap::xl` (sizes in the css below).
+      Replaces `div::[height:25px;]::`.
+    css: |
+      .gap { height: var(--space-m); }
+      .gap-s { height: var(--space-s); }
+      .gap-m { height: var(--space-m); }
+      .gap-l { height: var(--space-l); }
+      .gap-xl { height: var(--space-xl); }
+
+  small:
+    class: small
+    doc: |
+      Smaller text, tighter lines (secondary bullets, details): `small:: text ::` or a block
+      `small::` ... `::`. Replaces `::[font-size:85%; line-height:1.3em;]`.
+    css: |
+      .small { font-size: var(--font-small); line-height: var(--line-tight); }
+
+  tiny:
+    class: tiny
+    doc: |
+      Very small text (dense details, long formulas): `tiny:: text ::`.
+    css: |
+      .tiny { font-size: var(--font-tiny); line-height: var(--line-tight); }
+
+  credit:
+    class: credit
+    doc: |
+      Credit or caption under a figure, small and gray: `credit:: Image: Wikimedia Commons ::`.
+      Replaces `div::[font-size:75%; color:gray;]`.
+    css: |
+      .credit { font-size: var(--font-credit); line-height: var(--line-tight); color: var(--color-muted); }
+
+  muted:
+    tag: span
+    class: muted
+    doc: |
+      Gray inline text (secondary information, items not yet discussed): `muted:: text ::`.
+      Replaces `span::[color:gray] text ::`.
+    css: |
+      .muted { color: var(--color-muted); }
+
+  center:
+    class: center
+    doc: |
+      Centered block (figure, video, formula): `center::` ... `::`.
+    css: |
+      .center { text-align: center; }
+
+  aside:
+    class: aside
+    doc: |
+      Figure in the right column of the slide, next to the text, out of the flow:
+      `aside::` img::... `::`. Its right edge is aligned with the right margin; move it
+      vertically with `aside::[top:400px;]` (or horizontally with `[right:300px;]`).
+      Replaces `div::[position:fixed; top:150px; left:1400px;]`.
+    css: |
+      .aside { position: fixed; top: var(--aside-top); right: var(--aside-right); text-align: center; }
+
+  cols:
+    class: cols
+    doc: |
+      Blocks side by side, aligned on their top: `cols::` with `col::` children.
+      `cols::(.even)`: equal widths; `cols::(.spread)`: spread over the width (row of figures);
+      `cols::(.middle)`: vertically centered.
+      Replaces `::[display:inline-block; vertical-align:top; margin-left:2em;]` and
+      `div::[display:flex; justify-content:space-around;]`.
+    css: |
+      .cols { display: flex; align-items: flex-start; gap: var(--cols-gap); }
+      .cols.even > .col { flex: 1 1 0; }
+      .cols.spread { justify-content: space-around; }
+      .cols.middle { align-items: center; }
+
+  col:
+    class: col
+    doc: |
+      One column of `cols::`: `col::` ... `::`.
+    css: |
+      .col { flex: 0 1 auto; min-width: 0; }
+
+  box:
+    class: box
+    doc: |
+      Framed block (code, definition, key point): `box::` ... `::`, with `box::(.good)`,
+      `box::(.bad)`, `box::(.warn)` for green, red and yellow frames.
+      Replaces `::[background-color:rgb(240,240,240); padding:0.5em; border:1px solid black; display:inline-block;]`.
+    css: |
+      .box { display: inline-block; vertical-align: top; padding: 0.5em;
+             background-color: var(--color-box-bg); border: 1px solid var(--color-box-border); }
+      .box.good { background-color: var(--color-good-bg); border: 2px solid var(--color-good-border); }
+      .box.bad { background-color: var(--color-bad-bg); border: 2px solid var(--color-bad-border); }
+      .box.warn { background-color: var(--color-warn-bg); border: 2px solid var(--color-warn-border); }
+
+  section:
+    class: section
+    doc: |
+      Title of a section slide (no page title), centered, large:
+      `section::` = Title ... `::`. Replaces `div::[text-align:center; margin-top:300px; font-size:150%;]`.
+    css: |
+      .section { text-align: center; margin-top: var(--section-top); margin-bottom: var(--section-bottom);
+                 font-size: var(--font-section); line-height: var(--line-section); }
+
+  demo:
+    tag: iframe
+    class: demo
+    empty: true
+    url: src
+    attrs: 'frameborder="0" scrolling="no"'
+    doc: |
+      Interactive demo (HTML page in an iframe): `demo::assets/demo/index.html`, size with
+      `demo::url[height:600px;]`. Replaces `<iframe style="overflow:hidden; border:0; width:1750px; height:750px;" ...>`.
+    css: |
+      .demo { display: block; overflow: hidden; border: 0; width: var(--demo-width); height: var(--demo-height); }

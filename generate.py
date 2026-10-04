@@ -15,6 +15,7 @@ import importlib.util
 import platform
 import traceback
 
+from lib import design
 from lib import filesystem
 from lib import generator_tool
 from lib import logger
@@ -236,6 +237,24 @@ def render_jinja(meta, template_files, sitemap, log):
     return failed
 
 
+def prepare_design(meta, log):
+    """Load the design (theme design.yaml + 'design' of the configuration),
+    write theme/css/design.css and give the macros to LHTML."""
+    try:
+        meta['design'] = design.load_design(meta['theme'], meta.get('design'))
+        if not any(meta['design'].values()):
+            return
+        if meta['design']['macros'] and not hasattr(lhtml, 'registry_with_macros'):
+            raise design.DesignError('the macros of the design require lhtml-markup >= 2.5 '
+                                     '(pip install -U lhtml-markup)')
+        meta['macros'] = design.lhtml_macros(meta['design'])
+        lhtml.registry_with_macros(meta['macros'])  # validate once, before the pages
+        path = design.write_design(meta, meta['design'])
+    except (design.DesignError, lhtml.LHTMLError) as exc:
+        raise RuntimeError(f'Design: {exc}') from exc
+    log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
+
+
 def render_lhtml(meta, template_files, log):
     """Run LHTML conversion on all rendered templates, with optional HTML tidy.
     Returns the list of templates that failed."""
@@ -401,6 +420,7 @@ def generate_site(meta):
     log.title('Data preparation', pre='\n')
     log.tic()
     template_files, sitemap = prepare_data(meta, log)
+    prepare_design(meta, log)
     log.ok_elapsed()
 
     # Pre-process plugins
