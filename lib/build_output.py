@@ -15,8 +15,6 @@ def staged_site(meta):
     meta['published_site_directory'] = str(target) + '/'
     meta['site_directory'] = str(staging) + '/'
     try:
-        if meta['args'].light and target.is_dir():
-            shutil.copytree(target, staging, dirs_exist_ok=True, symlinks=True)
         yield
         # PDF-only exports may intentionally remove their staging site.
         if staging.is_dir():

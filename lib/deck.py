@@ -39,13 +39,12 @@ import unicodedata
 
 import yaml
 
-from lib.pages import TEMPLATE_SUFFIX
+from lib.generator_tool import STRUCTURE_KEYS
+from lib.pages import is_template, template_name
 
 GLOB_CHARS = set('*?[')
 NAME = re.compile(r'[A-Za-z][A-Za-z0-9_-]*$')
 ALIAS = re.compile(r'([A-Za-z][A-Za-z0-9_-]*):(?!/)(.*)$')
-# Keys of structure.yaml written by the generator
-RESERVED = {'path', 'dir', 'filename', 'template', 'level', 'title_id', 'src', 'source', 'occurrence'}
 # Directories of the site written by the generator (not available as source names)
 GENERATOR_DIRECTORIES = {'theme', 'structure', 'sitemap'}
 
@@ -150,15 +149,19 @@ def _load_entry(item, sources, where):
             raise DeckError(f"{where}: a slide given as a mapping needs a 'path'")
         raw, exclude = item['path'], False
         meta = {k: v for k, v in item.items() if k != 'path'}
-        bad = (set(meta) & RESERVED) | {k for k in meta if not isinstance(k, str)}
+        bad = (set(meta) & STRUCTURE_KEYS) | {k for k in meta if not isinstance(k, str)}
         if bad:
             raise DeckError(f"{where}: reserved key(s) {', '.join(sorted(map(str, bad)))}")
         duration = meta.get('duration', 0)
         if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
             raise DeckError(f"{where}: 'duration' must be a number of minutes")
+        if 'title' in meta and (isinstance(meta['title'], (bool, list, dict)) or not str(meta['title'] or '').strip()):
+            raise DeckError(f"{where}: 'title' must be a text")
         params = meta.get('params', {})
         if not isinstance(params, dict) or any(not isinstance(k, str) for k in params):
             raise DeckError(f"{where}: 'params' must be a mapping name: value")
+    elif isinstance(item, (int, float)) and not isinstance(item, bool):
+        raise DeckError(f"{where}: {item!r} is read as a number: quote the path ('{item}')")
     else:
         raise DeckError(f'{where}: expected a path or a mapping, got {item!r}')
     alias = None
@@ -256,7 +259,7 @@ class _Index:
             source = page.source.name
             self.by_source[source].append(page)
             self.by_id[(source, page.id)].append(page)
-            for key in {page.file, page.file + '.j2', page.file[:-len('.html')]}:
+            for key in {page.file, template_name(page.file), page.file[:-len('.html')]}:
                 self.by_file[(source, key)].append(page)
         self.sorted_ids = {source: sorted((p.id, self.order[id(p)]) for p in ps)
                            for source, ps in self.by_source.items()}
@@ -342,6 +345,11 @@ def apply_deck(deck, pages):
                             + (f" (did you mean '{hint[0]}'?)" if hint else '')
                             + (f" (no source named '{alias.group(1)}')" if alias and not e.source else ''))
         # Pages named explicitly in the deck are placed there, not here.
+        if all(id(p) in placed or id(p) in excluded or id(p) in named_pages for p in hits):
+            first = hits[0]
+            name = (f'{first.source.name}:' if first.source.name else '') + first.file
+            warnings.append(f"{e.line}: '{e.label}' places no page (its pages are placed elsewhere); "
+                            f"to repeat a page, name its file ('{name}')")
         for page in hits:
             if id(page) in placed or id(page) in excluded or id(page) in named_pages:
                 continue
@@ -350,6 +358,22 @@ def apply_deck(deck, pages):
             ordered.append(page)
     unlisted = [p for p in pages if id(p) not in placed and not p.source.name]
     return DeckResult(ordered, unlisted, missing, warnings)
+
+
+def named_pages(pages, pointers, sources=None):
+    """The pages (among `pages`, with their occurrences) named by pointers
+    written as in a deck (--only). `sources`: names of the other projects."""
+    index = _Index(pages)
+    found = set()
+    for k, pointer in enumerate(pointers, 1):
+        entry = _load_entry(pointer, sources or {}, f'--only {pointer}')
+        hits = index.matching(entry)
+        if not hits:
+            hint = difflib.get_close_matches(entry.label, sorted({p.label for p in pages}), n=1)
+            raise DeckError(f"--only: no page of the site matches '{entry.label}'"
+                            + (f" (did you mean '{hint[0]}'?)" if hint else ''))
+        found.update(id(p) for p in hits)
+    return [p for p in pages if id(p) in found]
 
 
 def scaffold(entries, source_directory):
@@ -362,13 +386,13 @@ def scaffold(entries, source_directory):
         if e.source:
             continue
         target = Path(source_directory) / e.pointer
-        if target.name.endswith(('.html', '.html.j2')):          # a page file: dir/extra.html
-            page = target.with_name(target.name if target.name.endswith('.j2') else target.name + '.j2')
+        if target.name.endswith('.html') or is_template(target.name):     # a page file: dir/extra.html
+            page = target if is_template(target.name) else target.with_name(template_name(target.name))
             if page.exists():
                 continue
         else:
-            page = target / ('index' + TEMPLATE_SUFFIX)
-            if page.exists() or any(target.rglob('*' + TEMPLATE_SUFFIX)):
+            page = target / template_name('index.html')
+            if page.exists() or any(is_template(p.name) for p in target.rglob('*')):
                 continue
         page.parent.mkdir(parents=True, exist_ok=True)
         title = str(e.meta['title']).strip().splitlines() or ['']

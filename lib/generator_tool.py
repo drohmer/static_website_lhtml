@@ -5,6 +5,9 @@ import re
 import yaml
 import json
 
+# Keys of structure.yaml written by the generator (not available to the deck
+# metadata nor to the config.yaml of the pages)
+STRUCTURE_KEYS = {'path', 'dir', 'filename', 'template', 'level', 'title_id', 'src', 'source', 'occurrence'}
 
 def clean_string(s):
     if s is None:
@@ -58,11 +61,11 @@ RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
 TITLE_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']
 
 
-def extract_titles(pages, site_directory):
-    """Title of each page (page.title) and the sitemap {id: page}."""
+def extract_titles(pages):
+    """Title of each page (page.title, read in its source) and the sitemap {id: page}."""
     sitemap = {}
     for page in sorted(pages, key=_sitemap_priority):
-        path = site_directory + page.site_template
+        path = page.src
         title = extract_data_from_file(path, TITLE_REGEX)
         if title is not None:
             title = RAW_MARKERS.sub('', title)
@@ -74,13 +77,15 @@ def extract_titles(pages, site_directory):
 
 def export_structure(pages, structure_path):
     """structure.yaml (and .json): one entry per page, in order, for the plugins
-    and the theme: its place in the site (dir, filename, template), title,
-    level, configuration and deck metadata, and origin (src, source, occurrence)."""
+    and the theme: its title, configuration and deck metadata, its place in the
+    site (dir, filename, template, level) and origin (src, source, occurrence).
+    Returns the entries."""
     structure_to_export = []
     for page in pages:
-        structure = {'dir': page.site_directory, 'filename': os.path.basename(page.site_html),
+        structure = {'title': page.title, **page.config, **page.meta,
+                     'dir': page.site_directory, 'filename': os.path.basename(page.site_html),
                      'template': page.site_template, 'level': page.site_directory.count('/'),
-                     'title': page.title, **page.config, **page.meta, 'src': str(page.src)}
+                     'src': str(page.src)}
         if page.source.name:
             structure['source'] = page.source.name
         if page.occurrence > 1:
@@ -93,6 +98,7 @@ def export_structure(pages, structure_path):
         yaml.dump(structure_to_export, fid)
     with open(structure_path + 'structure.json', 'w') as fid:
         json.dump(structure_to_export, fid, indent=4, default=str)
+    return structure_to_export
 
 
 def export_sitemap(sitemap, dir_sitemap):

@@ -69,17 +69,19 @@ class Round3BuildTests(DeckProjectsTests):
         self.assertFalse((page / '.env').exists())
         self.assertEqual(sorted(os.listdir(self.root / 'shared')), ['s.sass'])
 
-    def test_parent_page_assets_in_light_mode(self):
+    def test_parent_page_assets_with_only(self):
         self.write('course/src/05_b/01_c/nested/index.html.j2', HEAD + "= N\n{% endblock %}\n")
-        self.build({'sources': {'course': '../course/src'}, 'slides': ['01_a']})
-        self.build({'sources': {'course': '../course/src'},
-                    'slides': ['01_a', 'course:05_b/01_c/nested', 'course:05_b/01_c/index.html']}, '-l')
+        deck_data = {'sources': {'course': '../course/src'},
+                     'slides': ['01_a', 'course:05_b/01_c/nested', 'course:05_b/01_c/index.html']}
+        self.build(deck_data)
+        (self.site / 'course/05_b/01_c/assets/c.png').unlink()
+        self.build(deck_data, '--only', 'course:05_b/01_c')
         self.assertTrue((self.site / 'course/05_b/01_c/assets/c.png').is_file())
 
     def test_include_of_a_template_not_in_the_deck(self):
         self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n{% include 'parts/box.html.j2' %}\n{% endblock %}\n")
         self.write('talk/src/parts/box.html.j2', 'box:: boxed ::\n')
-        for args in ((), ('-l',)):
+        for args in ((), ('--only', '01_a')):
             self.build({'slides': ['01_a']}, *args)
             self.assertIn('<div class="box"> boxed </div>', (self.site / '01_a/index.html').read_text())
             self.assertFalse((self.site / 'parts/box.html.j2').exists())

@@ -4,16 +4,16 @@ Pipeline: copy sources → Jinja2 rendering → LHTML conversion → SASS compil
 with plugin hooks at pre/mid/post stages.
 """
 
-from jinja2 import Environment, FileSystemLoader, TemplateError
+from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, TemplateError
 from jinja2 import meta as jinja_meta
 import tidylib
 import yaml
+import json
 import os
 import shutil
 import argparse
 import sys
 import importlib.util
-import platform
 import traceback
 
 from lib import deck
@@ -41,8 +41,9 @@ def parse_arguments():
                         help='Clean the output directories.')
     parser.add_argument('-i', '--input_config',
                         help='Input yaml configuration file. Default=configure.yaml')
-    parser.add_argument('-l', '--light', action='store_true',
-                        help='Light mode: only convert .html.j2 files without copying other files.')
+    parser.add_argument('--only', metavar='POINTER', action='append',
+                        help='Generate only these pages (deck pointer: directory, file, glob; repeatable) '
+                             'in the existing site; a full build when the pages of the site changed.')
     parser.add_argument('--check-config', action='store_true',
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
@@ -60,8 +61,8 @@ def parse_arguments():
         parser.error('--port must be between 0 and 65535')
     if (args.serve or args.watch) and (args.clean or args.check_config):
         parser.error('--serve/--watch cannot be combined with --clean or --check-config')
-    if args.watch and args.light:
-        parser.error('--watch performs full rebuilds; omit --light')
+    if args.only and (args.clean or args.check_config):
+        parser.error('--only cannot be combined with --clean or --check-config')
     return args
 
 
@@ -154,22 +155,25 @@ def load_deck(meta):
     return loaded
 
 
-def select_pages(meta, loaded_deck, log, scaffold=False):
-    """Pages to generate, in order: the pages of the project in file order, or
-    the pages of the deck (from the project and other projects); and the pages
-    of the project not generated (not in the deck). With `scaffold`, the
-    planned slides of the deck are created first."""
-    found = pages.discover(pages.Source(None, meta['source_directory']))
+def select_pages(meta, log, scaffold=False):
+    """Pages to generate, in order, with their names in the site: the pages of
+    the project in file order, or the pages of the deck (from the project and
+    other projects). With `scaffold`, the planned slides of the deck are
+    created first."""
+    loaded_deck = load_deck(meta)
+    site = [meta['site_directory']]
+    found = pages.discover(pages.Source(None, meta['source_directory']), exclude=site)
     if loaded_deck is None:
-        return found, []
+        pages.name_outputs(found)
+        return found
     for name, root in loaded_deck.sources.items():
         if any(e.source == name for e in loaded_deck.entries):
-            found += pages.discover(pages.Source(name, root))
+            found += pages.discover(pages.Source(name, root), exclude=site)
     result = deck.apply_deck(loaded_deck, found)
     if scaffold and result.missing:
         for path in deck.scaffold(result.missing, meta['source_directory']):
             log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
-        return select_pages(meta, loaded_deck, log)
+        return select_pages(meta, log)
     for warning in result.warnings:
         log.warning(f'Deck: {warning}')
     if not result.pages:
@@ -183,71 +187,74 @@ def select_pages(meta, loaded_deck, log, scaffold=False):
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
         log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
                              f'{names}{more}', indent_level=1)
-    return result.pages, result.unlisted
+    pages.name_outputs(result.pages)
+    return result.pages
 
 
-def remove_stale_pages(dir_site, selected):
-    """Light mode: remove the pages of the previous generation no longer generated."""
-    structure_path = os.path.join(dir_site, 'structure/structure.yaml')
-    if not os.path.isfile(structure_path):
-        return
-    current = {page.site_html for page in selected}
-    with open(structure_path) as fid:
-        previous = yaml.safe_load(fid) or []
-    for entry in previous:
-        relative = entry['dir'] + entry['filename']
-        if relative not in current:
-            for suffix in ('', '.j2'):
-                stale = os.path.join(dir_site, relative + suffix)
-                if os.path.isfile(stale):
-                    os.remove(stale)
+def only_pages(meta, selected, log):
+    """--only: the pages it names, or None for a full build (no previous site,
+    or its pages are not those of this build: a deck or a page changed)."""
+    sources = {p.source.name: p.source.root for p in selected if p.source.name}
+    built = deck.named_pages(selected, meta['args'].only, sources)
+    previous = os.path.join(meta['site_directory'], 'structure/structure.json')
+    if not os.path.isfile(previous):
+        log.keyvalue('info', '--only: no previous build, full build', indent_level=1)
+        return None
+    with open(previous, encoding='utf-8') as fid:
+        names = [entry['dir'] + entry['filename'] for entry in json.load(fid)]
+    if names != [page.site_html for page in selected]:
+        log.keyvalue('info', '--only: the pages of the site changed, full build', indent_level=1)
+        return None
+    log.keyvalue('info', f"--only: {', '.join(p.label for p in built)}", indent_level=1)
+    return built
 
 
-def prepare_data(meta, log):
-    """Select the pages (deck), copy them with the sources and theme into the
-    site, extract their titles and export the structure. Returns the pages,
-    the sitemap and the templates copied only for Jinja includes (partials)."""
+def prepare_data(meta, selected, built, log):
+    """Copy the pages to generate with the sources and theme into the site
+    (only their templates and assets for --only), extract the titles of all
+    the pages and export the structure. Returns the sitemap."""
     dir_source = meta['source_directory']
     dir_site = meta['site_directory']
-    light = meta['args'].light
-    selected, unlisted = select_pages(meta, load_deck(meta), log,
-                                      scaffold=getattr(meta['args'], 'scaffold', False))
+    only = meta['only']
 
     warnings = []
-    if light:
-        log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
-    else:
+    if not only:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        warnings += filesystem.copy_directories(dir_source, dir_site, templates=False,
+        warnings += filesystem.copy_directories(dir_source, dir_site, skip=pages.is_template,
                                                 exclude=[meta.get('published_site_directory')])
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         warnings += filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
-    pages.name_outputs(selected)
-    warnings += pages.place(selected, dir_site, light=light)
-    partials = pages.place_partials(unlisted, dir_site)
+    if only:        # a page that fails keeps its previous version
+        meta['previous_pages'] = {}
+        for page in built:
+            if os.path.isfile(dir_site + page.site_html):
+                with open(dir_site + page.site_html, 'rb') as fid:
+                    meta['previous_pages'][page.site_html] = fid.read()
+    warnings += pages.place(built, dir_site, project_assets=only)
     for warning in warnings:
         log.warning(warning)
-    if light:
-        remove_stale_pages(dir_site, selected)
 
-    log.debug(f"Found {len(selected)} template files in '{dir_site}'")
-    sitemap = generator_tool.extract_titles(selected, dir_site)
-    sitemap_dir = os.path.join(dir_site, 'sitemap')
-    if light and os.path.isdir(sitemap_dir):
-        shutil.rmtree(sitemap_dir)
+    log.debug(f"Found {len(selected)} template files")
+    sitemap = generator_tool.extract_titles(selected)
     generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
-    generator_tool.export_structure(selected, dir_site + 'structure/')
-
-    return selected, sitemap, partials
+    meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/')
+    built_ids = {id(page) for page in built}
+    meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if id(page) in built_ids]
+    return sitemap
 
 
 def discard_page(meta, page):
-    """Remove the outputs of a page that failed (the template is kept in debug mode)."""
+    """Remove the outputs of a page that failed (the template is kept in debug
+    mode); with --only, its previous version is restored."""
     paths = [page.site_html] + ([] if meta['debug'] else [page.site_template])
     for path in paths:
-        path = meta['site_directory'] + path
-        if os.path.isfile(path):
-            os.remove(path)
+        full_path = meta['site_directory'] + path
+        if os.path.isfile(full_path):
+            os.remove(full_path)
+    previous = meta.get('previous_pages', {}).get(page.site_html)
+    if previous is not None:
+        with open(meta['site_directory'] + page.site_html, 'wb') as fid:
+            fid.write(previous)
 
 
 def sitemap_keywords_used(env, templates):
@@ -274,18 +281,36 @@ def sitemap_keywords_used(env, templates):
     return used
 
 
-def render_jinja(meta, selected, sitemap, log):
-    """Render all Jinja2 templates. Returns the list of pages that failed."""
+def jinja_environment(meta, selected, built):
+    """Jinja environment: the templates of the pages to generate (as the
+    plugins left them in the site), then the files of the sources (includes,
+    imports: the project first, then the other projects), then the site (theme)."""
     dir_site = meta['site_directory']
-    file_loader = FileSystemLoader(dir_site)
-    env = Environment(loader=file_loader, extensions=['jinja_markdown.MarkdownExtension'])
-    used = sitemap_keywords_used(env, [page.site_template for page in selected])
+    templates = {}
+    for page in built:
+        with open(dir_site + page.site_template, encoding='utf-8') as fid:
+            templates[page.site_template] = fid.read()
+    roots = [meta['source_directory']] + sorted({p.source.root for p in selected if p.source.name})
+    loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
+                         + [FileSystemLoader(dir_site)])
+    return Environment(loader=loader, extensions=['jinja_markdown.MarkdownExtension'])
+
+
+def render_jinja(meta, selected, built, sitemap, log):
+    """Render the Jinja2 templates of the pages to generate (`built`, among the
+    pages of the site `selected`). Returns the list of pages that failed."""
+    dir_site = meta['site_directory']
+    env = jinja_environment(meta, selected, built)
+    used = sitemap_keywords_used(env, [page.site_template for page in built])
     targets = {id_site: page.site_html for id_site, page in sitemap.items()
                if used is None or 'pathTo_' + id_site in used or 'linkTo_' + id_site in used}
 
-    log.keyvalue('Found', f'{len(selected)} template files')
+    log.keyvalue('Found', f'{len(built)} template files')
     failed = []
+    built_ids = {id(page) for page in built}
     for k, page in enumerate(selected):
+        if id(page) not in built_ids:
+            continue
         links = {}
         for id_site, target in targets.items():
             url = page.path_to_root + target
@@ -308,34 +333,13 @@ def render_jinja(meta, selected, sitemap, log):
     return failed
 
 
-def remove_partials(meta, partials):
-    """Remove the templates copied only for the Jinja includes (kept in debug mode)."""
-    if meta['debug']:
-        return
-    for path in partials:
-        if os.path.isfile(path):
-            os.remove(path)
-
-
-def load_design(meta):
-    """The design (theme design.yaml + 'design' of the configuration), its
-    macros validated by LHTML."""
-    loaded = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
-    if loaded['macros']:
-        try:
-            lhtml.registry_with_macros(loaded['macros'])
-        except lhtml.LHTMLError as exc:
-            raise design.DesignError(str(exc)) from exc
-    return loaded
-
-
 def prepare_design(meta, log):
     """Load the design (theme design.yaml + 'design' of the configuration),
     write theme/css/design.css and structure/design.md, give the macros to LHTML."""
-    meta['design'] = load_design(meta)
-    meta['macros'] = meta['design']['macros']
-    # Always written (even empty): the theme may link it, and a light build
-    # must not keep the design.css of a previous design.
+    meta['design'] = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+    meta['macros'] = design.lhtml_macros(meta['design'])
+    # Always written (even empty): the theme may link it, and --only must not
+    # keep the design.css of a previous design.
     path = design.write_design(meta, meta['design'])
     log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
 
@@ -343,10 +347,7 @@ def prepare_design(meta, log):
 def render_lhtml(meta, selected, log):
     """Run LHTML conversion on all rendered templates, with optional HTML tidy.
     Returns the list of pages that failed."""
-    tidy_options = {'doctype': 'html5', 'show-warnings': 'no'}
-    python_minor = int(platform.python_version_tuple()[1])
-    if python_minor >= 8:
-        tidy_options['warn-proprietary-attributes'] = 'no'
+    tidy_options = {'doctype': 'html5', 'show-warnings': 'no', 'warn-proprietary-attributes': 'no'}
 
     tidylib.BASE_OPTIONS = {}
     failed = []
@@ -470,7 +471,7 @@ def build_once(args):
         # The deck and the design are read (not the pages): errors before any build
         try:
             loaded_deck = load_deck(meta)
-            loaded_design = load_design(meta)
+            loaded_design = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
         except (deck.DeckError, design.DesignError) as exc:
             log.error(str(exc))
             sys.exit(1)
@@ -494,17 +495,28 @@ def build_once(args):
         clean_directories(meta)
         return
 
+    built = None
     try:
-        with staged_site(meta):
-            generate_site(meta)
+        selected = select_pages(meta, log, scaffold=args.scaffold)
+        built = only_pages(meta, selected, log) if args.only else None
+        meta['only'] = built is not None
+        if meta['only']:
+            # In the site itself: copying it into a staging directory would
+            # cost more than the pages generated
+            generate_site(meta, selected, built)
+        else:
+            with staged_site(meta):
+                generate_site(meta, selected, selected)
     except Exception as exc:
-        log.error(f'Build failed; previous site preserved: {exc}')
+        log.error(f"Build failed{'' if built is not None else '; previous site preserved'}: {exc}")
         log.debug(traceback.format_exc())
         raise SystemExit(1)
 
 
-def generate_site(meta):
-    args, log = meta['args'], meta['log']
+def generate_site(meta, selected, built):
+    """Generate the pages `built` among the pages of the site `selected` (all
+    of them, except with --only)."""
+    log = meta['log']
     plugin_failures = 0
     log.display('[bold white]****************************', pre='\n')
     log.display('[bold white]  Start website generator')
@@ -515,7 +527,7 @@ def generate_site(meta):
     # Data preparation
     log.title('Data preparation', pre='\n')
     log.tic()
-    selected, sitemap, partials = prepare_data(meta, log)
+    sitemap = prepare_data(meta, selected, built, log)
     prepare_design(meta, log)
     log.ok_elapsed()
 
@@ -528,8 +540,7 @@ def generate_site(meta):
     # Jinja2 rendering
     log.title('Convert HTML', pre='\n')
     log.tic()
-    failed = render_jinja(meta, selected, sitemap, log)
-    remove_partials(meta, partials)
+    failed = render_jinja(meta, selected, built, sitemap, log)
     if failed:
         log.error(f'{len(failed)} page(s) not generated because of Jinja2 errors')
 
@@ -540,12 +551,11 @@ def generate_site(meta):
     log.ok_elapsed()
 
     # LHTML conversion
-    failed += render_lhtml(meta, selected, log)
+    failed += render_lhtml(meta, built, log)
     log.ok_elapsed()
 
     # SASS compilation
-    if not args.light:
-        compile_sass(meta, log)
+    compile_sass(meta, log)
 
     # Post-process plugins
     log.title('Post-process', pre='\n')

@@ -5,7 +5,7 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor
 from tempfile import TemporaryDirectory
 
-from lib.structure import load_structure, template_path
+from lib.structure import built_pages, structure, template_path
 
 # Requires: puppeteer (npm i puppeteer), minimist (npm i minimist)
 
@@ -27,14 +27,13 @@ def remove_controls(meta, structure):
 
 
 def pre_process(meta):
-    structure = load_structure(meta['site_directory'])
     meta['log'].keyvalue('*', 'Remove video controls', indent_level=2)
-    remove_controls(meta, structure)
+    remove_controls(meta, built_pages(meta))
 
 
 def post_process(meta):
-    structure = load_structure(meta['site_directory'])
-    if not structure:
+    pages = structure(meta)
+    if not pages:
         raise ValueError('No pages to export as PDF')
 
     site_dir = os.path.abspath(meta['site_directory'])
@@ -61,7 +60,7 @@ def post_process(meta):
 
         meta['log'].keyvalue('*', 'Generate PDF and images ...', indent_level=2)
         with ThreadPoolExecutor() as pool:
-            outputs = list(pool.map(export_page, enumerate(structure)))
+            outputs = list(pool.map(export_page, enumerate(pages)))
 
         merged = os.path.join(staging, 'slides.pdf')
         subprocess.run(['pdfunite', *[pdf for pdf, _ in outputs], merged], check=True)

@@ -1,13 +1,13 @@
 import os
 import re
 import json
-import shutil
 from collections import Counter
 
-from lib.structure import load_structure, template_path
+from lib.structure import built_pages, structure, template_path
 
 
 TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
+RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
 
 
 def generate_new_id(text, id_storage):
@@ -16,12 +16,13 @@ def generate_new_id(text, id_storage):
     Same scheme as before the refactoring, so that existing links keep
     working: lower case, spaces and '-' become '_', ',.:()' are removed,
     truncated to N_max characters. Characters that are unsafe in an HTML
-    attribute or a URL fragment (< > " & ` and whitespace) are removed too.
+    attribute or a URL fragment (< > " & ` and whitespace) are removed too,
+    as the Jinja markers ({% raw %}, braces, %) of a title.
     A repeated id gets the suffix _id2, _id3, ...
     """
     N_max = 20
-    text_id = text.lower().replace(' ', '_').replace('-', '_')
-    text_id = re.sub(r'[,.:()<>"&`\s]', '', text_id)
+    text_id = RAW_MARKERS.sub('', text).lower().replace(' ', '_').replace('-', '_')
+    text_id = re.sub(r'[,.:()<>"&`\s{}%]', '', text_id)
     text_id = text_id[:N_max]
 
     if text_id in id_storage:
@@ -32,19 +33,31 @@ def generate_new_id(text, id_storage):
 
 
 def pre_process(meta):
-    structure = load_structure(meta['site_directory'])
+    pages = structure(meta)
+    built = {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
+    summary_path = meta['site_directory'] + 'structure/title_id.json'
+    previous = {}
+    if len(built) < len(pages) and os.path.isfile(summary_path):
+        with open(summary_path) as fid:        # --only: headings of the other pages
+            previous = json.load(fid)
 
     id_storage = {}
     title_id_summary = {}
-    pages_per_directory = Counter(entry['dir'] for entry in structure)
+    pages_per_directory = Counter(entry['dir'] for entry in pages)
 
-    for entry in structure:
+    for entry in pages:
+        page_key = entry['dir'] + entry['filename']
+        if page_key not in built:
+            # Ids are unique in the site: count those of the pages not generated
+            title_id_summary[page_key] = previous.get(page_key, [])
+            for heading in title_id_summary[page_key]:
+                generate_new_id(heading['title'], id_storage)
+            continue
         file_path = template_path(meta, entry)
 
         with open(file_path, 'r') as fid:
             file_content = fid.read()
 
-        page_key = entry['dir'] + entry['filename']
         title_id_summary[page_key] = []
 
         def add_id(it, page=page_key):
@@ -68,10 +81,12 @@ def pre_process(meta):
 
     meta['title_id'] = title_id_summary
 
-    with open(meta['site_directory'] + 'structure/title_id.json', 'w') as fid:
+    with open(summary_path, 'w') as fid:
         json.dump(title_id_summary, fid, indent=4)
 
-    for entry in structure:
+    for entry in pages:
+        if entry['dir'] + entry['filename'] not in built:
+            continue
         dirname = meta['site_directory'] + entry['dir']
         headings = title_id_summary[entry['dir'] + entry['filename']]
         with open(dirname + entry['filename'] + '.title_id.json', 'w') as fid:
@@ -80,11 +95,3 @@ def pre_process(meta):
         if entry['filename'] == 'index.html' or pages_per_directory[entry['dir']] == 1:
             with open(dirname + 'title_id.json', 'w') as fid:
                 json.dump(headings, fid, indent=4)
-
-    # A light rebuild must also update the reader for the new per-page files.
-    if getattr(meta.get('args'), 'light', False):
-        source = os.path.join(meta['theme'], 'js/title_id.js')
-        target = os.path.join(meta['site_directory'], 'theme/js/title_id.js')
-        if os.path.isfile(source):
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            shutil.copy2(source, target)

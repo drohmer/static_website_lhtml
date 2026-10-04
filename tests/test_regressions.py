@@ -56,7 +56,7 @@ class GeneratorRegressions(unittest.TestCase):
         self.page('index.html.j2', 'Actual homepage')
         self.build()
         self.assertIn('<h1>Actual homepage</h1>', (self.site / 'index.html').read_text())
-        self.build('-l')
+        self.build('--only', 'index.html')
         self.assertIn('<h1>Actual homepage</h1>', (self.site / 'index.html').read_text())
 
     def test_plain_homepage_is_preserved(self):
@@ -65,23 +65,23 @@ class GeneratorRegressions(unittest.TestCase):
         self.build()
         self.assertEqual((self.site / 'index.html').read_text(), '<h1>Static homepage</h1>')
 
-    def test_light_add_rename_remove_and_metadata(self):
+    def test_only_after_add_rename_remove_is_a_full_build(self):
         self.page('a/index.html.j2', 'First')
         (self.source / 'asset.txt').write_text('original asset')
         self.build('-d')
         (self.source / 'asset.txt').write_text('changed asset')
         self.page('b/index.html.j2', 'Second')
         (self.source / 'b/config.yaml').write_text('custom: fresh\n')
-        self.build('-l')
+        self.build('--only', 'a')
         menu = (self.site / 'theme/js/menu.js').read_text()
         self.assertIn('b/index.html', menu)
         self.assertTrue((self.site / 'sitemap/second.html').exists())
         structure = yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
         self.assertEqual(structure[1]['custom'], 'fresh')
-        self.assertEqual((self.site / 'asset.txt').read_text(), 'original asset')
+        self.assertEqual((self.site / 'asset.txt').read_text(), 'changed asset')
         (self.source / 'a/index.html.j2').unlink()
         self.page('b/index.html.j2', 'Renamed')
-        self.build('-l')
+        self.build('--only', 'b')
         self.assertFalse((self.site / 'a/index.html').exists())
         self.assertFalse((self.site / 'sitemap/second.html').exists())
         self.assertTrue((self.site / 'sitemap/renamed.html').exists())
@@ -96,7 +96,7 @@ class GeneratorRegressions(unittest.TestCase):
         for text in ('', '# Optional metadata\n'):
             metadata.write_text(text)
             self.build()
-            self.build('-l')
+            self.build('--only', 'a')
             self.assertTrue((self.site / 'a/index.html').is_file())
 
     def test_menu_escapes_metadata_and_retains_flags(self):
@@ -132,7 +132,7 @@ class GeneratorRegressions(unittest.TestCase):
         # Emulate an output directory generated with the old JS reader.
         script = self.site / 'theme/js/title_id.js'
         script.write_text('old reader')
-        self.build('-l')
+        self.build()
         self.assertIn("filename + '.title_id.json'", script.read_text())
         # Exercise the actual reader for named pages, encoded names and index URLs.
         harness = r"""
@@ -155,14 +155,14 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         result = subprocess.run(['node', '-e', harness, str(script)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_deep_pages_are_generated_in_full_and_light_modes(self):
+    def test_deep_pages_are_generated_in_full_and_only_modes(self):
         name = 'a/b/c/d/e/f/g/index.html.j2'
         self.page(name, 'Deep')
         self.build()
         html = self.site / name.removesuffix('.j2')
         self.assertIn('<h1>Deep</h1>', html.read_text())
         self.page(name, 'Updated')
-        self.build('-l')
+        self.build('--only', 'a/b/c/d/e/f/g')
         self.assertIn('<h1>Updated</h1>', html.read_text())
 
     def test_directory_walk_avoids_symlink_cycles(self):
@@ -189,8 +189,9 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                     elif command[0] == 'magick':
                         Path(command[-1]).write_bytes(b'image')
                     return subprocess.CompletedProcess(command, 0)
-                meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger()}
-                with patch.object(generate_pdf, 'load_structure', return_value=[{'dir': '', 'filename': 'index.html'}]), patch.object(generate_pdf.subprocess, 'run', side_effect=run):
+                meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
+                        'structure': [{'dir': '', 'filename': 'index.html'}]}
+                with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
                     with self.assertRaises(subprocess.CalledProcessError):
                         generate_pdf.post_process(meta)
                 self.assertTrue((self.site / 'index.html').exists())
@@ -205,8 +206,9 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
             elif command[0] in ('magick', 'pdfunite'):
                 Path(command[-1]).write_bytes(b'export')
             return subprocess.CompletedProcess(command, 0)
-        meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger()}
-        with patch.object(generate_pdf, 'load_structure', return_value=[{'dir': '', 'filename': 'index.html'}]), patch.object(generate_pdf.subprocess, 'run', side_effect=run):
+        meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
+                'structure': [{'dir': '', 'filename': 'index.html'}]}
+        with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
             generate_pdf.post_process(meta)
         self.assertFalse(self.site.exists())
         self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')

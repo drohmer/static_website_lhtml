@@ -1,7 +1,6 @@
 import os
-import yaml
 
-from lib.structure import load_structure
+from lib.structure import structure
 
 
 def create_html_redirection(url):
@@ -18,14 +17,14 @@ def create_html_redirection(url):
 
 
 def post_process(meta):
-    structure = load_structure(meta['site_directory'])
-    if not structure or any(os.path.normpath(entry['dir'] + entry['filename']) == 'index.html'
-                            for entry in structure):
+    pages = structure(meta)
+    if not pages or any(os.path.normpath(entry['dir'] + entry['filename']) == 'index.html'
+                        for entry in pages):
         return
     # A hand-written HTML homepage also takes precedence over a redirect.
     if os.path.isfile(os.path.join(meta['source_directory'], 'index.html')):
         return
-    url = structure[0]['dir'] + structure[0]['filename']
+    url = pages[0]['dir'] + pages[0]['filename']
     html = create_html_redirection(url)
 
     redirection_path = meta['site_directory'] + '/index.html'

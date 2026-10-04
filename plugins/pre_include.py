@@ -1,12 +1,9 @@
 import os
-import yaml
 
-from lib.structure import load_structure, template_path
+from lib.structure import built_pages, template_path
 
 
 def pre_process(meta):
-    structure = load_structure(meta['site_directory'])
-
     files_to_include = meta['plugin_arg']['pre_include']
     content_to_include = []
     for f in files_to_include:
@@ -15,7 +12,7 @@ def pre_process(meta):
         with open(f, 'r') as fid:
             content_to_include.append(fid.read())
 
-    for entry in structure:
+    for entry in built_pages(meta):
         file_path = template_path(meta, entry)
 
         with open(file_path, 'r') as fid:

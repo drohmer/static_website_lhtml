@@ -19,7 +19,7 @@ for (let element of toc)
 
     const pageEntry = document.createElement('div');
     const linkElement = document.createElement('a');
-    linkElement.href = link;
+    linkElement.href = pathURL(link);
     linkElement.textContent = counter+' - '+title;
 
     if(currentPageID === counter) {

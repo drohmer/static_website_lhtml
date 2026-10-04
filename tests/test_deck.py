@@ -162,9 +162,9 @@ class DeckGenerationTests(unittest.TestCase):
         self.assertFalse((self.site / 'a/01_x/index.html.j2').exists())
         menu = (self.site / 'theme/js/menu.js').read_text()
         self.assertIn('"title": "Y!"', menu)
-        # Light mode with another deck given on the command line
+        # Another deck given on the command line
         (self.root / 'other.yaml').write_text('slides: [a/01_x]\n')
-        self.assertEqual(self.build('deck.yaml', '-l', '--deck', str(self.root / 'other.yaml')), ['a/01_x/'])
+        self.assertEqual(self.build('deck.yaml', '--deck', str(self.root / 'other.yaml')), ['a/01_x/'])
         self.assertFalse((self.site / 'b/01_w/index.html').exists())
 
     def test_scaffold_option(self):
@@ -227,7 +227,7 @@ class DeckProjectsTests(unittest.TestCase):
                        {'path': '00_plan', 'params': {'current': 2}, 'title': 'Plan (2)'}]}
 
     def test_external_and_repeated_pages(self):
-        for args in ((), ('-l',)):
+        for args in ((), ('--only', '00_plan')):
             structure = self.build(self.DECK, *args)
             self.assertEqual([e['dir'] + e['filename'] for e in structure],
                              ['00_plan/index.html', '01_a/index.html', 'course/05_b/01_c/index.html',
@@ -244,10 +244,11 @@ class DeckProjectsTests(unittest.TestCase):
             self.assertIn('../../../theme/css/main.css', (self.site / 'course/05_b/01_c/index.html').read_text())
             self.assertFalse((self.site / 'course/05_b/02_d').exists())
 
-    def test_light_mode_removes_previous_occurrence(self):
+    def test_only_after_a_deck_change_is_a_full_build(self):
         self.build(self.DECK)
-        self.build({'slides': ['00_plan', '01_a']}, '-l')
+        self.build({'slides': ['00_plan', '01_a']}, '--only', '01_a')
         self.assertFalse((self.site / '00_plan/index-2.html').exists())
+        self.assertFalse((self.site / 'course').exists())
 
     def test_mount_conflict_and_unknown_source(self):
         (self.root / 'talk/src/course').mkdir()
@@ -326,15 +327,18 @@ class DeckBuildRegressionTests(DeckProjectsTests):
         self.config.write_text(yaml.safe_dump(config))
         d = {'slides': ['03_m/index.html', {'path': '03_m/index.html', 'title': 'again'}, '03_m/index-2.html']}
         expected = ['03_m/index.html', '03_m/index-3.html', '03_m/index-2.html']
-        for args in ((), ('-l',), ('-l',), ()):
+        for args in ((), ('--only', '03_m'), ('--only', '03_m'), ()):
             structure = self.build(d, *args)
             self.assertEqual([e['dir'] + e['filename'] for e in structure], expected, args)
             self.assertIn('= M2', (self.site / '03_m/index-2.html.j2').read_text())
 
-    def test_light_mode_copies_assets_of_new_external_pages(self):
-        self.build({'slides': ['01_a']})
-        self.build(self.DECK, '-l')
-        self.assertTrue((self.site / 'course/05_b/01_c/assets/c.png').is_file())
+    def test_only_copies_the_assets_of_its_pages(self):
+        self.build(self.DECK)
+        self.write('course/src/05_b/01_c/assets/c.png', 'new png')
+        self.write('talk/src/01_a/a.txt', 'new')
+        self.build(self.DECK, '--only', 'course:05_b/01_c', '--only', '01_a')
+        self.assertEqual((self.site / 'course/05_b/01_c/assets/c.png').read_text(), 'new png')
+        self.assertEqual((self.site / '01_a/a.txt').read_text(), 'new')
 
     def test_deck_option_relative_to_configuration(self):
         (self.root / 'talk/short.yaml').write_text('slides: [01_a]\n')

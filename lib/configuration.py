@@ -110,7 +110,8 @@ def load_config(filename, debug_override=None):
     defaults = Config().to_meta()
     known = set(defaults) | {'cache_video_directory', 'design', 'deck'}
     reserved = {'args', 'log', 'plugin_paths', 'config_file', 'config_directory',
-                'lib_directory', 'current_directory', 'published_site_directory', 'extras'}
+                'lib_directory', 'current_directory', 'published_site_directory', 'extras',
+                'only', 'structure', 'built', 'previous_pages', 'macros'}
     extras = {}
     for key in set(data) - known:
         if key in reserved:

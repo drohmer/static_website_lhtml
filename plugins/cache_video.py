@@ -1,15 +1,13 @@
 import sys
 import os
 import shutil
-import yaml
 import pathlib
-import re
 from multiprocessing import Process
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/video_convert/')
 import video_convert
 
-from lib.structure import load_structure
+from lib.structure import built_pages
 
 
 default_asset_path = 'assets/'
@@ -87,8 +85,7 @@ def pre_process(meta):
     else:
         cache_video_directory = meta['cache_video_directory']
 
-    structure = load_structure(meta['site_directory'])
-    generate_cache_videos(meta, cache_video_directory, structure)
+    generate_cache_videos(meta, cache_video_directory, built_pages(meta))
 
     # Copy videos in site
     if os.path.isdir(cache_video_directory) and os.listdir(cache_video_directory):

@@ -28,13 +28,13 @@ def build(config, *args):
                           capture_output=True, text=True)
 
 
-def test_failed_full_and_light_build_preserve_last_site(tmp_path):
+def test_failed_full_and_only_build_preserve_last_site(tmp_path):
     config, source = project(tmp_path)
     assert build(config).returncode == 0
     output = tmp_path / '.site/index.html'
     old = output.read_bytes()
     (source / 'index.html.j2').write_text('{% invalid %}')
-    for flags in ((), ('-l',)):
+    for flags in ((), ('--only', 'index.html')):
         result = build(config, *flags)
         assert result.returncode == 1
         assert output.read_bytes() == old
@@ -59,7 +59,7 @@ def test_publish_failure_rolls_back(tmp_path):
     target = tmp_path / '.site'
     target.mkdir()
     (target / 'keep').write_text('old')
-    meta = {'site_directory': str(target), 'args': argparse.Namespace(light=False), 'debug': False, 'log': Mock()}
+    meta = {'site_directory': str(target), 'debug': False, 'log': Mock()}
     rename = Path.rename
     def failing_rename(self, destination):
         if self.name.startswith('.site-build-'):

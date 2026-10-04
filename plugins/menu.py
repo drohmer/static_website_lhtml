@@ -1,7 +1,7 @@
 import os
 import json
 
-from lib.structure import load_structure
+from lib.structure import structure
 
 
 menu_path_relative = '/theme/js/menu.js'
@@ -13,20 +13,19 @@ def clean_title(input):
 
 def post_process(meta):
     menu_path = meta['site_directory'] + menu_path_relative
-    structure = load_structure(meta['site_directory'])
 
     # Keep legacy string values (notably "True" for theme flags), but let
     # JSON escape quotes, backslashes and newlines in metadata and paths.
     toc = []
-    for entry in structure:
+    for entry in structure(meta):
         item = {key: str(value) for key, value in entry.items()
                 if key not in ('dir', 'filename', 'template', 'src')}   # src: local path
         item['path'] = entry['dir'] + entry['filename']
         toc.append(item)
     toc_txt = json.dumps(toc)
 
-    # Start from the template on every build: the previous output no longer
-    # contains the TOC placeholder after a light rebuild.
+    # Start from the template of the theme: the menu of the site no longer
+    # contains the TOC placeholder (--only)
     template_path = meta['theme'].rstrip('/') + menu_path_relative[len('/theme'):]
     with open(template_path, 'r') as fid:
         menu_content = fid.read()

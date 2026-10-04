@@ -39,7 +39,7 @@ import shutil
 import subprocess
 import tempfile
 
-from lib.structure import load_structure
+from lib.structure import built_pages, structure
 from lib.configuration import layout_output_directory
 
 
@@ -783,15 +783,21 @@ def _run_node(script, arguments):
     return proc
 
 
-def write_contact_sheets(output_dir, rows, viewport, options, log):
-    """Write contact_NN.html and screenshot them as contact_NN.png."""
+def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None):
+    """Write contact_NN.html and screenshot them as contact_NN.png (only the
+    sheets showing the pages `changed`, a set of row indices, when given)."""
     sheets = []
+    per_sheet = options['contact_columns'] * options['contact_rows']
     for i, html in enumerate(contact_sheets_html(rows, viewport, options['contact_columns'],
                                                  options['contact_rows']), 1):
+        if changed is not None and not any((i - 1) * per_sheet <= k < i * per_sheet for k in changed):
+            continue
         html_path = os.path.abspath(os.path.join(output_dir, f'contact_{i:02d}.html'))
         with open(html_path, 'w', encoding='utf-8', errors='replace') as fid:
             fid.write(html)
         sheets.append({'html': html_path, 'png': html_path[:-len('.html')] + '.png'})
+    if not sheets:
+        return
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
         json.dump(sheets, fid)
         sheets_json = fid.name
@@ -809,21 +815,25 @@ def post_process(meta):
     log = meta['log']
     site_dir = meta['site_directory']
     output_dir = str(layout_output_directory(meta))
-    structure = load_structure(site_dir)
+    built = {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
+    partial = len(built) < len(structure(meta))     # --only: the others keep their report
 
-    pages = []
-    for entry in structure:
+    pages, previous = [], []
+    for entry in structure(meta):
         relative = entry['dir'] + entry['filename']
         if os.path.isabs(relative) or '..' in relative.replace('\\', '/').split('/'):
             raise ValueError(f'Invalid page path in layout structure: {relative}')
         html = site_dir + relative
-        if os.path.isfile(html):
-            pages.append({'html': os.path.abspath(html),
-                          'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
-                          'name': entry['dir'] + entry['filename'],
-                          'source': entry['src']})
+        page = {'html': os.path.abspath(html),
+                'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
+                'name': relative, 'source': entry['src']}
+        if relative not in built:
+            if partial and os.path.isfile(os.path.join(page['out'], 'layout.json')):
+                previous.append(page)
+        elif os.path.isfile(html):
+            pages.append(page)
 
-    if os.path.isdir(output_dir):
+    if os.path.isdir(output_dir) and not partial:
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -843,7 +853,7 @@ def post_process(meta):
         os.remove(pages_json)
 
     measured = []
-    for p in pages:
+    for p in previous + pages:
         layout_path = os.path.join(p['out'], 'layout.json')
         if os.path.isfile(layout_path):
             with open(layout_path, encoding='utf-8') as fid:
@@ -852,7 +862,13 @@ def post_process(meta):
     limits = {k: options[k] for k in ('max_words', 'min_font')}
 
     rows = []
+    order = {entry['dir'] + entry['filename']: k for k, entry in enumerate(structure(meta))}
+    measured.sort(key=lambda m: order[m[0]['name']])
     for p, layout_path, layout in measured:
+        if p in previous:           # analysed by its build
+            rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
+                         layout['analysis']))
+            continue
         analyse(layout, options['threshold'], norms, limits)
         layout['source'] = os.path.relpath(p['source'], meta.get('config_directory') or '.')
         with open(layout_path, 'w') as fid:
@@ -871,10 +887,12 @@ def post_process(meta):
     if options['images'] and measured:
         write_contact_sheets(output_dir, [(p['name'], os.path.relpath(p['out'], output_dir), layout['analysis'])
                                           for p, _, layout in measured],
-                             measured[0][2]['viewport'], options, log)
+                             measured[0][2]['viewport'], options, log,
+                             changed={k for k, (p, _, _) in enumerate(measured) if p not in previous}
+                             if partial else None)
 
     n_problems = sum(count_problems(r[2]) for r in rows)
-    log.keyvalue('info', f"Layout report: {len(rows)} pages, {n_problems} problems -> "
+    log.keyvalue('info', f"Layout report: {len(pages)} measured, {len(rows)} pages, {n_problems} problems -> "
                          f"{os.path.relpath(os.path.join(output_dir, 'summary.md'))}", indent_level=2)
-    if len(rows) < len(pages):
-        raise RuntimeError(f'layout measurement failed for {len(pages) - len(rows)} page(s)')
+    if len(rows) < len(pages) + len(previous):
+        raise RuntimeError(f'layout measurement failed for {len(pages) + len(previous) - len(rows)} page(s)')

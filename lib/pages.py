@@ -6,6 +6,7 @@ is one template of a source; a page listed several times in a deck gives
 several Page objects (occurrences). Every page goes through the same steps:
 discover (sources) -> select (deck) -> name_outputs -> place (site); then
 the generator renders them (Jinja, LHTML) and exports them (structure.yaml).
+The names of templates are given by is_template, html_name and template_name.
 """
 from __future__ import annotations
 
@@ -18,13 +19,24 @@ import unicodedata
 import yaml
 
 from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy
+from lib.generator_tool import STRUCTURE_KEYS
 
-TEMPLATE_SUFFIX = '.html.j2'
+TEMPLATE_SUFFIX = '.j2'         # the template of a page index.html is index.html.j2
 
 
-def html_name(template_name):
-    """index.html.j2 -> index.html"""
-    return template_name[:-len('.j2')] if template_name.endswith('.j2') else template_name
+def is_template(name):
+    """Whether a file is the template of a page (index.html.j2)."""
+    return name.endswith('.html' + TEMPLATE_SUFFIX)
+
+
+def html_name(name):
+    """index.html.j2 -> index.html (other names unchanged)"""
+    return name[:-len(TEMPLATE_SUFFIX)] if is_template(name) else name
+
+
+def template_name(name):
+    """index.html -> index.html.j2"""
+    return name + TEMPLATE_SUFFIX
 
 
 @dataclass(frozen=True)
@@ -65,7 +77,7 @@ class Page:
 
     @property
     def label(self):
-        name = (self.id if self.template == 'index' + TEMPLATE_SUFFIX else self.file) or self.file
+        name = (self.id if html_name(self.template) == 'index.html' else self.file) or self.file
         return f'{self.source.name}:{name}' if self.source.name else name
 
     @property
@@ -102,16 +114,21 @@ def _read_config(directory, cache):
                 config = {}
             if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
                 raise ValueError(f"Invalid page configuration '{path}': expected key: value pairs")
+            reserved = sorted(set(config) & STRUCTURE_KEYS)
+            if reserved:
+                raise ValueError(f"Invalid page configuration '{path}': reserved key(s) "
+                                 f"{', '.join(reserved)} (written by the generator in structure.yaml)")
         cache[directory] = config
     return cache[directory]
 
 
-def discover(source):
+def discover(source, exclude=()):
     """Pages of a source, in file order, with the config.yaml of their
     directory. Hidden files and directories at the top level of the source
-    are ignored (as they are not copied into the site)."""
+    are ignored (as they are not copied into the site), and the directories
+    `exclude` (the site)."""
     cache = {}
-    found = [f['path'] for f in find_files_in_hierarchy(source.root, lambda name: name.endswith(TEMPLATE_SUFFIX))]
+    found = [f['path'] for f in find_files_in_hierarchy(source.root, is_template, exclude=exclude)]
     found = [f for f in found if not (f.path_local or f.filename).startswith('.')]
     return [Page(source, f.path_local, f.filename, position=k,
                  config=_read_config(source.root + f.path_local, cache))
@@ -131,64 +148,47 @@ def name_outputs(pages):
         names = taken.get(page.site_directory)
         if names is None:
             names = taken[page.site_directory] = {html_name(f) for f in os.listdir(page.src.parent)}
-        stem = page.template[:-len(TEMPLATE_SUFFIX)]
+        stem = html_name(page.template)[:-len('.html')]
         k = page.occurrence
         while f'{stem}-{k}.html' in names:
             k += 1
-        page.name = f'{stem}-{k}{TEMPLATE_SUFFIX}'
-        names.add(html_name(page.name))
+        names.add(f'{stem}-{k}.html')
+        page.name = template_name(f'{stem}-{k}.html')
 
 
 def copy_assets(source_dir, target_dir):
     """Copy the assets of a page directory: its files and its subdirectories
     without templates (those of other pages), not the templates (see
     filesystem.copy_tree). Returns the warnings."""
-    hidden = ignore_hidden(source_dir, templates=False)
+    hidden = ignore_hidden(source_dir, skip=is_template)
     top = os.path.abspath(source_dir)
 
     def ignore(directory, names):
         skipped = hidden(directory, names)
         if os.path.abspath(directory) == top:
             skipped |= {n for n in names if os.path.isdir(os.path.join(directory, n))
-                        and any(f.endswith(TEMPLATE_SUFFIX)
-                                for _, _, files in os.walk(os.path.join(directory, n)) for f in files)}
+                        and any(is_template(f) for _, _, files in os.walk(os.path.join(directory, n))
+                                for f in files)}
         return skipped
     return copy_tree(source_dir, target_dir, ignore)
 
 
-def _target_directory(site, page):
-    target_dir = site + page.site_directory
-    if not os.path.join(os.path.realpath(target_dir), '').startswith(os.path.join(os.path.realpath(site), '')):
-        raise ValueError(f"'{target_dir}' leads out of the site directory (symbolic link?): "
-                         f"refusing to write {page.label} there")
-    os.makedirs(target_dir, exist_ok=True)
-    return target_dir
-
-
-def place(pages, site_directory, light=False):
-    """Copy the templates of the pages into the site, with the assets of the
-    pages of other projects (light mode: only for directories not in the site
-    yet; the assets of the project are copied with its whole directory).
-    Returns the warnings."""
+def place(pages, site_directory, project_assets=False):
+    """Copy the templates of the pages into the site, with the assets of their
+    directory for the pages of other projects (those of the project are copied
+    with its whole directory), and of the project too with `project_assets`
+    (--only: the sources are not copied). Returns the warnings."""
     site = os.path.join(site_directory, '')
-    existing = {page.site_directory for page in pages if os.path.isdir(site + page.site_directory)}
+    real_site = os.path.join(os.path.realpath(site), '')
     copied, warnings = set(), []
     for page in pages:
-        target_dir = _target_directory(site, page)
-        if page.source.name and page.site_directory not in copied:
-            if page.site_directory not in existing or not light:
-                warnings += copy_assets(str(page.src.parent), target_dir)
+        target_dir = site + page.site_directory
+        if not os.path.join(os.path.realpath(target_dir), '').startswith(real_site):
+            raise ValueError(f"'{target_dir}' leads out of the site directory (symbolic link?): "
+                             f"refusing to write {page.label} there")
+        os.makedirs(target_dir, exist_ok=True)
+        if (page.source.name or project_assets) and page.site_directory not in copied:
+            warnings += copy_assets(str(page.src.parent), target_dir)
             copied.add(page.site_directory)
         shutil.copy2(page.src, site + page.site_template)
     return warnings
-
-
-def place_partials(pages, site_directory):
-    """Copy templates that are not generated (pages of the project not in the
-    deck), for the Jinja include/import of the generated ones. Returns their
-    paths in the site (removed after the Jinja rendering)."""
-    site = os.path.join(site_directory, '')
-    for page in pages:
-        _target_directory(site, page)
-        shutil.copy2(page.src, site + page.site_template)
-    return [site + page.site_template for page in pages]

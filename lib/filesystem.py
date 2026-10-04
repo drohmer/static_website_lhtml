@@ -5,6 +5,10 @@ import os
 import shutil
 
 
+# Directories of a build in progress or of a backup (lib/build_output.py)
+BUILD_DIRECTORIES = ('.site-build-', '.site-backup-')
+
+
 def directory_name_clean(d_in):
     d = d_in
     if d == '' or d == '.':
@@ -41,12 +45,16 @@ class FilepathRelative:
         return '../' * self.level
 
 
-def find_files_in_hierarchy(src_dir, condition, max_depth=None):
+def find_files_in_hierarchy(src_dir, condition, max_depth=None, exclude=()):
     """Find files at any depth, avoiding directory symlink cycles.
 
     An optional explicit depth limit remains available to callers. Separate
     aliases of a directory are traversed, but an ancestor cannot be revisited.
+    The directories `exclude` (e.g. the site, reached through a link) and the
+    build directories of the generator (.site-build-*, .site-backup-*) are
+    not visited.
     """
+    excluded = {os.path.realpath(p) for p in exclude if p}
     roots = [src_dir] if isinstance(src_dir, (str, os.PathLike)) else src_dir
     files_found = []
     for root in roots:
@@ -56,7 +64,8 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None):
         while pending:
             directory, _, depth, ancestors = heapq.heappop(pending)
             real_directory = os.path.realpath(directory)
-            if real_directory in ancestors:
+            if real_directory in ancestors or real_directory in excluded \
+                    or os.path.basename(real_directory).startswith(BUILD_DIRECTORIES):
                 continue
             ancestors = ancestors | {real_directory}
             for name in sorted(os.listdir(directory)):
@@ -77,17 +86,17 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None):
     return files_found
 
 
-def ignore_hidden(root, templates=True):
+def ignore_hidden(root, skip=None):
     """Filter of copy_tree: hidden files at the top level of `root` (as the
-    previous 'cp -r root/*'), .git / .DS_Store everywhere, and the page
-    templates (.html.j2) unless `templates`."""
+    previous 'cp -r root/*'), .git / .DS_Store everywhere, and the files for
+    which `skip(name)` is true."""
     root = os.path.abspath(root)
 
     def ignore(directory, names):
         top_level = os.path.abspath(directory) == root
         return {n for n in names
                 if n in ('.git', '.DS_Store') or (top_level and n.startswith('.'))
-                or (not templates and n.endswith('.html.j2'))}
+                or (skip is not None and skip(n))}
     return ignore
 
 
@@ -100,8 +109,9 @@ def copy_tree(source, target, ignore=None, exclude=()):
 
     The generator writes into the copy: it must never write through a link
     into the sources. A symbolic link to a directory is thus copied as a
-    directory; a link to a file stays a link, relative if it still leads to
-    the same file from the copy, else absolute. A link to a directory being
+    directory; a link to a file stays a link only if it is relative and leads
+    to the same file of the copy, else the file is copied (a dangling link is
+    copied as is). A link to a directory being
     copied (an ancestor) stays a link if it is relative and inside `source`,
     else it is not copied. The directories `exclude` and `target` itself
     (e.g. the site, reached through a link) are not copied.
@@ -115,13 +125,14 @@ def copy_tree(source, target, ignore=None, exclude=()):
 
     def copy_link(path, destination):
         link = os.readlink(path)
-        if not os.path.isabs(link) and os.path.exists(path):
-            mirrored = os.path.normpath(os.path.join(os.path.dirname(path), link))
-            if not (_inside(mirrored, root)
-                    and os.path.realpath(mirrored) == os.path.realpath(path)):
-                link = os.path.realpath(path)   # the relative link would lead elsewhere
         if os.path.lexists(destination):
             os.remove(destination)
+        if os.path.exists(path):
+            mirrored = os.path.normpath(os.path.join(os.path.dirname(path), link))
+            if os.path.isabs(link) or not (_inside(mirrored, root) and
+                                           os.path.realpath(mirrored) == os.path.realpath(path)):
+                shutil.copy2(path, destination)     # the link would lead out of the copy
+                return
         os.symlink(link, destination)
 
     def copy(directory, destination, ancestors):
@@ -134,7 +145,7 @@ def copy_tree(source, target, ignore=None, exclude=()):
             path, path_target = os.path.join(directory, name), os.path.join(destination, name)
             if os.path.isdir(path):
                 real = os.path.realpath(path)
-                if real in excluded:
+                if real in excluded or os.path.basename(real).startswith(BUILD_DIRECTORIES):
                     continue
                 if real in ancestors:       # copying it would never end
                     link = os.readlink(path) if os.path.islink(path) else ''
@@ -156,14 +167,13 @@ def copy_tree(source, target, ignore=None, exclude=()):
     return warnings
 
 
-def copy_directories(dir_source, dir_target, templates=True, exclude=()):
+def copy_directories(dir_source, dir_target, skip=None, exclude=()):
     """Copy source directory to target, replacing target if it exists (see
     copy_tree). Hidden files at the top level, .git and .DS_Store are not
-    copied, nor the page templates (.html.j2) with templates=False.
-    Returns the warnings."""
+    copied, nor the files for which `skip(name)` is true. Returns the warnings."""
     if os.path.isdir(dir_target):
         shutil.rmtree(dir_target)
-    return copy_tree(dir_source, dir_target, ignore_hidden(dir_source, templates), exclude)
+    return copy_tree(dir_source, dir_target, ignore_hidden(dir_source, skip), exclude)
 
 
 def write_file(path, text):

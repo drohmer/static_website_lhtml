@@ -2,14 +2,12 @@ import sys
 import os
 import re
 import subprocess
-import json
-import yaml
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../lib')
 import filesystem
 
 from lhtml.element_extract import extract_bracket_elements
-from lib.structure import load_structure
+from lib.structure import built_pages
 
 
 # Directory where the code repositories are cloned, relative to the
@@ -148,7 +146,6 @@ def research_line_in_header_files(arg):
 def mid_process(meta):
     global CODE_DIRECTORY
     CODE_DIRECTORY = meta.get('config_directory', '') + 'code/'
-    structure = load_structure(meta['site_directory'])
 
     # Code to download
     if 'plugin_arg' in meta and 'includeadv' in meta['plugin_arg']:
@@ -161,7 +158,7 @@ def mid_process(meta):
                 os.makedirs(CODE_DIRECTORY, exist_ok=True)
                 subprocess.run(['git', 'clone', url], cwd=CODE_DIRECTORY)
 
-    for entry in structure:
+    for entry in built_pages(meta):
         file_path = meta['site_directory'] + entry['dir'] + entry['filename']
 
         with open(file_path, 'r') as fid:

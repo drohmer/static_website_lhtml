@@ -58,7 +58,7 @@ function display(toc) {
         const element = toc[k];
        
         const title = element["title"];
-        const link = path_to_root+element["path"];
+        const link = pathURL(path_to_root+element["path"]);
     
         let level_toc = 0;
         if(element["level-toc"]!=undefined) {
@@ -103,7 +103,7 @@ function display(toc) {
 
 function create_element(element) {
     const title = element["title"];
-    const link = path_to_root+element["path"];
+    const link = pathURL(path_to_root+element["path"]);
     let level_toc = element["level-toc"];
     const nourl_toc = element["nourl-toc"];
 
@@ -263,3 +263,8 @@ main();
 
 
 
+
+// URL of a site path: each segment escaped (also #, ? and quotes)
+function pathURL(path) {
+    return path.split("/").map(encodeURIComponent).join("/");
+}

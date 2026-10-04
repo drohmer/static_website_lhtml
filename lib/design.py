@@ -17,7 +17,7 @@ A design file may start from another one: `extends: ../slides/design.yaml`
 The generator writes `theme/css/design.css` (the tokens as CSS variables on
 :root, then the `css` of each macro) and `structure/design.md` (reference of
 the macros and tokens, for authors and LLMs), and passes the macros to LHTML
-(which ignores their `css` and `doc` fields).
+without their `css` (lhtml_macros).
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from pathlib import Path
 import copy
 import re
 
+import lhtml
 import yaml
 
 DESIGN_FILE = 'design.yaml'
@@ -117,7 +118,19 @@ def load_design(theme_directory, override=None, base_directory='.', files=None):
         design = _load(theme_file, theme_directory, str(theme_file), files)
     if override:
         design = merge(design, _load(override, base_directory, "'design' of the configuration", files))
-    return {section: design.get(section) or {} for section in SECTIONS}
+    design = {section: design.get(section) or {} for section in SECTIONS}
+    flatten_tokens(design['tokens'])                    # validation
+    try:
+        lhtml.registry_with_macros(lhtml_macros(design))
+    except lhtml.LHTMLError as exc:
+        raise DesignError(str(exc)) from exc
+    return design
+
+
+def lhtml_macros(design):
+    """The macros of the design for LHTML (without their css)."""
+    return {name: {k: v for k, v in (spec or {}).items() if k != 'css'}
+            for name, spec in design['macros'].items()}
 
 
 def design_files(theme_directory, override=None, base_directory='.'):
@@ -175,25 +188,25 @@ def design_markdown(design):
            '(e.g. `aside::[top:400px;]`). The classes, style and attributes written in the',
            'source are added to those of the macro. A macro is closed by `::` or `::name[-]`.', '',
            '## Macros', '']
-    for name, spec in design['macros'].items():
-        spec = spec or {}
+    for name, spec in lhtml_macros(design).items():
+        info = lhtml.describe_macro(name, spec)
         out.append(f'### `{name}::`')
         out.append('')
-        if spec.get('doc'):
-            out += [str(spec['doc']).strip(), '']
-        html = f"<{spec.get('tag', 'div')} class=\"{spec.get('class', '')}\">"
-        details = [f'HTML: `{html}`']
-        if spec.get('variant'):
-            values = spec['variant'] if isinstance(spec['variant'], list) else ['<any>']
+        if info['doc']:
+            out += [str(info['doc']).strip(), '']
+        details = [f"HTML: `{info['html']}`"]
+        if info['variants']:
+            values = info['variants'] if isinstance(info['variants'], list) else ['<any>']
             details.append(f"variants: {', '.join(f'`{name}::{v}`' for v in values)}"
-                           + (f" (default `{spec['default']}`)" if spec.get('default') else ''))
-        if spec.get('empty'):
+                           + (f" (default `{info['default']}`)" if info['default'] else ''))
+        if info['url']:
+            details.append(f"`{name}::url` sets `{info['url']}`")
+        elif info['empty']:
             details.append('no content (closed at once)')
-        if spec.get('url'):
-            details.append(f"`{name}::url` sets `{spec['url']}`")
         out += [f'- {d}' for d in details]
-        if spec.get('css'):
-            out += ['', '```css', _resolve(str(spec['css']).strip(), tokens), '```']
+        css = (design['macros'][name] or {}).get('css')
+        if css:
+            out += ['', '```css', _resolve(str(css).strip(), tokens), '```']
         out.append('')
     out += ['## Tokens', '', 'CSS variables (`var(--name)`), in `theme/css/design.css`.', '',
             '| token | value |', '|---|---|']

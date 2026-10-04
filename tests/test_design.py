@@ -66,7 +66,7 @@ class DesignTests(unittest.TestCase):
             d = design.load_design(REPO / 'themes' / theme)
             self.assertIn('gap', d['macros'])
             design.flatten_tokens(d['tokens'])
-            lhtml.registry_with_macros(d['macros'])
+            lhtml.registry_with_macros(design.lhtml_macros(d))
             for name in set(re.findall(r'var\(--([\w-]+)\)', design.design_css(d))):
                 self.assertIn(name, design.flatten_tokens(d['tokens']), f'{theme}: undefined token --{name}')
 

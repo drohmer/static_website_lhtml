@@ -37,14 +37,14 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
       --no-debug       Override debug: true from YAML
       --check-config   Validate paths and plugin files; display resolved settings
   -c, --clean          Remove only the configured output directory and exit
-  -l, --light          Light mode: only convert .html.j2 files (skip asset copy)
+  --only POINTER       Generate only these pages in the existing site (see below; repeatable)
   --serve              Serve the generated site on http://127.0.0.1:8000/
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
@@ -60,9 +60,28 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config]
 python generate.py --serve --watch
 ```
 
-The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. Use full builds with `--watch` (it cannot be combined with `--light`). Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
+The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
 
-Complete and light builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. Light mode copies the existing output into staging to retain its assets. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
+Builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
+
+### Generating some pages (`--only`)
+
+```bash
+python generate.py --only 03_squelette/04_ik --layout   # one slide, and its layout report
+python generate.py --only 02_rotations --only inf585:04_interpolation_position/content/07_hermite
+```
+
+`--only` takes pointers written as in a deck (directory, file, glob,
+`name:path`; all the occurrences of a repeated slide) and generates only
+these pages, in the site itself: their template, the files of their
+directory (assets), the menu, the sitemap and the structure of the site; the
+other pages are those of the previous build. Their numbering, their links
+(`pathTo_*`) and the ids of the titles are those of a full build. A page that
+fails keeps its previous version. When there is no previous build, or when
+the pages of the site changed (deck, new, renamed or removed page), a full
+build is done instead. Edits of the theme or of files outside the page
+directories (shared images, sources included from elsewhere are read from the
+sources) need a full build.
 
 ## Configuration
 
@@ -133,7 +152,7 @@ static_website_lhtml/
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
-    structure.py           # Shared load_structure() for plugins
+    structure.py           # Pages of the site for plugins (structure, built_pages)
   plugins/
     auto_wrap.py           # Auto-wrap plain HTML in Jinja2 template
     menu.py                # Generate JS menu from sitemap
@@ -218,7 +237,9 @@ slides:
   is the duration of all its pages together.
 - Pages that are not in the deck are not generated (they are listed in the
   build log); the files of their directory (assets) are still copied, and
-  their templates can still be included (`{% include 'parts/box.html.j2' %}`).
+  their templates can still be included (`{% include 'parts/box.html.j2' %}`:
+  Jinja reads the includes from the sources of the project, then of the other
+  projects, then from the site).
 - A pointer that matches no page is an error (with a suggestion), unless the
   slide has a `title`: it is a planned slide, reported in the log.
   `--scaffold` creates its source, `<path>/index.html.j2` (or `<file>.j2` for
@@ -230,15 +251,15 @@ slides:
 **Other projects.** `sources` gives a name to the source directory of another
 project (`name: path`); its pages are named `name:path`. They are generated
 under `name/` in the site, with the files and asset directories of their
-directory and their `config.yaml` (in light mode, the assets of a page are
-copied when its directory is not in the site yet; hidden files are not
-copied, and linked directories are copied as directories). The name must not be a
+directory and their `config.yaml` (hidden files are not copied, and linked
+directories are copied as directories). The name must not be a
 directory of the project nor of the generator (`theme`, `structure`,
 `sitemap`). The other project is only read: nothing is copied into its
 sources or yours. A source must not contain the site. `--watch` also watches the deck file and, in the other
 projects, the directories the deck points to. A page of another project is
-rendered in this site: Jinja `extends`/`include` and LHTML `include::` resolve
-from this site and from the page directory, not from the root of its project.
+rendered in this site: Jinja `extends`/`include` resolve from the sources of
+the project, then from the root of the other projects, then from this site
+(theme); LHTML `include::` from the page directory.
 
 **Repeated slides and parameters.** Naming the same page explicitly again
 creates another occurrence: it is generated next to the first one
@@ -260,7 +281,9 @@ div::[margin-left:600px;]
 ```
 
 (The `{%-` remove the line breaks of the loop, which would otherwise split the
-LHTML list.) Directories and globs never repeat a page.
+LHTML list.) Directories and globs never repeat a page: once a directory
+holds several pages, name the file of the repeated one (`00_plan/index.html`);
+an entry that places no page gives a warning.
 
 The menu, the previous/next navigation, the redirection to the first page,
 the PDF export and the layout report follow the deck. The sitemap ids
@@ -308,7 +331,7 @@ The generator:
    (`font: {small: 85%}` gives `--font-small`), then the `css` of each macro,
 3. writes their reference in `structure/design.md` of the site (for authors
    and LLMs; the layout report links to it),
-4. gives the macros to LHTML (which ignores their `css` and `doc` fields).
+4. validates the tokens and the macros (with LHTML), and gives the macros to LHTML without their `css`.
 
 A design file may start from another one with `extends` (relative to the
 file), then override it key by key; `slides-pdf` reuses the design of
@@ -362,7 +385,7 @@ With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (f
 
 Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit and skips directory symlink cycles. A symbolic link to a directory of the sources is copied into the site as a directory (the generator never writes through a link into the sources: a linked library of videos is thus copied into each build); a link to a directory containing it is kept only if it is relative and stays in the sources, and the site itself is never copied. Other symbolic links are copied as links (made absolute when the relative link would lead elsewhere from the site).
 
-Plugins read the pages from `structure/structure.yaml` (`lib.structure.load_structure`); `lib.structure.template_path(meta, entry)` gives the template of a page in the site, for the pre-process hooks.
+Plugins get the pages from `lib.structure`: `structure(meta)` gives all the pages of the site, in order (the entries of `structure/structure.yaml`), and `built_pages(meta)` the pages generated by this build (all of them, or those of `--only`). A plugin working on the pages (templates, HTML) uses `built_pages`; one writing a file for the whole site (menu, redirection) uses `structure`. `template_path(meta, entry)` gives the template of a page in the site, for the pre-process hooks. The keys written by the generator (`dir`, `filename`, `template`, `level`, `src`, `source`, `occurrence`, `path`, `title_id`) cannot be set in a `config.yaml` nor in the deck.
 
 ### Built-in Plugins
 
@@ -386,7 +409,7 @@ layout problems. It requires `npm install` (see Installation).
 
 ```bash
 python generate.py --layout          # full generation + layout report
-python generate.py -l --layout       # after editing a slide: light mode + report
+python generate.py --only 03_squelette/04_ik --layout   # after editing a slide
 ```
 
 Output in `.layout/` (next to the configuration file). Each page has a unique `pages/<relative HTML path>/` directory, for example `pages/chapter/a.html/layout.json`. The output path remains configurable and is checked before deletion: it cannot overlap sources, theme, site or cache, or contain the configuration, generator or plugin files. Paths through symbolic links are checked too.
@@ -475,7 +498,7 @@ is enough to find it in `src/.../index.html.j2`.
 
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources
-(positions, widths, font sizes), run `python generate.py -l --layout` and
+(positions, widths, font sizes), run `python generate.py --only <slide> --layout` and
 check the new report".
 
 Options (`configure.yaml`):
