@@ -14,6 +14,7 @@ tokens:
     tiny: 70%           # font-size:65-75% (109 uses)
     credit: 75%         # captions under figures: font-size:75%; color:gray
     section: 150%
+    large: 120%         # font-size:110-130% (plan lists, conclusions)
   line:
     tight: 1.3em        # line-height:1.3em (230 uses)
     section: 1.8em
@@ -32,6 +33,7 @@ tokens:
     bad-border: '#c0392b'
     warn-bg: '#fff3cd'
     warn-border: '#e0a800'
+    key-border: red     # emphasis frame (the class border of classes.css)
   aside:
     top: 150px          # figure in the right column: top 100-250 px (40 %)
     right: 100px        # right edge at x = 1820 (median of the corpus: 1800)
@@ -51,6 +53,8 @@ tokens:
     side-s: 500px
     side-l: 900px
     gap: 60px          # between the text and media::
+  placeholder:
+    height: 300px      # planned figure
 
 macros:
 
@@ -123,7 +127,7 @@ macros:
     doc: |
       Blocks side by side, aligned on their top: `cols::` with `col::` children.
       `cols::(.even)`: equal widths; `cols::(.spread)`: spread over the width (row of figures);
-      `cols::(.middle)`: vertically centered.
+      `cols::(.middle)`: vertically centered. Several classes: `(.spread .middle)` (with spaces).
       Replaces `::[display:inline-block; vertical-align:top; margin-left:2em;]` and
       `div::[display:flex; justify-content:space-around;]`.
     css: |
@@ -135,15 +139,19 @@ macros:
   col:
     class: col
     doc: |
-      One column of `cols::`: `col::` ... `::`.
+      One column of `cols::`: `col::` ... `::`. Its figures are reduced to its width;
+      `col::(.fixed)` keeps the width of its content (a demo, a video of given size).
     css: |
       .col { flex: 0 1 auto; min-width: 0; }
+      .col.fixed { flex: none; }
+      .col > img, .col > video, .col > iframe { max-width: 100%; }
 
   box:
     class: box
     doc: |
       Framed block (code, definition, key point): `box::` ... `::`, with `box::(.good)`,
-      `box::(.bad)`, `box::(.warn)` for green, red and yellow frames.
+      `box::(.bad)`, `box::(.warn)` for green, red and yellow frames, and `box::(.key)` for a
+      red emphasis frame without background (a key formula; the class `border` of the theme).
       Replaces `::[background-color:rgb(240,240,240); padding:0.5em; border:1px solid black; display:inline-block;]`.
     css: |
       .box { display: inline-block; vertical-align: top; padding: 0.5em;
@@ -151,6 +159,7 @@ macros:
       .box.good { background-color: var(--color-good-bg); border: 2px solid var(--color-good-border); }
       .box.bad { background-color: var(--color-bad-bg); border: 2px solid var(--color-bad-border); }
       .box.warn { background-color: var(--color-warn-bg); border: 2px solid var(--color-warn-border); }
+      .box.key { background-color: transparent; border: 2px solid var(--color-key-border); border-radius: 10px; }
 
   section:
     class: section
@@ -165,22 +174,58 @@ macros:
     class: media
     doc: |
       The figures of a page with a layout (`side`, `stack`): `media::` with the images, videos
-      or demos, then `::`. The layout places and sizes it: write no position, width or height
-      (the figures fit in it). Its children are stacked (a figure, then its credit::); with
-      `media::(.row)` they are side by side (a row of figures; put a figure and its credit in a
-      `col::`).
+      or demos, then `::`. The layout places and sizes it: write no position, width or height.
+      The figures are fitted in it: reduced if needed, never enlarged beyond their size
+      (except SVG and demos, which fill it); `media::(.fill)` enlarges them to fill it.
+      Its children are stacked (a figure, then its credit::, centered); `media::(.row)` puts
+      them side by side (a row of figures of the same height; `(.row .even)`: equal widths; a
+      figure and its caption in a `col::`). A `media::` or `cols::` inside it shares its space.
+      `media::(.top)`, `(.middle)`, `(.bottom)`: vertical position in its area.
     css: |
       .media { display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: var(--space-s); min-width: 0; min-height: 0; }
+      .media.top { justify-content: flex-start; }
+      .media.middle { justify-content: center; }
+      .media.bottom { justify-content: flex-end; }
       .media.row { flex-direction: row; gap: var(--cols-gap); }
+      .media > img, .media > video, .media > svg, .media > .col > img, .media > .col > video,
+      .media > .cols > img, .media > .cols > video,
+      .media > .cols > .col > img, .media > .cols > .col > video {
+          flex: 0 1 auto; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; object-fit: contain; }
+      .media > img[src$=".svg"], .media.fill > img, .media.fill > video,
+      .media.fill > .col > img, .media.fill > .col > video { flex: 1 1 0; width: 100%; height: 100%; }
       .media.row > img, .media.row > video, .media.row > .col { height: 100%; width: auto; }
       .media.row > .col > img, .media.row > .col > video { flex: 1 1 0; height: auto; }
-      .media > img, .media > video, .media > iframe, .media > svg, .media > .col > img,
-      .media > .col > video { flex: 0 1 auto; min-width: 0; min-height: 0; max-width: 100%;
-                              max-height: 100%; object-fit: contain; }
+      .media.row.even > * { flex: 1 1 0; width: 0; }
+      .media > iframe, .media > .demo { flex: 1 1 0; width: 100%; height: auto; min-height: 0; }
       .media > .col { display: flex; flex-direction: column; align-items: center; min-height: 0;
                       max-height: 100%; gap: var(--space-s); }
+      .media > .media, .media > .cols { flex: 1 1 0; min-height: 0; align-self: stretch; }
+      .media > .cols > .col { display: flex; flex-direction: column; align-items: center;
+                              height: 100%; min-height: 0; gap: var(--space-s); }
+      .media .credit { text-align: center; }
       .media > .center { min-height: 0; }
+
+  large:
+    class: large
+    doc: |
+      Larger text (plan lists, a conclusion): `large:: text ::` or a block. Replaces
+      `::[font-size:120%]` (110-130 %).
+    css: |
+      .large { font-size: var(--font-large); }
+
+  placeholder:
+    class: placeholder
+    doc: |
+      A planned figure, not made yet: `placeholder:: video of the walk cycle ::` draws a dashed
+      box with the text (in media::, it takes the place of the figure). Replaces the dashed
+      boxes written by hand.
+    css: |
+      .placeholder { display: flex; align-items: center; justify-content: center; box-sizing: border-box;
+                     min-height: var(--placeholder-height); min-width: 300px; padding: var(--space-s);
+                     border: 2px dashed var(--color-muted); color: var(--color-muted); font-style: italic;
+                     text-align: center; }
+      .media > .placeholder { flex: 1 1 0; width: 100%; min-height: 0; }
 
   demo:
     tag: iframe
@@ -204,8 +249,9 @@ layouts:
     doc: |
       Text on the left, figures on the right (36 % of the slides, also code + figure): the
       blocks of the page are the text, and `media::` holds the figures, placed in the right
-      column below the title and fitted in it. `side-s` and `side-l` give a narrower or wider
-      column. Replaces `div::[position:fixed; top:...; left:...]` and aside::.
+      column below the title and fitted in it (at its top; `media::(.middle)` or `(.bottom)`
+      to place them lower). `side-s` and `side-l` give a narrower or wider column. Replaces
+      `div::[position:fixed; top:...; left:...]` and aside::.
     css: |
       body.layout-side { --layout-width: var(--layout-side); }
       body.layout-side-s { --layout-width: var(--layout-side-s); }
@@ -215,24 +261,29 @@ layouts:
                          width: calc(1920px - 30px * 3 - 80px - var(--layout-width) - var(--layout-gap)); }
       body.layout-side > h1 { margin-right: calc(-1 * (var(--layout-width) + var(--layout-gap))); }
       body.layout-side > .media { position: absolute; top: var(--layout-top); right: var(--layout-right);
-                                  bottom: var(--layout-bottom); width: var(--layout-width);
-                                  justify-content: flex-start; }
+                                  bottom: var(--layout-bottom); width: var(--layout-width); }
+      body.layout-side > .media:not(.middle):not(.bottom) { justify-content: flex-start; }
 
   stack:
     doc: |
       Text, then figures that take the rest of the slide (21 %: text then figure, a large
-      figure, a row of figures with `media::(.row)`). `media::` may also come first.
+      figure, a row of figures with `media::(.row)`). `media::` may also come first, and text
+      may follow it. Several `media::` share the height; `media::(.auto)` takes only the height
+      of its figures.
     css: |
       body.layout-stack { display: flex; flex-direction: column; }
-      body.layout-stack > .media { flex: 1 1 0; margin: var(--space-s) 0 var(--layout-bottom) 0; }
+      body.layout-stack > h1 + * { margin-top: 0; }    /* as the margins collapsing in the flow */
+      body.layout-stack > .media { flex: 1 1 0; margin: var(--space-s) 0; }
+      body.layout-stack > .media.auto { flex: 0 1 auto; }
+      body.layout-stack > :last-child { margin-bottom: var(--layout-bottom); }
 
   section:
     doc: |
-      Section or title slide (11 %): the content is centered on the slide, the title larger.
-      `= Title`, then a few words.
+      Section or title slide (11 %): the content is centered on the slide, larger, the title
+      larger still. `= Title`, then a few words or a short list (kept left-aligned).
     css: |
       body.layout-section { display: flex; flex-direction: column; justify-content: center;
-                            align-items: center; text-align: center; font-size: var(--font-section);
-                            line-height: var(--line-section); }
-      body.layout-section > h1 { margin: 0 0 var(--space-m) 0; }
-
+                            align-items: center; text-align: center; }
+      body.layout-section > :not(nav) { font-size: var(--font-section); line-height: var(--line-section); }
+      body.layout-section > h1 { margin: 0 0 var(--space-m) 0; font-size: calc(2 * var(--font-section)); }
+      body.layout-section ul, body.layout-section ol { text-align: left; }

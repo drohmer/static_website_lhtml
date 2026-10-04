@@ -99,7 +99,8 @@ def test_layout_plugin_validates_even_when_called_directly(tmp_path):
 
 
 def test_layout_reports_browser_errors(tmp_path):
-    with patch.object(layout_report.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, '', 'Chrome failed')):
+    failed = Mock(stdout=iter(['progress 0 1 a.html\n']), stderr=iter(['Chrome failed\n']), returncode=1)
+    with patch.object(layout_report.subprocess, 'Popen', return_value=failed):
         with pytest.raises(RuntimeError, match='Chrome failed'):
             layout_report._run_node('layout_measure.js', [])
 

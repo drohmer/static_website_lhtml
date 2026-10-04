@@ -21,7 +21,8 @@ const width = parseInt(args.width || 1920);
     const page = await browser.newPage();
     await page.setViewport({width, height: 600});
     let failures = 0;
-    for (const sheet of sheets) {
+    for (const [index, sheet] of sheets.entries()) {
+        console.log(`progress ${index} ${sheets.length} ${path.basename(sheet.png)}`);
         try {
             await page.goto('file://' + path.resolve(sheet.html), {waitUntil: 'networkidle0', timeout: 60000});
             await page.evaluate(async () => {
@@ -34,6 +35,7 @@ const width = parseInt(args.width || 1920);
             console.error(`layout_contact: ${sheet.html}: ${e.message}`);
         }
     }
+    console.log(`progress ${sheets.length} ${sheets.length} done`);
     await browser.close();
     process.exit(failures ? 1 : 0);
 })();

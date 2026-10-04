@@ -504,7 +504,11 @@ def build_once(args):
         return
     if args.lint:
         try:
+            # the pages of the deck, and the other pages of the project (excluded, planned)
             selected = select_pages(meta, log)
+            listed = {p.src for p in selected}
+            selected += [p for p in pages.discover(pages.Source(None, meta['source_directory']),
+                                                   exclude=[meta['site_directory']]) if p.src not in listed]
             if args.only:
                 sources = {p.source.name: p.source.root for p in selected if p.source.name}
                 selected = deck.named_pages(selected, args.only, sources)

@@ -348,12 +348,14 @@ credit:: MiloScerny Animation ::
 ```
 
 Macros of the slide themes: `gap::` (`gap::s`, `gap::l`, `gap::xl`),
-`small::`, `tiny::`, `credit::`, `muted::`, `center::`, `aside::` (figure in
-the right column, `aside::[top:400px;]`), `cols::` / `col::` (`.even`,
-`.spread`, `.middle`), `box::` (`.good`, `.bad`, `.warn`), `section::`,
-`demo::url` (iframe), `media::` (the figures of a layout). Brackets still work
-for exceptions; the classes, style and attributes of the source are added to
-those of the macro.
+`small::`, `tiny::`, `large::`, `credit::`, `muted::`, `center::`, `aside::`
+(figure in the right column, `aside::[top:400px;]`), `cols::` / `col::`
+(`.even`, `.spread`, `.middle`; `col::(.fixed)` keeps its width), `box::`
+(`.good`, `.bad`, `.warn`, `.key`), `section::`, `demo::url` (iframe),
+`placeholder:: text ::` (a planned figure), `media::` (the figures of a
+layout: `.row`, `.even`, `.fill`, `.top`/`.middle`/`.bottom`, `.auto`).
+Brackets still work for exceptions; the classes, style and attributes of
+the source are added to those of the macro.
 
 **Layouts.** A page chooses a layout with `{% set layout = 'side' %}` as its
 first line (or `layout: side` in its `config.yaml` or its deck entry); the
@@ -389,11 +391,14 @@ variant) styled by its `css` in `design.yaml` (`layouts:` with `css` and
 removes layouts like macros.
 
 **Lint.** `python generate.py --lint` lists the values written by hand in the
-pages, with what replaces them in the design: positions (`position:fixed`,
-`top`, `left`), spacers (`div::[height:25px;]::` → `gap::`), font sizes in
-percent (→ `small::`, `tiny::`), offsets in pixels, `display:flex` (→ `cols::`),
-`text-align:center` (→ `center::`), gray text (→ `muted::`), and unknown
-layouts or layouts without `media::`:
+pages, including those not in the deck, with what replaces them in the
+design: positions (`position:fixed`, `top`, `left`), spacers
+(`div::[height:25px;]::` → `gap::`), font sizes in percent (→ `small::`,
+`tiny::`, `large::`), line heights, offsets in pixels (except the documented
+ones of `aside::`), `display:flex` (→ `cols::`), `text-align:center`
+(→ `center::`), gray text (→ `muted::`), `display:none` (→ `(.hidden)`), an
+`<iframe>` written by hand (→ `demo::`), sizes of figures in a page with a
+layout (→ `media::`), and unknown layouts or layouts without `media::`:
 
 ```
 src/03_squelette/04_ik/index.html.j2:9: spacer: div::[height:25px;]::
@@ -494,7 +499,9 @@ python generate.py --layout          # full generation + layout report
 python generate.py --only 03_squelette/04_ik --layout   # after editing a slide
 ```
 
-Output in `.layout/` (next to the configuration file). Each page has a unique `pages/<relative HTML path>/` directory, for example `pages/chapter/a.html/layout.json`. The output path remains configurable and is checked before deletion: it cannot overlap sources, theme, site or cache, or contain the configuration, generator or plugin files. Paths through symbolic links are checked too.
+The measure shows its progress (pages measured, time left). With `--only`,
+only those pages are measured, and the summary keeps the other pages of the
+previous report. Output in `.layout/` (next to the configuration file). Each page has a unique `pages/<relative HTML path>/` directory, for example `pages/chapter/a.html/layout.json`. The output path remains configurable and is checked before deletion: it cannot overlap sources, theme, site or cache, or contain the configuration, generator or plugin files. Paths through symbolic links are checked too.
 
 Files:
 

@@ -82,6 +82,8 @@ class LayoutBuildTests(unittest.TestCase):
         self.assertFalse(self.site.exists())                         # no generation
         output = self.build(None, '--lint', '--only', 'b')
         self.assertIn('no value written by hand in 1 page(s)', output)
+        output = self.build(['b'], '--lint', '--only', 'a')         # a page excluded from the deck
+        self.assertIn('2 value(s) written by hand in 1 of 1 page(s)', output)
 
     def test_page_and_params_are_reserved_keywords(self):
         self.write('src/a/index.html.j2', '= A\n')
@@ -115,6 +117,22 @@ class LintTests(unittest.TestCase):
         self.assertEqual(found[1][2], 'gap::xl')
         self.assertTrue(found[2][2].startswith('small::'))
         self.assertTrue(found[3][2].startswith('tiny::'))
+
+    def test_more_values_and_exceptions(self):
+        text = ("{% set layout = 'side' %}\n"
+                'aside::[top:400px;]\n'
+                '::[font-size:120%] x ::\n'
+                '::[line-height:1.5em] y ::\n'
+                '::(.x)[display:none] z ::\n'
+                'img::a.png[width:500px]\n'
+                '<iframe style="width:10px" src=a></iframe>\n'
+                '::[font-size:75%] w ::\n'
+                'media::\n::\n')
+        found = self.kinds(text)
+        self.assertEqual([k for _, k, _ in found],
+                         ['font-size', 'line-height', 'display', 'size', 'iframe', 'font-size', 'layout'])
+        self.assertTrue(found[0][2].startswith('large::'))
+        self.assertTrue(found[5][2].startswith('tiny::'))          # a size, not credit:: (gray)
 
     def test_code_blocks_are_not_linted(self):
         self.assertEqual(self.kinds('code::[css]\ndiv::[height:25px;]::\n::\ncode::[css] a ::\n'), [])

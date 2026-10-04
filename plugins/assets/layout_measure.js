@@ -478,7 +478,9 @@ async function waitForContent(page) {
     const page = await browser.newPage();
     await page.setViewport({width, height});
     let failures = 0;
-    for (const entry of pages) {
+    for (const [index, entry] of pages.entries()) {
+        // progress on stdout, read by layout_report.py: "progress <done> <total> <page>"
+        console.log(`progress ${index} ${pages.length} ${entry.name || entry.html}`);
         try {
             fs.mkdirSync(entry.out, {recursive: true});
             // pages with streaming media (autoplay videos, iframes) never become
@@ -504,6 +506,7 @@ async function waitForContent(page) {
             console.error(`layout_measure: ${entry.html}: ${e.message}`);
         }
     }
+    console.log(`progress ${pages.length} ${pages.length} done`);
     await browser.close();
     process.exit(failures ? 1 : 0);
 })();

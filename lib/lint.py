@@ -16,7 +16,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-STYLE = re.compile(r'\[([^\[\]\n]*:[^\[\]\n]*)\]|style="([^"]*)"')
+STYLE = re.compile(r'([A-Za-z][\w-]*::(?:\([^()\n]*\))?[^\s\[]*)?\[([^\[\]\n]*:[^\[\]\n]*)\]|style="([^"]*)"')
+RAW_IFRAME = re.compile(r'<iframe\b[^>]*style=')
+SIZE_MACROS = ('small', 'tiny', 'large')     # macros of a font size (credit:: is also gray)
+OFFSET_MACROS = ('aside',)                 # their documented offsets: aside::[top:400px;]
 SPACER = re.compile(r'^\s*(?:div)?::\[\s*height:\s*([\d.]+)px;?\s*\]::?\s*$')
 LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
 CODE_START = re.compile(r'^\s*(?:code|verbatim)::')
@@ -55,7 +58,8 @@ class Linter:
         tokens = design.get('tokens') or {}
         self.spaces = _px_tokens(tokens.get('space'))
         self.fonts = {name: float(m.group(1)) for name, value in (tokens.get('font') or {}).items()
-                      if name in self.macros and isinstance(value, str) and (m := PERCENT.match(value))}
+                      if name in SIZE_MACROS and name in self.macros
+                      and isinstance(value, str) and (m := PERCENT.match(value))}
 
     def _gap(self, height):
         if 'gap' not in self.macros or not self.spaces:
@@ -63,8 +67,9 @@ class Linter:
         name = _nearest(height, self.spaces)
         return 'gap::' if name == 'm' else f'gap::{name}'
 
-    def _declarations(self, style, line):
-        """Findings for one style group 'a:b; c:d'."""
+    def _declarations(self, style, line, macro=None, layout=None):
+        """Findings for one style group 'a:b; c:d' (of the macro `macro`, in a
+        page of layout `layout`)."""
         found = []
         declarations = {}
         for part in style.split(';'):
@@ -81,7 +86,7 @@ class Linter:
             if 'aside' in self.macros:
                 advice.append('aside:: for a figure beside the text')
             found.append(Finding(line, 'position', placed, ' or '.join(advice) or 'the flow of the page'))
-        else:
+        elif macro not in OFFSET_MACROS:
             offsets = [f'{k}:{declarations[k]}' for k in ('margin-top', 'margin-left', 'top', 'left')
                        if (m := PX.match(declarations.get(k, ''))) and float(m.group(1)) >= 20]
             if offsets:
@@ -91,10 +96,20 @@ class Linter:
                 found.append(Finding(line, 'offset', '; '.join(offsets),
                                      ' or '.join(advice) or 'the flow of the page'))
         size = declarations.get('font-size')
-        if size and (m := PERCENT.match(size)) and float(m.group(1)) < 100 and self.fonts:
+        if size and (m := PERCENT.match(size)) and float(m.group(1)) != 100 and self.fonts:
             name = _nearest(float(m.group(1)), self.fonts)
             found.append(Finding(line, 'font-size', f'font-size:{size}',
                                  f'{name}:: ({self.fonts[name]:g} %)'))
+        if 'line-height' in declarations and not size:
+            advice = [f'{n}:: (tight lines)' for n in ('small', 'tiny') if n in self.macros]
+            found.append(Finding(line, 'line-height', f"line-height:{declarations['line-height']}",
+                                 ' or '.join(advice + ['the line height of the theme'])))
+        if declarations.get('display', '').lower() == 'none':
+            found.append(Finding(line, 'display', 'display:none', '(.hidden)'))
+        sizes = [f'{k}:{declarations[k]}' for k in ('width', 'height') if k in declarations]
+        if sizes and layout in ('side', 'stack') and macro in ('img', 'video', 'videoplay'):
+            found.append(Finding(line, 'size', '; '.join(sizes),
+                                 'media:: fits the figures (media::(.fill) enlarges them)'))
         display = declarations.get('display', '').lower()
         if (display in ('flex', 'inline-block') or 'justify-content' in declarations) and 'cols' in self.macros:
             found.append(Finding(line, 'flex', f'display:{display}' if display else 'justify-content',
@@ -117,6 +132,9 @@ class Linter:
         findings = []
         in_code = False
         lines = text.split('\n')
+        set_layout = LAYOUT_SET.search(text)
+        layout = set_layout.group(1) if set_layout else layout
+        base = str(layout).split('-')[0] if layout else None
         for number, line in enumerate(lines, 1):
             stripped = line.strip()
             if in_code:
@@ -131,12 +149,13 @@ class Linter:
                 findings.append(Finding(number, 'spacer', stripped, gap or 'a margin of the design'))
                 continue
             for m in STYLE.finditer(line):
-                findings += self._declarations(m.group(1) or m.group(2), number)
-        set_layout = LAYOUT_SET.search(text)
-        layout = set_layout.group(1) if set_layout else layout
+                macro = m.group(1).split('::')[0] if m.group(1) else None
+                findings += self._declarations(m.group(2) or m.group(3), number, macro, base)
+            if RAW_IFRAME.search(line) and 'demo' in self.macros:
+                findings.append(Finding(number, 'iframe', '<iframe style=...>',
+                                        'demo::url (size: the tokens of the design, or media::)'))
         if layout:
             line = text[:set_layout.start()].count('\n') + 1 if set_layout else 1
-            base = str(layout).split('-')[0]
             if base not in self.layouts:
                 findings.append(Finding(line, 'layout', f'layout {layout}',
                                         f"a layout of the design: {', '.join(sorted(self.layouts)) or 'none'}"))

@@ -38,6 +38,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
+
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
+from rich.table import Column
 
 from lib.lint import Linter
 from lib.structure import built_pages, structure
@@ -781,18 +785,38 @@ def _options(meta):
     return options
 
 
-def _run_node(script, arguments):
+def _run_node(script, arguments, label=None):
+    """Run a Node script of assets/; its lines 'progress <done> <total> <item>'
+    on stdout are shown as a progress bar (`label`). Returns its stderr."""
     cmd = ['node', path_current_file + 'assets/' + script] + arguments
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError:
         raise RuntimeError('node not found: install Node.js, then run `npm install` '
                            'in the static_website_lhtml directory')
-    if 'Cannot find module' in proc.stderr:
+    errors = []
+    reader = threading.Thread(target=lambda: errors.extend(proc.stderr))   # no deadlock on a full pipe
+    reader.start()
+    with Progress(TextColumn('        {task.description}'), BarColumn(bar_width=24), MofNCompleteColumn(),
+                  TimeRemainingColumn(),
+                  TextColumn('{task.fields[item]}', table_column=Column(max_width=40, no_wrap=True,
+                                                                         overflow='ellipsis')),
+                  transient=True,
+                  disable=label is None) as progress:
+        task = progress.add_task(label or '', total=None, item='')
+        for line in proc.stdout:
+            parts = line.rstrip('\n').split(' ', 3)
+            if parts[0] == 'progress' and len(parts) == 4:
+                progress.update(task, completed=int(parts[1]), total=int(parts[2]),
+                                item=parts[3].removesuffix('/index.html'))
+    proc.wait()
+    reader.join()
+    stderr = ''.join(errors)
+    if 'Cannot find module' in stderr:
         raise RuntimeError('puppeteer not found: run `npm install` in the static_website_lhtml directory')
     if proc.returncode:
-        raise RuntimeError(f'{script} failed ({proc.returncode}): {proc.stderr.strip()}')
-    return proc
+        raise RuntimeError(f'{script} failed ({proc.returncode}): {stderr.strip()}')
+    return stderr
 
 
 def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None):
@@ -814,8 +838,8 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         json.dump(sheets, fid)
         sheets_json = fid.name
     try:
-        proc = _run_node('layout_contact.js', [f'--input={sheets_json}'])
-        for line in proc.stderr.splitlines():
+        stderr = _run_node('layout_contact.js', [f'--input={sheets_json}'], label='Contact sheets')
+        for line in stderr.splitlines():
             if line.startswith('layout_contact:'):
                 log.error(line)
     finally:
@@ -851,14 +875,14 @@ def post_process(meta):
 
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
-        json.dump([{'html': p['html'], 'out': p['out']} for p in pages], fid)
+        json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages], fid)
         pages_json = fid.name
     try:
-        proc = _run_node('layout_measure.js', [
+        stderr = _run_node('layout_measure.js', [
             f'--input={pages_json}', f"--root={options['root']}", f"--exclude={options['exclude']}",
             f"--width={options['width']}", f"--height={options['height']}",
-            f"--images={1 if options['images'] else 0}"])
-        for line in proc.stderr.splitlines():
+            f"--images={1 if options['images'] else 0}"], label='Measure layout')
+        for line in stderr.splitlines():
             if line.startswith('layout_measure:'):
                 log.error(line)
     finally:
