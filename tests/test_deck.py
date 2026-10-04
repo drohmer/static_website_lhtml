@@ -251,3 +251,99 @@ class DeckProjectsTests(unittest.TestCase):
         (self.root / 'talk/src/course').mkdir()
         self.assertIn('already exists', self.build(self.DECK, ok=False))
         self.assertIn("unknown source 'other'", self.build({'slides': ['other:x']}, ok=False))
+
+
+class DeckRegressionTests(unittest.TestCase):
+    """Bugs found by review (one test per bug)."""
+
+    def test_single_page_section_is_moved_not_repeated(self):
+        source = pages('a/01_x/index.html.j2', 's/01_only/index.html.j2')
+        ids, result = order(['s', 'a', 's/01_only'], source)
+        self.assertEqual(ids, ['a/01_x', 's/01_only'])
+        self.assertEqual([p.get('occurrence', 1) for p in result.pages], [1, 1])
+
+    def test_duration_of_a_directory_counts_once(self):
+        _, result = order([{'path': 'a', 'duration': 3}, {'path': 'b/01_w', 'duration': 1}])
+        self.assertEqual(deck.total_duration(result.pages), (4, 5))
+
+    def test_label_of_several_pages_in_a_directory(self):
+        site = pages('m/index.html.j2', 'm/other.html.j2')
+        self.assertEqual([deck.page_label(p) for p in site], ['m', 'm/other.html'])
+
+    def test_mount_checks(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name in ('e1', 'e2', 'src'):
+                (Path(root) / name).mkdir()
+            for sources, message in (
+                    ({'a': {'path': 'e1', 'mount': 'shared'}, 'b': {'path': 'e2', 'mount': 'shared'}}, 'overlap'),
+                    ({'a': {'path': 'e1', 'mount': 'x'}, 'b': {'path': 'e2', 'mount': 'x/y'}}, 'overlap'),
+                    ({'a': {'path': 'e1', 'mount': 'sitemap'}}, 'used by the generator'),
+                    ({'a': {'path': 'e1', 'mount': 'theme/x'}}, 'used by the generator')):
+                loaded = deck.load_deck({'sources': sources, 'slides': []}, root)
+                with self.assertRaisesRegex(deck.DeckError, message):
+                    deck.check_mounts(loaded, Path(root) / 'src')
+
+    def test_watched_paths(self):
+        with tempfile.TemporaryDirectory() as root:
+            (Path(root) / 'ext').mkdir()
+            (Path(root) / 'deck.yaml').write_text('sources: {ext: ext}\nslides: []\n')
+            paths = deck.watched_paths(str(Path(root) / 'deck.yaml'), root)
+            self.assertIn(Path(root, 'ext').resolve(), [p.resolve() for p in paths])
+            self.assertEqual(deck.deck_source('deck.yaml', None, root), str(Path(root) / 'deck.yaml'))
+            self.assertEqual(deck.deck_source(None, 'conf.yaml', root), 'conf.yaml')
+
+
+class DeckBuildRegressionTests(DeckProjectsTests):
+    """End-to-end regressions (projects of DeckProjectsTests)."""
+
+    def test_title_with_quotes_and_auto_wrap(self):
+        self.write('talk/src/02_raw/index.html.j2', '= Raw\n')
+        config = yaml.safe_load(self.config.read_text())
+        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        self.config.write_text(yaml.safe_dump(config))
+        title = 'L\'animation d\'un "personnage" {{ x }}'
+        structure = self.build({'slides': [{'path': '02_raw', 'title': title}]})
+        self.assertEqual(structure[0]['title'], title)
+        self.assertIn('<title> L\'animation d\'un "personnage" {{ x }} </title>',
+                      (self.site / '02_raw/index.html').read_text())
+
+    def test_scaffold_never_writes_into_a_section(self):
+        self.build({'slides': [{'path': 'course_like', 'title': 'Planned'},
+                               {'path': '01_a', 'title': 'Existing'}]}, '--scaffold')
+        self.assertTrue((self.root / 'talk/src/course_like/index.html.j2').is_file())
+        self.write('talk/src/05_sec/01_p/index.html.j2', '= P\n')
+        self.build({'slides': [{'path': '05_sec', 'title': 'Section'}]}, '--scaffold')
+        self.assertFalse((self.root / 'talk/src/05_sec/index.html.j2').exists())
+
+    def test_occurrence_names_are_stable(self):
+        self.write('talk/src/03_m/index.html.j2', '{% extends "theme/template/base.html" %}{% block content %}= M{% endblock %}\n')
+        self.write('talk/src/03_m/index-2.html.j2', '{% extends "theme/template/base.html" %}{% block content %}= M2{% endblock %}\n')
+        config = yaml.safe_load(self.config.read_text())
+        config['debug'] = True
+        self.config.write_text(yaml.safe_dump(config))
+        d = {'slides': ['03_m/index.html', {'path': '03_m/index.html', 'title': 'again'}, '03_m/index-2.html']}
+        expected = ['03_m/index.html', '03_m/index-3.html', '03_m/index-2.html']
+        for args in ((), ('-l',), ('-l',), ()):
+            structure = self.build(d, *args)
+            self.assertEqual([e['dir'] + e['filename'] for e in structure], expected, args)
+            self.assertIn('= M2', (self.site / '03_m/index-2.html.j2').read_text())
+
+    def test_light_mode_copies_assets_of_new_external_pages(self):
+        self.build({'slides': ['01_a']})
+        self.build(self.DECK, '-l')
+        self.assertTrue((self.site / 'course/05_b/01_c/assets/c.png').is_file())
+
+    def test_deck_option_relative_to_configuration(self):
+        (self.root / 'talk/short.yaml').write_text('slides: [01_a]\n')
+        (self.root / 'talk/deck.yaml').write_text('slides: [00_plan]\n')
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config),
+                                 '--deck', 'short.yaml'], capture_output=True, text=True, cwd=str(REPO))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        structure = yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
+        self.assertEqual([e['dir'] for e in structure], ['01_a/'])
+
+    def test_empty_deck_warns(self):
+        (self.root / 'talk/deck.yaml').write_text("slides: ['!*']\n")
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config)],
+                                capture_output=True, text=True)
+        self.assertIn('no page selected', result.stdout + result.stderr)

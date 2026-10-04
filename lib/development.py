@@ -5,20 +5,20 @@ import os
 import threading
 import time
 
+from lib import deck
 from lib.configuration import ConfigError, GENERATOR_DIRECTORY, load_config
 
 
-def watch_paths(config, filename):
+def watch_paths(config, filename, deck_arg=None):
     paths = [filename, Path(config.source_directory), Path(config.theme)]
     for plugin in config.plugin:
         candidate = filename.parent / plugin
         paths.append(candidate if candidate.is_file() else GENERATOR_DIRECTORY / plugin)
     for include in config.plugin_arg.get('pre_include', []):
         paths.append(filename.parent / include)
-    for key in ('deck', 'design'):
-        value = getattr(config, key, None)
-        if isinstance(value, str):
-            paths.append(Path(value))
+    if isinstance(config.design, str):
+        paths.append(Path(config.design))
+    paths += deck.watched_paths(deck.deck_source(deck_arg, config.deck, filename.parent), filename.parent)
     return paths
 
 
@@ -48,13 +48,13 @@ def develop(args, build):
     except ConfigError as exc:
         raise SystemExit(str(exc))
     state = {'directory': config.site_directory}
-    paths = watch_paths(config, filename)
+    paths = watch_paths(config, filename, args.deck)
 
     def rebuild():
         nonlocal paths
         try:
             fresh, resolved, _ = load_config(filename, args.debug)
-            paths = watch_paths(fresh, resolved)
+            paths = watch_paths(fresh, resolved, args.deck)
             build(args)
             state['directory'] = fresh.site_directory
             print('Build complete.', flush=True)

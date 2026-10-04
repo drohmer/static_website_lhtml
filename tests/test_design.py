@@ -115,3 +115,16 @@ class DesignTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DesignRegressionTests(unittest.TestCase):
+    def test_macro_spec_must_be_a_mapping(self):
+        with self.assertRaisesRegex(design.DesignError, "macro 'foo' must be a mapping"):
+            design.load_design(REPO / 'themes/slides', {'macros': {'foo': 'bar'}})
+
+    def test_empty_design_still_writes_css(self):
+        with tempfile.TemporaryDirectory() as root:
+            d = design.load_design(REPO / 'themes/slides', {'tokens': None, 'macros': None})
+            self.assertEqual(d, {'tokens': {}, 'macros': {}})
+            path = design.write_design({'site_directory': root}, d)
+            self.assertIn(':root {', path.read_text())

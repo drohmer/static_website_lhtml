@@ -144,7 +144,8 @@ def run_plugins(meta, hook_name, log):
 
 def load_deck(meta):
     """The deck (--deck, else the 'deck' of the configuration), or None."""
-    source = meta['args'].deck if getattr(meta['args'], 'deck', None) else meta.get('deck')
+    source = deck.deck_source(getattr(meta['args'], 'deck', None), meta.get('deck'),
+                              meta['config_directory'])
     if source is None:
         return None
     try:
@@ -168,6 +169,8 @@ def select_pages(meta, loaded_deck, pages, log):
         raise RuntimeError(f'Deck: {exc}') from exc
     for warning in result.warnings:
         log.warning(f'Deck: {warning}')
+    if not result.pages:
+        log.warning('Deck: no page selected (the site will be empty)')
     for entry in result.missing:
         log.warning(f"Deck: '{entry.pointer}' ({entry.meta['title']}) has no source yet "
                     f"(--scaffold creates it)")
@@ -190,6 +193,17 @@ def select_pages(meta, loaded_deck, pages, log):
     return result.pages, result.unlisted
 
 
+def scaffold_planned_slides(loaded_deck, dir_source, log):
+    """Create the source of the planned slides of the deck (with a title, no page yet)."""
+    pages = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
+    try:
+        result = deck.apply_deck(loaded_deck, pages + deck.source_pages(loaded_deck))
+    except deck.DeckError as exc:
+        raise RuntimeError(f'Deck: {exc}') from exc
+    for path in deck.scaffold(result.missing, dir_source):
+        log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
+
+
 def prepare_data(meta, log):
     """Copy sources and theme, find templates (in deck order), extract metadata."""
     dir_source = meta['source_directory']
@@ -197,9 +211,7 @@ def prepare_data(meta, log):
     light = meta['args'].light
     loaded_deck = load_deck(meta)
     if loaded_deck is not None and getattr(meta['args'], 'scaffold', False):
-        for path in deck.scaffold([e for e in loaded_deck.entries if not e.exclude
-                                   and 'title' in e.meta and not e.is_glob], dir_source):
-            log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
+        scaffold_planned_slides(loaded_deck, dir_source, log)
 
     if light:
         log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
@@ -213,12 +225,12 @@ def prepare_data(meta, log):
     generator_tool.extract_additional_config(pages)
 
     pages, unlisted = select_pages(meta, loaded_deck, pages, log)
+    # Pages of other projects, occurrences, and (light mode) sources: into the site
+    template_files = deck.materialize(pages, dir_site, loaded_deck.sources if loaded_deck else {},
+                                      light=light)
     if not light:
         for element in unlisted:
             os.remove(element['path'].filepath())
-    # Pages of other projects, occurrences, and (light mode) sources: into the site
-    template_files = deck.materialize(pages, dir_site, loaded_deck.sources if loaded_deck else {},
-                                      copy_assets=not light)
 
     if light:
         # Remove the pages of the previous generation that are no longer generated
@@ -307,13 +319,14 @@ def prepare_design(meta, log):
     write theme/css/design.css and give the macros to LHTML."""
     try:
         meta['design'] = design.load_design(meta['theme'], meta.get('design'))
-        if not any(meta['design'].values()):
-            return
         if meta['design']['macros'] and not hasattr(lhtml, 'registry_with_macros'):
             raise design.DesignError('the macros of the design require lhtml-markup >= 2.5 '
                                      '(pip install -U lhtml-markup)')
         meta['macros'] = design.lhtml_macros(meta['design'])
-        lhtml.registry_with_macros(meta['macros'])  # validate once, before the pages
+        if meta['macros']:
+            lhtml.registry_with_macros(meta['macros'])  # validate once, before the pages
+        # Always written (even empty): the theme may link it, and a light
+        # build must not keep the design.css of a previous design.
         path = design.write_design(meta, meta['design'])
     except (design.DesignError, lhtml.LHTMLError) as exc:
         raise RuntimeError(f'Design: {exc}') from exc
@@ -453,7 +466,7 @@ def build_once(args):
             'source_directory': config.source_directory,
             'site_directory': config.site_directory,
             'theme': config.theme,
-            'deck': args.deck or config.deck,
+            'deck': deck.deck_source(args.deck, config.deck, config_file.parent),
             'plugin_paths': context.plugin_paths,
             'debug': config.debug,
             'level_print': config.level_print,

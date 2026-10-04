@@ -50,6 +50,7 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config]
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
   --layout             Write a layout report of each page in .layout/ (see below)
   --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
+                       (relative to the current directory, else to the configuration file)
   --scaffold           Create the source of the deck slides that do not exist yet
 ```
 
@@ -196,32 +197,41 @@ slides:
 - A pointer is a path relative to the source directory: the directory of a
   page, a parent directory (all its pages, in file order), a page file
   (`course/intro.html`, when a directory holds several pages), or a glob.
-- A pointer that names exactly one page takes precedence over directories and
-  globs: the page is placed there, and skipped by the directories and globs.
+- A pointer that names a page (its directory or its file) takes precedence
+  over parent directories and globs: the page is placed there, and skipped by
+  the directories and globs.
 - `!pattern` excludes the matching pages from the whole deck
   (`!inf585:*/00_title` for another project).
 - A slide may be a mapping with `path` and metadata. `title` replaces the
   title in the menu; `duration` (minutes) is summed in the build log;
   `params` (see below); every other key (`message`, `notes`, ...) is exported
   in `structure.yaml`, like the page `config.yaml`. The metadata of a
-  directory or a glob applies to each of its pages.
+  directory or a glob applies to each of its pages, except `duration`, which
+  is the duration of all its pages together.
 - Pages that are not in the deck are not generated (they are listed in the
   build log); the files of their directory (assets) are still copied.
 - A pointer that matches no page is an error (with a suggestion), unless the
   slide has a `title`: it is a planned slide, reported in the log.
   `--scaffold` creates its source, `<path>/index.html.j2`, with the title and
-  the other metadata as LHTML comments (existing files are never modified).
+  the other metadata as LHTML comments (existing files are never modified,
+  and nothing is created in a directory that holds pages).
+- A deck that selects no page gives a warning.
 
 **Other projects.** `sources` gives a name to the source directory of another
 project (`name: path`, or `name: {path: ..., mount: dir}`); its pages are
 named `name:path`. They are copied into the site under `name/` (or `mount`),
 with the files and asset directories of their directory, and their
-`config.yaml`; a mount that already exists in the sources is an error. The
-other project is only read: nothing is copied into its sources or yours.
+`config.yaml` (in light mode, the assets of a page are copied when its
+directory is not in the site yet). A mount must not exist in the sources, nor
+overlap the mount of another source or a directory of the generator
+(`theme/`, `structure/`, `sitemap/`). The other project is only read: nothing
+is copied into its sources or yours. `--watch` also watches the deck file and
+the directories of its sources.
 
 **Repeated slides and parameters.** Naming the same page explicitly again
 creates another occurrence: it is generated next to the first one
-(`index-2.html`, `index-3.html`, ...), so its relative assets still work, with
+(`index-2.html`, `index-3.html`, ..., skipping the names of the pages of
+that directory, so that the names are the same in every build), so its relative assets still work, with
 its own place in the navigation and its own metadata. `params` are Jinja
 variables of the occurrence (also available as `params`), e.g. a plan that
 highlights the current part:

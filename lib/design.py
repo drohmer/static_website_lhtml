@@ -65,8 +65,12 @@ def _check(design, origin):
         raise DesignError(f"{origin}: unknown design section(s) {', '.join(sorted(unknown))} "
                           f"(expected {', '.join(SECTIONS)})")
     for section in SECTIONS:
-        if not isinstance(design.get(section, {}), dict):
+        if not isinstance(design.get(section) or {}, dict):
             raise DesignError(f"{origin}: '{section}' must be a mapping")
+    for name, spec in (design.get('macros') or {}).items():
+        if spec is not None and not isinstance(spec, dict):
+            raise DesignError(f"{origin}: macro '{name}' must be a mapping (or null to remove it), "
+                              f"got {spec!r}")
     return design
 
 

@@ -189,6 +189,30 @@ def load_deck(source, base_directory='.'):
     return Deck(entries, sources)
 
 
+def deck_source(cli_value, configured, config_directory):
+    """The deck to use: the --deck file (relative to the current directory, else
+    to the configuration directory), else the 'deck' of the configuration."""
+    if not cli_value:
+        return configured
+    path = Path(cli_value).expanduser()
+    if not path.is_absolute() and not path.exists() and (Path(config_directory) / path).exists():
+        path = Path(config_directory) / path
+    return str(path)
+
+
+def watched_paths(source, config_directory):
+    """Files and directories a deck depends on (for --watch): the deck file and
+    the directories of its sources. An invalid deck gives only its file."""
+    paths = [Path(source)] if isinstance(source, (str, Path)) else []
+    try:
+        loaded = load_deck(source, config_directory) if source is not None else None
+    except DeckError:
+        return paths
+    if loaded is not None:
+        paths += [Path(s.root) for s in loaded.sources.values()]
+    return paths
+
+
 def page_id(entry):
     """Directory of the page relative to its source directory, without trailing slash."""
     return entry['path'].path_local.strip('/')
@@ -200,7 +224,8 @@ def page_file(entry):
 
 
 def page_label(entry):
-    name = page_id(entry) or page_file(entry)
+    name = page_id(entry) if entry['path'].filename == 'index.html.j2' else page_file(entry)
+    name = name or page_file(entry)
     return f"{entry['source']}:{name}" if entry.get('source') else name
 
 
@@ -225,16 +250,23 @@ def _matches(entry, page):
         return True
     if entry.is_glob:
         return fnmatch.fnmatchcase(pid, p) or fnmatch.fnmatchcase(pfile, p)
-    if p in (pid, pfile, pfile + '.j2') or (pfile.endswith('.html') and p == pfile[:-len('.html')]):
-        return True
-    return pid.startswith(p + '/')
+    return _names_page(entry, page) or pid.startswith(p + '/')
+
+
+def _names_page(entry, page):
+    """The pointer names this page itself (its directory or its file), not a parent."""
+    pid, pfile = page_id(page), page_file(page)
+    p = entry.pointer
+    return (entry.source == page.get('source') and not entry.is_glob
+            and (p in (pid, pfile, pfile + '.j2') or (pfile.endswith('.html') and p == pfile[:-len('.html')])))
 
 
 def _explicit_page(entry, pages):
-    """The page named by a pointer that matches exactly one page (not a glob), else None."""
+    """The page named by a pointer (its directory or its file) when it names
+    exactly one page, else None (parent directory, glob, or several pages)."""
     if entry.exclude or entry.is_glob:
         return None
-    hits = [p for p in pages if _matches(entry, p)]
+    hits = [p for p in pages if _names_page(entry, p)]
     return hits[0] if len(hits) == 1 else None
 
 
@@ -268,6 +300,7 @@ def apply_deck(deck, pages):
             n = occurrences[id(page)]
             item = page if n == 1 else {**page, 'occurrence': n}
             item['deck'] = dict(e.meta)
+            item['deck_entry'] = e.line
             placed.add(id(page))
             ordered.append(item)
             continue
@@ -287,6 +320,7 @@ def apply_deck(deck, pages):
                 continue
             placed.add(id(page))
             page['deck'] = dict(e.meta)
+            page['deck_entry'] = e.line
             ordered.append(page)
     unlisted = [p for p in pages if id(p) not in placed and not p.get('source')]
     return DeckResult(ordered, unlisted, missing, warnings)
@@ -318,11 +352,13 @@ def _occurrence_name(filename, n, taken):
     return f'{stem}-{k}.html.j2'
 
 
-def materialize(pages, site_directory, sources, copy_assets=True):
+def materialize(pages, site_directory, sources, light=False):
     """Place the pages of the deck in the site directory and return their
     template entries there: pages of other projects (under their mount
-    directory, with their assets when `copy_assets`), pages read from the
-    source directory (light mode), and occurrences (copies next to the page)."""
+    directory, with their assets), pages read from the source directory
+    (light mode), and occurrences (copies next to the page, index-2.html.j2,
+    ... named after the pages of their source directory, so that the names do
+    not depend on the files of a previous build)."""
     site = os.path.join(site_directory, '')
     result, copied_dirs = [], set()
     taken = {}   # site directory -> file names used
@@ -331,38 +367,52 @@ def materialize(pages, site_directory, sources, copy_assets=True):
         mount = sources[page['source']].mount if page.get('source') else ''
         local_dir = mount + path.path_local
         target_dir = os.path.join(site, local_dir)
-        source_file = path.filepath()
-        if page.get('source') and copy_assets and target_dir not in copied_dirs:
-            _copy_assets(os.path.dirname(source_file), target_dir)
+        source_dir = os.path.dirname(path.filepath())
+        # Assets of the pages of other projects (light mode: if not there yet)
+        if page.get('source') and target_dir not in copied_dirs and not (light and os.path.isdir(target_dir)):
+            _copy_assets(source_dir, target_dir)
             copied_dirs.add(target_dir)
-        names = taken.setdefault(target_dir, set(
-            f for f in (os.listdir(target_dir) if os.path.isdir(target_dir) else [])))
+        names = taken.setdefault(target_dir, {f for f in os.listdir(source_dir) if f.endswith('.html.j2')})
         filename = path.filename
         if page.get('occurrence', 1) > 1:
             filename = _occurrence_name(filename, page['occurrence'], names)
-        names.add(filename)
+            names.add(filename)
         target_file = os.path.join(target_dir, filename)
-        if os.path.abspath(source_file) != os.path.abspath(target_file):
+        if os.path.abspath(path.filepath()) != os.path.abspath(target_file):
             os.makedirs(target_dir, exist_ok=True)
-            shutil.copy2(source_file, target_file)
+            shutil.copy2(path.filepath(), target_file)
         entry = {**page, 'path': FilepathRelative(root_directory=site, path_local=local_dir,
                                                   filename=filename, level=local_dir.count('/'))}
         result.append(entry)
     return result
 
 
+RESERVED_MOUNTS = ('theme/', 'structure/', 'sitemap/')
+
+
 def check_mounts(deck, source_directory):
-    """A mount directory must not hide a directory of the project sources."""
+    """A mount directory must not hide a directory of the project sources, a
+    directory written by the generator, or the mount of another source."""
+    mounts = {}
     for source in deck.sources.values():
+        if source.mount.split('/')[0] + '/' in RESERVED_MOUNTS:
+            raise DeckError(f"source '{source.name}': mount directory '{source.mount}' is used by the "
+                            f"generator ({', '.join(RESERVED_MOUNTS)}); choose another 'mount'")
         if (Path(source_directory) / source.mount).exists():
             raise DeckError(f"source '{source.name}': mount directory '{source.mount}' already exists "
                             f"in the sources; choose another 'mount'")
+        for other, mount in mounts.items():
+            if source.mount.startswith(mount) or mount.startswith(source.mount):
+                raise DeckError(f"sources '{other}' and '{source.name}': mount directories "
+                                f"'{mount}' and '{source.mount}' overlap; choose another 'mount'")
+        mounts[source.name] = source.mount
 
 
 def scaffold(entries, source_directory):
-    """Create the source of the deck slides that do not exist yet (entries with a
-    title): <source>/<path>/index.html.j2 with the title and the other metadata
-    as an LHTML comment. Existing files are never overwritten. Returns the paths."""
+    """Create the source of planned slides (DeckResult.missing: entries with a
+    title that match no page): <source>/<path>/index.html.j2 with the title and
+    the other metadata as LHTML comments. A directory holding pages, at any
+    depth, is never modified. Returns the paths."""
     created = []
     for e in entries:
         if e.source:
@@ -371,7 +421,7 @@ def scaffold(entries, source_directory):
         if target.suffix in ('.html', '.j2'):
             continue
         page = target / 'index.html.j2'
-        if page.exists() or any(target.glob('*.html.j2')):
+        if page.exists() or any(target.rglob('*.html.j2')):
             continue
         page.parent.mkdir(parents=True, exist_ok=True)
         lines = [f"= {e.meta['title']}", '']
@@ -384,5 +434,12 @@ def scaffold(entries, source_directory):
 
 
 def total_duration(pages):
-    values = [p['deck']['duration'] for p in pages if 'duration' in p.get('deck', {})]
-    return sum(values), len(values)
+    """(minutes, number of timed pages). The duration of a directory or a glob
+    is the duration of all its pages together: it is counted once."""
+    durations = {}
+    timed = 0
+    for p in pages:
+        if 'duration' in p.get('deck', {}):
+            durations[p['deck_entry']] = p['deck']['duration']
+            timed += 1
+    return sum(durations.values()), timed
