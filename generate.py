@@ -13,6 +13,7 @@ import argparse
 import sys
 import importlib.util
 import platform
+import re
 import traceback
 
 from lib import deck
@@ -20,6 +21,7 @@ from lib import design
 from lib import filesystem
 from lib import generator_tool
 from lib import logger
+from lib import pages
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
 from lib.build_output import staged_site
 
@@ -143,30 +145,29 @@ def run_plugins(meta, hook_name, log):
 # ---------------------------------------------------------------------------
 
 def load_deck(meta):
-    """The deck (--deck, else the 'deck' of the configuration), or None."""
-    source = deck.deck_source(getattr(meta['args'], 'deck', None), meta.get('deck'),
-                              meta['config_directory'])
-    if source is None:
+    """The deck (meta['deck']: --deck, else the 'deck' of the configuration), or None."""
+    if meta.get('deck') is None:
         return None
-    try:
-        loaded = deck.load_deck(source, meta['config_directory'])
-        deck.check_mounts(loaded, meta['source_directory'])
-        return loaded
-    except deck.DeckError as exc:
-        raise RuntimeError(f'Deck: {exc}') from exc
+    loaded = deck.load_deck(meta['deck'], meta['config_directory'])
+    deck.check_sources(loaded, meta['source_directory'])
+    return loaded
 
 
-def select_pages(meta, loaded_deck, pages, log):
-    """Order the pages by the deck (all pages in file order without deck),
-    adding the pages of other projects. Returns (pages, unlisted local pages)."""
+def select_pages(meta, loaded_deck, log, scaffold=False):
+    """Pages to generate, in order: the pages of the project in file order, or
+    the pages of the deck (from the project and other projects). With
+    `scaffold`, the planned slides of the deck are created first."""
+    found = pages.discover(pages.Source(None, meta['source_directory']))
     if loaded_deck is None:
-        return pages, []
-    try:
-        external = deck.source_pages(loaded_deck)
-        generator_tool.extract_additional_config(external)
-        result = deck.apply_deck(loaded_deck, pages + external)
-    except (deck.DeckError, ValueError) as exc:
-        raise RuntimeError(f'Deck: {exc}') from exc
+        return found
+    for name, root in loaded_deck.sources.items():
+        if any(e.source == name for e in loaded_deck.entries):
+            found += pages.discover(pages.Source(name, root))
+    result = deck.apply_deck(loaded_deck, found)
+    if scaffold and result.missing:
+        for path in deck.scaffold(result.missing, meta['source_directory']):
+            log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
+        return select_pages(meta, loaded_deck, log)
     for warning in result.warnings:
         log.warning(f'Deck: {warning}')
     if not result.pages:
@@ -174,86 +175,54 @@ def select_pages(meta, loaded_deck, pages, log):
     for entry in result.missing:
         log.warning(f"Deck: '{entry.pointer}' ({entry.meta['title']}) has no source yet "
                     f"(--scaffold creates it)")
-    minutes, timed = deck.total_duration(result.pages)
-    summary = f'{len(result.pages)} pages'
-    n_external = sum(1 for p in result.pages if p.get('source'))
-    n_repeated = sum(1 for p in result.pages if p.get('occurrence', 1) > 1)
-    if n_external:
-        summary += f', {n_external} from other projects'
-    if n_repeated:
-        summary += f', {n_repeated} repeated'
-    if timed:
-        summary += f', {minutes:g} min' + (f' ({timed} pages timed)' if timed < len(result.pages) else '')
-    log.keyvalue('info', f'Deck: {summary}', indent_level=1)
+    log.keyvalue('info', f'Deck: {result.summary()}', indent_level=1)
     if result.unlisted:
-        names = ', '.join(deck.page_label(p) for p in result.unlisted[:5])
+        names = ', '.join(p.label for p in result.unlisted[:5])
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
         log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
                              f'{names}{more}', indent_level=1)
-    return result.pages, result.unlisted
+    return result.pages
 
 
-def scaffold_planned_slides(loaded_deck, dir_source, log):
-    """Create the source of the planned slides of the deck (with a title, no page yet)."""
-    pages = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
-    try:
-        result = deck.apply_deck(loaded_deck, pages + deck.source_pages(loaded_deck))
-    except deck.DeckError as exc:
-        raise RuntimeError(f'Deck: {exc}') from exc
-    for path in deck.scaffold(result.missing, dir_source):
-        log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
+def remove_stale_pages(dir_site, template_files):
+    """Light mode: remove the pages of the previous generation no longer generated."""
+    structure_path = os.path.join(dir_site, 'structure/structure.yaml')
+    if not os.path.isfile(structure_path):
+        return
+    current = {e['path'].filepath_local().replace('.html.j2', '.html') for e in template_files}
+    with open(structure_path) as fid:
+        previous = yaml.safe_load(fid) or []
+    for entry in previous:
+        relative = entry['dir'] + entry['filename']
+        if relative not in current:
+            for suffix in ('', '.j2'):
+                stale = os.path.join(dir_site, relative + suffix)
+                if os.path.isfile(stale):
+                    os.remove(stale)
 
 
 def prepare_data(meta, log):
-    """Copy sources and theme, find templates (in deck order), extract metadata."""
+    """Select the pages (deck), copy them with the sources and theme into the
+    site, extract their titles and export the structure."""
     dir_source = meta['source_directory']
     dir_site = meta['site_directory']
     light = meta['args'].light
-    loaded_deck = load_deck(meta)
-    if loaded_deck is not None and getattr(meta['args'], 'scaffold', False):
-        scaffold_planned_slides(loaded_deck, dir_source, log)
+    selected = select_pages(meta, load_deck(meta), log, scaffold=getattr(meta['args'], 'scaffold', False))
 
     if light:
         log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
-        pages = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
     else:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        filesystem.copy_directories(dir_source, dir_site)
+        filesystem.copy_directories(dir_source, dir_site, templates=False)
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
-        pages = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
-    generator_tool.extract_additional_config(pages)
-
-    pages, unlisted = select_pages(meta, loaded_deck, pages, log)
-    # Pages of other projects, occurrences, and (light mode) sources: into the site
-    template_files = deck.materialize(pages, dir_site, loaded_deck.sources if loaded_deck else {},
-                                      light=light)
-    if not light:
-        for element in unlisted:
-            os.remove(element['path'].filepath())
-
+    pages.name_outputs(selected)
+    template_files = pages.place(selected, dir_site, light=light)
     if light:
-        # Remove the pages of the previous generation that are no longer generated
-        structure_path = os.path.join(dir_site, 'structure/structure.yaml')
-        current_pages = {e['path'].filepath_local().replace('.html.j2', '.html') for e in template_files}
-        if os.path.isfile(structure_path):
-            with open(structure_path) as fid:
-                previous_pages = yaml.safe_load(fid) or []
-            for entry in previous_pages:
-                relative = entry['dir'] + entry['filename']
-                if relative not in current_pages:
-                    for suffix in ('', '.j2'):
-                        stale = os.path.join(dir_site, relative + suffix)
-                        if os.path.isfile(stale):
-                            os.remove(stale)
+        remove_stale_pages(dir_site, template_files)
 
     log.debug(f"Found {len(template_files)} template files in '{dir_site}'")
-    for element in template_files:
-        extra = {k: v for k, v in element.get('deck', {}).items() if k != 'params'}
-        if extra:
-            element['extra-config'] = {**element.get('extra-config', {}), **extra}
     sitemap = generator_tool.extract_titles(template_files)
-
     sitemap_dir = os.path.join(dir_site, 'sitemap')
     if light and os.path.isdir(sitemap_dir):
         shutil.rmtree(sitemap_dir)
@@ -273,29 +242,47 @@ def discard_page(meta, element):
             os.remove(path)
 
 
+SITEMAP_KEYWORD = re.compile(r'\b(?:pathTo|linkTo)_\w+')
+
+
+def sitemap_keywords_used(dir_site):
+    """Names pathTo_<id> / linkTo_<id> used by the templates of the site (only
+    these are computed for each page)."""
+    used = set()
+    for directory, _, names in os.walk(dir_site):
+        for name in names:
+            if name.endswith(('.html', '.j2', '.htm')):
+                with open(os.path.join(directory, name), encoding='utf-8', errors='replace') as fid:
+                    used.update(SITEMAP_KEYWORD.findall(fid.read()))
+    return used
+
+
 def render_jinja(meta, template_files, sitemap, log):
     """Render all Jinja2 templates. Returns the list of templates that failed."""
     dir_site = meta['site_directory']
     file_loader = FileSystemLoader(dir_site)
     env = Environment(loader=file_loader, extensions=['jinja_markdown.MarkdownExtension'])
+    used = sitemap_keywords_used(dir_site)
+    targets = {id_site: entry['path'].filepath_local().replace('.html.j2', '.html')
+               for id_site, entry in sitemap.items()
+               if 'pathTo_' + id_site in used or 'linkTo_' + id_site in used}
 
     log.keyvalue('Found', f'{len(template_files)} template files')
     failed = []
     for k, element in enumerate(template_files):
         template_local = element['path'].filepath_local()
         path_to_root = element['path'].path_to_root()
-
-        # Build sitemap keywords
-        for id_site in sitemap:
-            url = path_to_root + sitemap[id_site]['path'].filepath_local().replace('.html.j2', '.html')
-            meta['keywords']['pathTo_' + id_site] = url
-            meta['keywords']['linkTo_' + id_site] = f'<a href="{url}">{id_site}</a>'
+        links = {}
+        for id_site, target in targets.items():
+            url = path_to_root + target
+            links['pathTo_' + id_site] = url
+            links['linkTo_' + id_site] = f'<a href="{url}">{id_site}</a>'
 
         log.debug(f'- {template_local}')
         try:
             template = env.get_template(template_local)
-            params = element.get('deck', {}).get('params', {})
-            output_html = template.render({**meta['keywords'], **params, 'params': params,
+            params = element['page'].params if 'page' in element else {}
+            output_html = template.render({**meta['keywords'], **links, **params, 'params': params,
                                            'pathToRoot': path_to_root, 'pageID': k})
         except Exception as e:
             log.error(f'Jinja2 error in {template_local}: {e}')
@@ -316,20 +303,20 @@ def render_jinja(meta, template_files, sitemap, log):
 
 def prepare_design(meta, log):
     """Load the design (theme design.yaml + 'design' of the configuration),
-    write theme/css/design.css and give the macros to LHTML."""
-    try:
-        meta['design'] = design.load_design(meta['theme'], meta.get('design'))
-        if meta['design']['macros'] and not hasattr(lhtml, 'registry_with_macros'):
+    write theme/css/design.css and structure/design.md, give the macros to LHTML."""
+    meta['design'] = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+    meta['macros'] = meta['design']['macros']
+    if meta['macros']:
+        if not hasattr(lhtml, 'registry_with_macros'):
             raise design.DesignError('the macros of the design require lhtml-markup >= 2.5 '
                                      '(pip install -U lhtml-markup)')
-        meta['macros'] = design.lhtml_macros(meta['design'])
-        if meta['macros']:
+        try:
             lhtml.registry_with_macros(meta['macros'])  # validate once, before the pages
-        # Always written (even empty): the theme may link it, and a light
-        # build must not keep the design.css of a previous design.
-        path = design.write_design(meta, meta['design'])
-    except (design.DesignError, lhtml.LHTMLError) as exc:
-        raise RuntimeError(f'Design: {exc}') from exc
+        except lhtml.LHTMLError as exc:
+            raise design.DesignError(str(exc)) from exc
+    # Always written (even empty): the theme may link it, and a light build
+    # must not keep the design.css of a previous design.
+    path = design.write_design(meta, meta['design'])
     log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
 
 
@@ -444,6 +431,7 @@ def build_once(args):
         log.warning(warning)
     context = BuildContext(config, config_file, args, log)
     meta = context.meta
+    meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
     if args.layout:
         add_layout_plugin(meta)
 
@@ -466,7 +454,7 @@ def build_once(args):
             'source_directory': config.source_directory,
             'site_directory': config.site_directory,
             'theme': config.theme,
-            'deck': deck.deck_source(args.deck, config.deck, config_file.parent),
+            'deck': meta['deck'],
             'plugin_paths': context.plugin_paths,
             'debug': config.debug,
             'level_print': config.level_print,

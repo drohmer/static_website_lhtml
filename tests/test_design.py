@@ -56,7 +56,6 @@ class DesignTests(unittest.TestCase):
         self.assertIn('--font-small: 85%;', css)
         self.assertIn('--space-m: 25;', css)
         self.assertIn('.small { font-size: var(--font-small); }', css)
-        self.assertEqual(design.lhtml_macros(d), {'small': {'class': 'small'}})
         reference = design.design_markdown(d)
         self.assertIn('### `small::`', reference)
         self.assertIn('font-size: 85%', reference)
@@ -67,7 +66,7 @@ class DesignTests(unittest.TestCase):
             d = design.load_design(REPO / 'themes' / theme)
             self.assertIn('gap', d['macros'])
             design.flatten_tokens(d['tokens'])
-            lhtml.registry_with_macros(design.lhtml_macros(d))
+            lhtml.registry_with_macros(d['macros'])
             for name in set(re.findall(r'var\(--([\w-]+)\)', design.design_css(d))):
                 self.assertIn(name, design.flatten_tokens(d['tokens']), f'{theme}: undefined token --{name}')
 
@@ -128,3 +127,25 @@ class DesignRegressionTests(unittest.TestCase):
             self.assertEqual(d, {'tokens': {}, 'macros': {}})
             path = design.write_design({'site_directory': root}, d)
             self.assertIn(':root {', path.read_text())
+
+
+class DesignExtendsTests(unittest.TestCase):
+    def test_pdf_theme_extends_slides(self):
+        self.assertEqual(design.load_design(REPO / 'themes/slides-pdf'), design.load_design(REPO / 'themes/slides'))
+
+    def test_extends_and_loop(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            (root / 'base.yaml').write_text('tokens: {a: 1, b: 2}\n')
+            (root / 'mine.yaml').write_text('extends: base.yaml\ntokens: {b: 3}\n')
+            self.assertEqual(design.load_design(root / 'none', str(root / 'mine.yaml'))['tokens'], {'a': 1, 'b': 3})
+            self.assertEqual(design.load_design(root / 'none', {'extends': 'mine.yaml'}, root)['tokens'],
+                             {'a': 1, 'b': 3})
+            (root / 'loop.yaml').write_text('extends: loop.yaml\n')
+            with self.assertRaisesRegex(design.DesignError, 'too many'):
+                design.load_design(root / 'none', str(root / 'loop.yaml'))
+
+    def test_reference_written_by_generator(self):
+        with tempfile.TemporaryDirectory() as root:
+            design.write_design({'site_directory': root}, design.load_design(REPO / 'themes/slides'))
+            self.assertIn('### `gap::`', (Path(root) / 'structure/design.md').read_text())

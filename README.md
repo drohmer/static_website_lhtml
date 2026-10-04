@@ -127,6 +127,7 @@ static_website_lhtml/
   requirements.txt
   lib/
     configuration.py       # Validated Config and BuildContext plugin adapter
+    pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens and macros (design.yaml -> design.css)
     filesystem.py          # File/directory utilities
@@ -205,7 +206,8 @@ slides:
 - A slide may be a mapping with `path` and metadata. `title` replaces the
   title in the menu; `duration` (minutes) is summed in the build log;
   `params` (see below); every other key (`message`, `notes`, ...) is exported
-  in `structure.yaml`, like the page `config.yaml`. The metadata of a
+  in `structure.yaml`, like the page `config.yaml` (`structure.yaml` also gives
+  the origin of each page: `src`, its template, `source`, `occurrence`). The metadata of a
   directory or a glob applies to each of its pages, except `duration`, which
   is the duration of all its pages together.
 - Pages that are not in the deck are not generated (they are listed in the
@@ -218,15 +220,16 @@ slides:
 - A deck that selects no page gives a warning.
 
 **Other projects.** `sources` gives a name to the source directory of another
-project (`name: path`, or `name: {path: ..., mount: dir}`); its pages are
-named `name:path`. They are copied into the site under `name/` (or `mount`),
-with the files and asset directories of their directory, and their
-`config.yaml` (in light mode, the assets of a page are copied when its
-directory is not in the site yet). A mount must not exist in the sources, nor
-overlap the mount of another source or a directory of the generator
-(`theme/`, `structure/`, `sitemap/`). The other project is only read: nothing
-is copied into its sources or yours. `--watch` also watches the deck file and
-the directories of its sources.
+project (`name: path`); its pages are named `name:path`. They are generated
+under `name/` in the site, with the files and asset directories of their
+directory and their `config.yaml` (in light mode, the assets of a page are
+copied when its directory is not in the site yet). The name must not be a
+directory of the project nor of the generator (`theme`, `structure`,
+`sitemap`). The other project is only read: nothing is copied into its
+sources or yours. `--watch` also watches the deck file and, in the other
+projects, the directories the deck points to. A page of another project is
+rendered in this site: Jinja `extends`/`include` and LHTML `include::` resolve
+from this site and from the page directory, not from the root of its project.
 
 **Repeated slides and parameters.** Naming the same page explicitly again
 creates another occurrence: it is generated next to the first one
@@ -290,9 +293,19 @@ The generator:
    configuration (a value `null` removes a token or a macro),
 2. writes `theme/css/design.css`: the tokens as CSS variables
    (`font: {small: 85%}` gives `--font-small`), then the `css` of each macro,
-3. gives the macros to LHTML,
-4. with `--layout`, writes their reference in `.layout/design.md` (for authors
-   and LLMs).
+3. writes their reference in `structure/design.md` of the site (for authors
+   and LLMs; the layout report links to it),
+4. gives the macros to LHTML (which ignores their `css` and `doc` fields).
+
+A design file may start from another one with `extends` (relative to the
+file), then override it key by key; `slides-pdf` reuses the design of
+`slides` this way:
+
+```yaml
+extends: ../slides/design.yaml
+tokens:
+  font: {small: 80%}
+```
 
 Change the look of a whole deck in `configure.yaml`:
 
@@ -372,8 +385,9 @@ Files:
   per sheet, with badges `P` (problems), `W` (warnings), `D` (differences
   with the deck): the whole deck at a glance
 - `deck.json`: the usual values of the deck, for scripts
-- `design.md`: the macros and tokens of the design (when the theme or the
-  configuration defines one), to use instead of inline styles
+- `summary.md` links to `structure/design.md` of the site: the macros and
+  tokens of the design (when the theme or the configuration defines one), to
+  use instead of inline styles
 - `pages/<relative HTML path>/layout.md`: one row per top-level block (number, kind, position and
   size of what is actually drawn, margins, CSS position, font size, signature),
   then the problems, warnings, differences with the deck, density and the

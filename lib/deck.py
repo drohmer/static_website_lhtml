@@ -4,8 +4,7 @@ Without a deck, the pages are generated in the order of the files. A deck
 (`deck: deck.yaml` in the configuration, or `--deck`) lists pointers instead:
 
     sources:                              # other projects (paths relative to the deck)
-      course: ../course_slides/src        # pages copied in the site under course/
-      lab: {path: ../lab/src, mount: extra/lab}
+      course: ../course_slides/src        # their pages are generated under course/
     slides:
       - 00_ouverture                      # directory: all its pages, in file order
       - 02_rotations/04_representations   # one page
@@ -21,41 +20,40 @@ Without a deck, the pages are generated in the order of the files. A deck
 
 A page is identified by its directory relative to its source directory
 (`02_rotations/04_representations`), or by its file when a directory holds
-several pages (`course/intro.html`). An explicit pointer (naming exactly one
-page) takes precedence over directories and globs: `- 02_rotations` then
-`- 02_rotations/15_slerp` moves 15_slerp after the rest of the section.
-Naming a page explicitly again creates another occurrence of it, generated
-next to the first one (index-2.html, ...). Pages that are not in the deck
-are not generated (listed in the log).
+several pages (`course/intro.html`). A pointer naming a page (its directory
+or file) takes precedence over parent directories and globs: `- 02_rotations`
+then `- 02_rotations/15_slerp` moves 15_slerp after the rest of the section.
+Naming a page again creates another occurrence. Pages of the project that are
+not in the deck are not generated (listed in the log).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from bisect import bisect_left
+from collections import defaultdict
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import difflib
 import fnmatch
-import os
 import re
-import shutil
 
 import yaml
 
-from lib.filesystem import FilepathRelative, find_files_in_hierarchy
+from lib.pages import TEMPLATE_SUFFIX
 
 GLOB_CHARS = set('*?[')
-RESERVED = {'path', 'dir', 'filename', 'level'}
+NAME = re.compile(r'[A-Za-z][A-Za-z0-9_-]*$')
 ALIAS = re.compile(r'([A-Za-z][A-Za-z0-9_-]*):(?!/)(.*)$')
+# Keys of structure.yaml written by the generator
+RESERVED = {'path', 'dir', 'filename', 'level', 'title_id', 'src', 'source', 'occurrence'}
+# Directories of the site written by the generator (not available as source names)
+GENERATOR_DIRECTORIES = {'theme', 'structure', 'sitemap'}
 
 
 class DeckError(ValueError):
-    """Invalid deck file or pointer."""
+    """Invalid deck file or pointer (the message starts with 'Deck: ')."""
 
-
-@dataclass
-class Source:
-    name: str
-    root: str                   # absolute directory, with trailing /
-    mount: str                  # directory of its pages in the site, with trailing /
+    def __init__(self, message):
+        super().__init__(f'Deck: {message}')
 
 
 @dataclass
@@ -64,7 +62,7 @@ class Entry:
     meta: dict = field(default_factory=dict)
     exclude: bool = False
     line: str = ''
-    source: str | None = None   # None: the source directory of the project
+    source: str | None = None   # None: the project
 
     @property
     def is_glob(self):
@@ -78,15 +76,38 @@ class Entry:
 @dataclass
 class Deck:
     entries: list
-    sources: dict = field(default_factory=dict)   # name -> Source
+    sources: dict = field(default_factory=dict)   # name -> absolute directory (trailing /)
 
 
 @dataclass
 class DeckResult:
-    pages: list                 # template entries in deck order (with 'deck' metadata)
-    unlisted: list              # local template entries not in the deck
+    pages: list                 # Page objects in deck order
+    unlisted: list              # pages of the project not in the deck
     missing: list               # entries (with a title) whose page does not exist yet
     warnings: list
+
+    def duration(self):
+        """(minutes, number of timed pages). The duration of a directory or a
+        glob is the duration of all its pages together: it is counted once."""
+        durations, timed = {}, 0
+        for page in self.pages:
+            if 'duration' in page.meta:
+                durations[page.deck_line] = page.meta['duration']
+                timed += 1
+        return sum(durations.values()), timed
+
+    def summary(self):
+        text = f'{len(self.pages)} pages'
+        external = sum(1 for p in self.pages if p.source.name)
+        repeated = sum(1 for p in self.pages if p.occurrence > 1)
+        if external:
+            text += f', {external} from other projects'
+        if repeated:
+            text += f', {repeated} repeated'
+        minutes, timed = self.duration()
+        if timed:
+            text += f', {minutes:g} min' + (f' ({timed} pages timed)' if timed < len(self.pages) else '')
+        return text
 
 
 def _normalize(pointer):
@@ -96,36 +117,59 @@ def _normalize(pointer):
     return pointer.strip('/')
 
 
-def _relative_directory(value, where):
-    value = _normalize(value)
-    if not value or '..' in value.split('/'):
-        raise DeckError(f'{where}: invalid directory {value!r} (relative, without ..)')
-    return value + '/'
-
-
 def _load_sources(sources, base, origin):
     if sources is None:
         return {}
     if not isinstance(sources, dict):
         raise DeckError(f"{origin}: 'sources' must be a mapping name: path")
     result = {}
-    for name, spec in sources.items():
+    for name, path in sources.items():
         where = f"{origin}, source '{name}'"
-        if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', name):
+        if not isinstance(name, str) or not NAME.match(name):
             raise DeckError(f'{where}: invalid name (letters, digits, - and _)')
-        if isinstance(spec, str):
-            spec = {'path': spec}
-        if not isinstance(spec, dict) or not isinstance(spec.get('path'), str) \
-                or set(spec) - {'path', 'mount'}:
-            raise DeckError(f"{where}: expected a path, or a mapping with 'path' and 'mount'")
-        root = Path(spec['path']).expanduser()
+        if name in GENERATOR_DIRECTORIES:
+            raise DeckError(f"{where}: '{name}/' is a directory of the generator; choose another name")
+        if not isinstance(path, str):
+            raise DeckError(f'{where}: expected the path of a source directory')
+        root = Path(path).expanduser()
         if not root.is_absolute():
             root = Path(base) / root
         if not root.is_dir():
             raise DeckError(f"{where}: directory not found '{root}'")
-        mount = _relative_directory(spec.get('mount', name), where)
-        result[name] = Source(name, str(root.resolve()) + '/', mount)
+        result[name] = str(root.resolve()) + '/'
     return result
+
+
+def _load_entry(item, sources, where):
+    if isinstance(item, str):
+        exclude = item.strip().startswith('!')
+        raw, meta = (item.strip()[1:] if exclude else item), {}
+    elif isinstance(item, dict):
+        if not isinstance(item.get('path'), str):
+            raise DeckError(f"{where}: a slide given as a mapping needs a 'path'")
+        raw, exclude = item['path'], False
+        meta = {k: v for k, v in item.items() if k != 'path'}
+        bad = (set(meta) & RESERVED) | {k for k in meta if not isinstance(k, str)}
+        if bad:
+            raise DeckError(f"{where}: reserved key(s) {', '.join(sorted(map(str, bad)))}")
+        duration = meta.get('duration', 0)
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)) or duration < 0:
+            raise DeckError(f"{where}: 'duration' must be a number of minutes")
+        params = meta.get('params', {})
+        if not isinstance(params, dict) or any(not isinstance(k, str) for k in params):
+            raise DeckError(f"{where}: 'params' must be a mapping name: value")
+    else:
+        raise DeckError(f'{where}: expected a path or a mapping, got {item!r}')
+    alias = None
+    m = ALIAS.match(str(raw).strip())
+    if m:
+        alias, raw = m.group(1), m.group(2)
+        if alias not in sources:
+            raise DeckError(f"{where}: unknown source '{alias}' (sources: {', '.join(sorted(sources)) or 'none'})")
+    pointer = _normalize(raw)
+    if (not pointer and not alias) or '..' in pointer.split('/'):
+        raise DeckError(f'{where}: invalid path {item!r} (relative to the source directory)')
+    return Entry(pointer, meta, exclude, where, alias)
 
 
 def load_deck(source, base_directory='.'):
@@ -140,7 +184,7 @@ def load_deck(source, base_directory='.'):
             with open(source, encoding='utf-8') as stream:
                 source = yaml.safe_load(stream)
         except (OSError, yaml.YAMLError) as exc:
-            raise DeckError(f"Cannot read deck '{origin}': {exc}") from exc
+            raise DeckError(f"cannot read '{origin}': {exc}") from exc
     sources = {}
     if isinstance(source, dict):
         unknown = set(source) - {'slides', 'title', 'sources'}
@@ -151,42 +195,17 @@ def load_deck(source, base_directory='.'):
         source = source.get('slides')
     if not isinstance(source, list):
         raise DeckError(f"{origin}: expected a list of slides (key 'slides')")
-    entries = []
-    for k, item in enumerate(source, 1):
-        where = f'{origin}, slide {k}'
-        if isinstance(item, str):
-            exclude = item.strip().startswith('!')
-            raw = item.strip()[1:] if exclude else item
-            meta = {}
-        elif isinstance(item, dict):
-            if not isinstance(item.get('path'), str):
-                raise DeckError(f"{where}: a slide given as a mapping needs a 'path'")
-            raw, exclude = item['path'], False
-            meta = {k2: v for k2, v in item.items() if k2 != 'path'}
-            bad = (set(meta) & RESERVED) | {k2 for k2 in meta if not isinstance(k2, str)}
-            if bad:
-                raise DeckError(f"{where}: reserved key(s) {', '.join(sorted(map(str, bad)))}")
-            if 'duration' in meta and (isinstance(meta['duration'], bool)
-                                       or not isinstance(meta['duration'], (int, float))
-                                       or meta['duration'] < 0):
-                raise DeckError(f"{where}: 'duration' must be a number of minutes")
-            if 'params' in meta and (not isinstance(meta['params'], dict)
-                                     or any(not isinstance(k2, str) for k2 in meta['params'])):
-                raise DeckError(f"{where}: 'params' must be a mapping name: value")
-        else:
-            raise DeckError(f'{where}: expected a path or a mapping, got {item!r}')
-        alias = None
-        m = ALIAS.match(str(raw).strip())
-        if m:
-            alias, raw = m.group(1), m.group(2)
-            if alias not in sources:
-                known = ', '.join(sorted(sources)) or 'none'
-                raise DeckError(f"{where}: unknown source '{alias}' (sources: {known})")
-        pointer = _normalize(raw)
-        if (not pointer and not alias) or '..' in pointer.split('/'):
-            raise DeckError(f'{where}: invalid path {item!r} (relative to the source directory)')
-        entries.append(Entry(pointer, meta, exclude, where, alias))
-    return Deck(entries, sources)
+    return Deck([_load_entry(item, sources, f'{origin}, slide {k}') for k, item in enumerate(source, 1)],
+                sources)
+
+
+def check_sources(deck, source_directory):
+    """The pages of a source are generated under <name>/: it must not be a
+    directory of the project."""
+    for name in deck.sources:
+        if (Path(source_directory) / name).exists():
+            raise DeckError(f"source '{name}': the project already has a directory '{name}/' "
+                            f"(where its pages would be generated); rename the source")
 
 
 def deck_source(cli_value, configured, config_directory):
@@ -201,211 +220,111 @@ def deck_source(cli_value, configured, config_directory):
 
 
 def watched_paths(source, config_directory):
-    """Files and directories a deck depends on (for --watch): the deck file and
-    the directories of its sources. An invalid deck gives only its file."""
+    """Files and directories a deck depends on (for --watch): the deck file and,
+    in the other projects, the directories its pointers name (not the whole
+    projects). An invalid deck gives only its file."""
     paths = [Path(source)] if isinstance(source, (str, Path)) else []
     try:
         loaded = load_deck(source, config_directory) if source is not None else None
     except DeckError:
         return paths
-    if loaded is not None:
-        paths += [Path(s.root) for s in loaded.sources.values()]
+    for e in (loaded.entries if loaded else []):
+        if e.source:
+            fixed = re.split(r'[*?\[]', e.pointer)[0]
+            if e.is_glob:
+                fixed = fixed.rpartition('/')[0]
+            paths.append(Path(loaded.sources[e.source]) / fixed)
     return paths
 
 
-def page_id(entry):
-    """Directory of the page relative to its source directory, without trailing slash."""
-    return entry['path'].path_local.strip('/')
+class _Index:
+    """Pages by name (directory, file) and by directory prefix, per source."""
 
+    def __init__(self, pages):
+        self.pages = pages
+        self.order = {id(p): k for k, p in enumerate(pages)}
+        self.by_name = defaultdict(list)
+        self.by_source = defaultdict(list)
+        for page in pages:
+            source = page.source.name
+            self.by_source[source].append(page)
+            for key in {page.id, page.file, page.file + '.j2', page.file[:-len('.html')]}:
+                self.by_name[(source, key)].append(page)
+        self.sorted_ids = {source: sorted((p.id, self.order[id(p)]) for p in ps)
+                           for source, ps in self.by_source.items()}
 
-def page_file(entry):
-    """File of the page relative to its source directory, as generated (.html)."""
-    return (entry['path'].path_local + entry['path'].filename).replace('.html.j2', '.html').strip('/')
+    def named(self, entry):
+        """Pages named by the pointer itself (their directory or file)."""
+        return [] if entry.is_glob else self.by_name.get((entry.source, entry.pointer), [])
 
-
-def page_label(entry):
-    name = page_id(entry) if entry['path'].filename == 'index.html.j2' else page_file(entry)
-    name = name or page_file(entry)
-    return f"{entry['source']}:{name}" if entry.get('source') else name
-
-
-def source_pages(deck):
-    """Template entries of the external sources used by the deck, in file order."""
-    used = {e.source for e in deck.entries if e.source}
-    pages = []
-    for name in sorted(used):
-        for page in find_files_in_hierarchy(deck.sources[name].root, lambda f: f.endswith('.html.j2')):
-            page['source'] = name
-            pages.append(page)
-    return pages
-
-
-def _matches(entry, page):
-    """The pointer names the page, its directory, a parent directory, or matches as a glob."""
-    if entry.source != page.get('source'):
-        return False
-    pid, pfile = page_id(page), page_file(page)
-    p = entry.pointer
-    if not p:
-        return True
-    if entry.is_glob:
-        return fnmatch.fnmatchcase(pid, p) or fnmatch.fnmatchcase(pfile, p)
-    return _names_page(entry, page) or pid.startswith(p + '/')
-
-
-def _names_page(entry, page):
-    """The pointer names this page itself (its directory or its file), not a parent."""
-    pid, pfile = page_id(page), page_file(page)
-    p = entry.pointer
-    return (entry.source == page.get('source') and not entry.is_glob
-            and (p in (pid, pfile, pfile + '.j2') or (pfile.endswith('.html') and p == pfile[:-len('.html')])))
-
-
-def _explicit_page(entry, pages):
-    """The page named by a pointer (its directory or its file) when it names
-    exactly one page, else None (parent directory, glob, or several pages)."""
-    if entry.exclude or entry.is_glob:
-        return None
-    hits = [p for p in pages if _names_page(entry, p)]
-    return hits[0] if len(hits) == 1 else None
+    def matching(self, entry):
+        """Pages named by the pointer, under it (directory), or matching it (glob)."""
+        pages = self.by_source.get(entry.source, [])
+        p = entry.pointer
+        if not p:
+            return list(pages)
+        if entry.is_glob:
+            return [q for q in pages if fnmatch.fnmatchcase(q.id, p) or fnmatch.fnmatchcase(q.file, p)]
+        ids = self.sorted_ids.get(entry.source, [])
+        under = ids[bisect_left(ids, (p + '/', -1)):bisect_left(ids, (p + '0', -1))]  # '0' follows '/'
+        hits = {k for _, k in under} | {self.order[id(q)] for q in self.named(entry)}
+        return [self.pages[k] for k in sorted(hits)]
 
 
 def apply_deck(deck, pages):
-    """Order and filter the template entries `pages` (local pages in file order,
-    then the pages of the external sources) by the deck. A page named
-    explicitly several times gives several occurrences (copies of the entry,
-    'occurrence' 2, 3, ...)."""
-    if isinstance(deck, list):
-        deck = Deck(deck)
+    """Pages in deck order. `pages`: Page objects of the project then of the
+    other sources, in file order. A page named explicitly several times gives
+    several occurrences."""
+    index = _Index(pages)
     warnings = []
     excluded = set()
     for e in (e for e in deck.entries if e.exclude):
-        hits = [id(p) for p in pages if _matches(e, p)]
+        hits = index.matching(e)
         if not hits:
             warnings.append(f"{e.line}: '!{e.label}' excludes no page")
-        excluded.update(hits)
+        excluded.update(id(p) for p in hits)
 
     includes = [e for e in deck.entries if not e.exclude]
-    explicit = {id(e): _explicit_page(e, pages) for e in includes}
-    named = {id(page) for page in explicit.values() if page is not None}
+    explicit = {}
+    for e in includes:
+        named = index.named(e)
+        explicit[id(e)] = named[0] if len(named) == 1 else None
+    named_pages = {id(p) for p in explicit.values() if p is not None}
 
     ordered, placed, missing, occurrences = [], set(), [], {}
     for e in includes:
+        meta = {k: v for k, v in e.meta.items() if k != 'params'}
+        params = e.meta.get('params', {})
         page = explicit[id(e)]
         if page is not None:
             if id(page) in excluded:
                 warnings.append(f"{e.line}: '{e.label}' is listed but also excluded (not generated)")
                 continue
-            occurrences[id(page)] = occurrences.get(id(page), 0) + 1
-            n = occurrences[id(page)]
-            item = page if n == 1 else {**page, 'occurrence': n}
-            item['deck'] = dict(e.meta)
-            item['deck_entry'] = e.line
             placed.add(id(page))
-            ordered.append(item)
+            n = occurrences[id(page)] = occurrences.get(id(page), 0) + 1
+            if n == 1:
+                page.meta, page.params, page.deck_line = meta, params, e.line
+            else:
+                page = replace(page, meta=meta, params=params, deck_line=e.line, occurrence=n)
+            ordered.append(page)
             continue
-        all_hits = [p for p in pages if _matches(e, p)]
-        if not all_hits:
+        hits = index.matching(e)
+        if not hits:
             if 'title' in e.meta and not e.is_glob and not e.source:
                 missing.append(e)
                 continue
-            known = sorted({page_label(p) for p in pages} | {page_file(p) for p in pages
-                                                              if not p.get('source')})
-            hint = difflib.get_close_matches(e.label, known, n=1)
+            hint = difflib.get_close_matches(e.label, sorted({p.label for p in pages}), n=1)
             raise DeckError(f"{e.line}: no page matches '{e.label}'"
                             + (f" (did you mean '{hint[0]}'?)" if hint else ''))
         # Pages named explicitly in the deck are placed there, not here.
-        for page in all_hits:
-            if id(page) in placed or id(page) in excluded or id(page) in named:
+        for page in hits:
+            if id(page) in placed or id(page) in excluded or id(page) in named_pages:
                 continue
             placed.add(id(page))
-            page['deck'] = dict(e.meta)
-            page['deck_entry'] = e.line
+            page.meta, page.params, page.deck_line = dict(meta), params, e.line
             ordered.append(page)
-    unlisted = [p for p in pages if id(p) not in placed and not p.get('source')]
+    unlisted = [p for p in pages if id(p) not in placed and not p.source.name]
     return DeckResult(ordered, unlisted, missing, warnings)
-
-
-def _copy_assets(source_dir, target_dir):
-    """Copy the files of a page directory and its subdirectories without pages
-    (assets), not the pages themselves (.html.j2)."""
-    os.makedirs(target_dir, exist_ok=True)
-    for name in sorted(os.listdir(source_dir)):
-        if name in ('.git', '.DS_Store') or name.endswith('.html.j2'):
-            continue
-        path = os.path.join(source_dir, name)
-        target = os.path.join(target_dir, name)
-        if os.path.isdir(path) and not os.path.islink(path):
-            has_pages = any(f.endswith('.html.j2') for _, _, files in os.walk(path) for f in files)
-            if not has_pages:
-                shutil.copytree(path, target, symlinks=True, dirs_exist_ok=True,
-                                ignore=shutil.ignore_patterns('.git', '.DS_Store'))
-        elif not os.path.lexists(target):
-            shutil.copy2(path, target, follow_symlinks=False)
-
-
-def _occurrence_name(filename, n, taken):
-    stem = filename[:-len('.html.j2')]
-    k = n
-    while f'{stem}-{k}.html.j2' in taken:
-        k += 1
-    return f'{stem}-{k}.html.j2'
-
-
-def materialize(pages, site_directory, sources, light=False):
-    """Place the pages of the deck in the site directory and return their
-    template entries there: pages of other projects (under their mount
-    directory, with their assets), pages read from the source directory
-    (light mode), and occurrences (copies next to the page, index-2.html.j2,
-    ... named after the pages of their source directory, so that the names do
-    not depend on the files of a previous build)."""
-    site = os.path.join(site_directory, '')
-    result, copied_dirs = [], set()
-    taken = {}   # site directory -> file names used
-    for page in pages:
-        path = page['path']
-        mount = sources[page['source']].mount if page.get('source') else ''
-        local_dir = mount + path.path_local
-        target_dir = os.path.join(site, local_dir)
-        source_dir = os.path.dirname(path.filepath())
-        # Assets of the pages of other projects (light mode: if not there yet)
-        if page.get('source') and target_dir not in copied_dirs and not (light and os.path.isdir(target_dir)):
-            _copy_assets(source_dir, target_dir)
-            copied_dirs.add(target_dir)
-        names = taken.setdefault(target_dir, {f for f in os.listdir(source_dir) if f.endswith('.html.j2')})
-        filename = path.filename
-        if page.get('occurrence', 1) > 1:
-            filename = _occurrence_name(filename, page['occurrence'], names)
-            names.add(filename)
-        target_file = os.path.join(target_dir, filename)
-        if os.path.abspath(path.filepath()) != os.path.abspath(target_file):
-            os.makedirs(target_dir, exist_ok=True)
-            shutil.copy2(path.filepath(), target_file)
-        entry = {**page, 'path': FilepathRelative(root_directory=site, path_local=local_dir,
-                                                  filename=filename, level=local_dir.count('/'))}
-        result.append(entry)
-    return result
-
-
-RESERVED_MOUNTS = ('theme/', 'structure/', 'sitemap/')
-
-
-def check_mounts(deck, source_directory):
-    """A mount directory must not hide a directory of the project sources, a
-    directory written by the generator, or the mount of another source."""
-    mounts = {}
-    for source in deck.sources.values():
-        if source.mount.split('/')[0] + '/' in RESERVED_MOUNTS:
-            raise DeckError(f"source '{source.name}': mount directory '{source.mount}' is used by the "
-                            f"generator ({', '.join(RESERVED_MOUNTS)}); choose another 'mount'")
-        if (Path(source_directory) / source.mount).exists():
-            raise DeckError(f"source '{source.name}': mount directory '{source.mount}' already exists "
-                            f"in the sources; choose another 'mount'")
-        for other, mount in mounts.items():
-            if source.mount.startswith(mount) or mount.startswith(source.mount):
-                raise DeckError(f"sources '{other}' and '{source.name}': mount directories "
-                                f"'{mount}' and '{source.mount}' overlap; choose another 'mount'")
-        mounts[source.name] = source.mount
 
 
 def scaffold(entries, source_directory):
@@ -415,31 +334,15 @@ def scaffold(entries, source_directory):
     depth, is never modified. Returns the paths."""
     created = []
     for e in entries:
-        if e.source:
-            continue
         target = Path(source_directory) / e.pointer
-        if target.suffix in ('.html', '.j2'):
+        if e.source or target.suffix in ('.html', '.j2'):
             continue
-        page = target / 'index.html.j2'
-        if page.exists() or any(target.rglob('*.html.j2')):
+        page = target / ('index' + TEMPLATE_SUFFIX)
+        if page.exists() or any(target.rglob('*' + TEMPLATE_SUFFIX)):
             continue
         page.parent.mkdir(parents=True, exist_ok=True)
         lines = [f"= {e.meta['title']}", '']
-        for key, value in e.meta.items():
-            if key != 'title':
-                lines.append(f'::# {key}: {value}')
+        lines += [f'::# {key}: {value}' for key, value in e.meta.items() if key != 'title']
         page.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
         created.append(str(page))
     return created
-
-
-def total_duration(pages):
-    """(minutes, number of timed pages). The duration of a directory or a glob
-    is the duration of all its pages together: it is counted once."""
-    durations = {}
-    timed = 0
-    for p in pages:
-        if 'duration' in p.get('deck', {}):
-            durations[p['deck_entry']] = p['deck']['duration']
-            timed += 1
-    return sum(durations.values()), timed

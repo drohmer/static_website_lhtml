@@ -65,6 +65,24 @@ class BuildContext:
                          plugin_paths=self.plugin_paths)
 
 
+def _file_or_inline(values, key, inline_types, inline_text, config_directory):
+    """A key given as the path of a YAML file (resolved from the configuration
+    directory, must exist) or inline (mapping with string keys / list)."""
+    value = values.get(key)
+    if value is None:
+        return
+    if isinstance(value, str) and value.strip():
+        file = Path(value).expanduser()
+        if not file.is_absolute():
+            file = config_directory / file
+        if not file.is_file():
+            raise ConfigError(f"'{key}' file not found: '{file}'")
+        values[key] = str(file.resolve())
+    elif not isinstance(value, inline_types) or (isinstance(value, dict)
+                                                 and any(not isinstance(k, str) for k in value)):
+        raise ConfigError(f"'{key}' must be {inline_text} or the path of a YAML file")
+
+
 def load_config(filename, debug_override=None):
     path = Path(filename).expanduser().resolve()
     warnings = []
@@ -120,29 +138,8 @@ def load_config(filename, debug_override=None):
         if not isinstance(values[key], list) or any(not isinstance(v, str) or not v.strip() for v in values[key]):
             raise ConfigError(f"'{key}' must be a list of non-empty strings")
 
-    design = values.get('design')
-    if design is not None:
-        if isinstance(design, str) and design.strip():
-            design_file = Path(design).expanduser()
-            if not design_file.is_absolute():
-                design_file = path.parent / design_file
-            if not design_file.is_file():
-                raise ConfigError(f"'design' file not found: '{design_file}'")
-            values['design'] = str(design_file.resolve())
-        elif not isinstance(design, dict) or any(not isinstance(k, str) for k in design):
-            raise ConfigError("'design' must be a mapping (tokens, macros) or the path of a YAML file")
-
-    deck = values.get('deck')
-    if deck is not None:
-        if isinstance(deck, str) and deck.strip():
-            deck_file = Path(deck).expanduser()
-            if not deck_file.is_absolute():
-                deck_file = path.parent / deck_file
-            if not deck_file.is_file():
-                raise ConfigError(f"'deck' file not found: '{deck_file}'")
-            values['deck'] = str(deck_file.resolve())
-        elif not isinstance(deck, (list, dict)):
-            raise ConfigError("'deck' must be the path of a YAML file, or a list of slides")
+    _file_or_inline(values, 'design', dict, 'a mapping (tokens, macros)', path.parent)
+    _file_or_inline(values, 'deck', (list, dict), 'a list of slides', path.parent)
 
     for key in ('source_directory', 'site_directory', 'theme', 'cache_video_directory'):
         if key not in values:

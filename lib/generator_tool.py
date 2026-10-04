@@ -73,6 +73,14 @@ def export_structure(template_files, structure_path, root_path):
         if 'extra-config' in entry:
             for extra_element in entry['extra-config']:
                 structure[extra_element] = entry['extra-config'][extra_element]
+        page = entry.get('page')
+        if page is not None:
+            # Origin of the page: its template, its source, its occurrence
+            structure['src'] = str(page.src)
+            if page.source.name:
+                structure['source'] = page.source.name
+            if page.occurrence > 1:
+                structure['occurrence'] = page.occurrence
         structure_to_export.append(structure)
 
     os.makedirs(structure_path, exist_ok=True)

@@ -703,12 +703,13 @@ An overlap is intentional when one of the blocks has the class `overlay`
 '''
 
 
-def summary_markdown(rows, norms=None, design=False):
-    """rows: (name, report path, analysis) in deck order."""
+def summary_markdown(rows, norms=None, design=None):
+    """rows: (name, report path, analysis) in deck order; design: path of the
+    reference of the design (macros and tokens), relative to the summary."""
     lines = [SUMMARY_HEADER]
     if design:
-        lines.append('Macros and tokens of the design (use them instead of inline styles): '
-                     '`design.md`.\n')
+        lines.append(f'Macros and tokens of the design (use them instead of inline styles): '
+                     f'`{design}`.\n')
     if norms:
         lines.append(norms_markdown(norms))
     lines += ['| n | page | problems | hidden text | collisions | out of area | clipped | upscaled | warnings '
@@ -820,8 +821,8 @@ def post_process(meta):
             pages.append({'html': os.path.abspath(html),
                           'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
                           'name': entry['dir'] + entry['filename'],
-                          'source': meta['source_directory'] + entry['dir']
-                                    + entry['filename'].replace('.html', '.html.j2')})
+                          'source': entry.get('src') or (meta['source_directory'] + entry['dir']
+                                                         + entry['filename'].replace('.html', '.html.j2'))})
 
     if os.path.isdir(output_dir):
         shutil.rmtree(output_dir)
@@ -863,13 +864,11 @@ def post_process(meta):
                      layout['analysis']))
 
     with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace') as fid:
-        fid.write(summary_markdown(rows, norms, design=bool(meta.get('design') and any(meta['design'].values()))))
+        reference = os.path.join(meta.get('published_site_directory') or site_dir, 'structure', 'design.md')
+        fid.write(summary_markdown(rows, norms, design=os.path.relpath(reference, output_dir)
+                                   if meta.get('design') and any(meta['design'].values()) else None))
     with open(os.path.join(output_dir, 'deck.json'), 'w') as fid:
         json.dump(norms, fid, indent=1)
-    if meta.get('design') and any(meta['design'].values()):
-        from lib.design import design_markdown
-        with open(os.path.join(output_dir, 'design.md'), 'w', encoding='utf-8') as fid:
-            fid.write(design_markdown(meta['design']))
     if options['images'] and measured:
         write_contact_sheets(output_dir, [(p['name'], os.path.relpath(p['out'], output_dir), layout['analysis'])
                                           for p, _, layout in measured],

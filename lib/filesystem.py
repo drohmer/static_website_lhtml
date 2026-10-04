@@ -1,5 +1,6 @@
 """File system utilities for static_website_lhtml."""
 
+import heapq
 import os
 import shutil
 
@@ -50,10 +51,10 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None):
     files_found = []
     for root in roots:
         root = os.fspath(root)
-        pending = [(root, 0, frozenset())]
+        pending = [(root, 0, 0, frozenset())]   # heap: smallest path first
+        counter = 0
         while pending:
-            pending.sort(key=lambda item: item[0])
-            directory, depth, ancestors = pending.pop(0)
+            directory, _, depth, ancestors = heapq.heappop(pending)
             real_directory = os.path.realpath(directory)
             if real_directory in ancestors:
                 continue
@@ -71,25 +72,29 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None):
                 for name in sorted(os.listdir(directory)):
                     path = os.path.join(directory, name)
                     if os.path.isdir(path):
-                        pending.append((path, depth + 1, ancestors))
+                        counter += 1
+                        heapq.heappush(pending, (path, counter, depth + 1, ancestors))
     return files_found
 
 
-def _ignore_hidden(root):
+def _ignore_hidden(root, templates=True):
     """copytree filter: hidden files at the top level of `root` (as the
-    previous 'cp -r root/*'), and .git / .DS_Store everywhere."""
+    previous 'cp -r root/*'), .git / .DS_Store everywhere, and the page
+    templates (.html.j2) unless `templates`."""
     root = os.path.abspath(root)
 
     def ignore(directory, names):
         top_level = os.path.abspath(directory) == root
         return {n for n in names
-                if n in ('.git', '.DS_Store') or (top_level and n.startswith('.'))}
+                if n in ('.git', '.DS_Store') or (top_level and n.startswith('.'))
+                or (not templates and n.endswith('.html.j2'))}
     return ignore
 
 
-def copy_directories(dir_source, dir_target):
+def copy_directories(dir_source, dir_target, templates=True):
     """Copy source directory to target, replacing target if it exists.
-    Symbolic links are copied as links (dangling links are kept as is)."""
+    Symbolic links are copied as links (dangling links are kept as is).
+    With templates=False, the page templates (.html.j2) are not copied."""
     if os.path.isdir(dir_target):
         shutil.rmtree(dir_target)
-    shutil.copytree(dir_source, dir_target, symlinks=True, ignore=_ignore_hidden(dir_source))
+    shutil.copytree(dir_source, dir_target, symlinks=True, ignore=_ignore_hidden(dir_source, templates))

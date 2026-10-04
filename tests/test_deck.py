@@ -8,19 +8,20 @@ import yaml
 
 from lib import deck
 from lib.configuration import ConfigError, load_config
-from lib.filesystem import FilepathRelative
+from lib.pages import Page, Source, discover
 
 REPO = Path(__file__).resolve().parents[1]
 
 
+PROJECT = Source(None, '/project/')
+
+
 def pages(*paths):
-    """Template entries in file order, as find_files_in_hierarchy returns them."""
+    """Pages of the project in file order, as pages.discover returns them."""
     result = []
     for path in paths:
         directory, _, filename = path.rpartition('/')
-        directory = directory + '/' if directory else ''
-        result.append({'path': FilepathRelative(root_directory='/site/', path_local=directory,
-                                                filename=filename, level=directory.count('/'))})
+        result.append(Page(PROJECT, directory + '/' if directory else '', filename))
     return result
 
 
@@ -30,7 +31,7 @@ SLIDES = pages('a/00_section/index.html.j2', 'a/01_x/index.html.j2', 'a/02_y/ind
 
 def order(slides, source=SLIDES):
     result = deck.apply_deck(deck.load_deck({'slides': slides}), source)
-    return [deck.page_id(p) for p in result.pages], result
+    return [p.id for p in result.pages], result
 
 
 class DeckTests(unittest.TestCase):
@@ -48,13 +49,13 @@ class DeckTests(unittest.TestCase):
     def test_glob_exclusion_and_unlisted(self):
         ids, result = order(['a/0*', '!*todo*'])
         self.assertEqual(ids, ['a/00_section', 'a/01_x', 'a/02_y'])
-        self.assertEqual([deck.page_id(p) for p in result.unlisted], ['a/03_todo_z', 'b/00_section', 'b/01_w'])
+        self.assertEqual([p.id for p in result.unlisted], ['a/03_todo_z', 'b/00_section', 'b/01_w'])
 
     def test_metadata(self):
         ids, result = order([{'path': 'a/01_x', 'title': 'X', 'duration': 2}, 'b/01_w/'])
         self.assertEqual(ids, ['a/01_x', 'b/01_w'])
-        self.assertEqual(result.pages[0]['deck'], {'title': 'X', 'duration': 2})
-        self.assertEqual(deck.total_duration(result.pages), (2, 1))
+        self.assertEqual(result.pages[0].meta, {'title': 'X', 'duration': 2})
+        self.assertEqual(result.duration(), (2, 1))
 
     def test_listed_and_excluded_warns(self):
         ids, result = order(['a/01_x', 'b', '!a/*'])
@@ -66,15 +67,15 @@ class DeckTests(unittest.TestCase):
                              {'path': 'a/01_x', 'params': {'current': 2}}, 'a'])
         self.assertEqual(ids, ['a/01_x', 'b/00_section', 'b/01_w', 'a/01_x',
                                'a/00_section', 'a/02_y', 'a/03_todo_z'])
-        self.assertEqual([p.get('occurrence', 1) for p in result.pages[:4]], [1, 1, 1, 2])
-        self.assertEqual(result.pages[0]['deck']['params'], {'current': 1})
-        self.assertEqual(result.pages[3]['deck']['params'], {'current': 2})
+        self.assertEqual([p.occurrence for p in result.pages[:4]], [1, 1, 1, 2])
+        self.assertEqual(result.pages[0].params, {'current': 1})
+        self.assertEqual(result.pages[3].params, {'current': 2})
         self.assertEqual(result.warnings, [])
 
     def test_several_pages_in_a_directory(self):
         site = pages('index.html.j2', 'course/intro.html.j2', 'course/index.html.j2')
         ids, result = order(['course/intro.html', 'index.html', 'course'], site)
-        self.assertEqual([deck.page_file(p) for p in result.pages],
+        self.assertEqual([p.file for p in result.pages],
                          ['course/intro.html', 'index.html', 'course/index.html'])
 
     def test_unknown_pointer(self):
@@ -102,9 +103,10 @@ class DeckTests(unittest.TestCase):
                 (Path(root) / 'ext' / name / 'index.html.j2').write_text('= u\n')
             loaded = deck.load_deck({'sources': {'ext': 'ext'}, 'slides': ['a/01_x', 'ext:c', '!ext:c/02_v']},
                                     root)
-            self.assertEqual(loaded.sources['ext'].mount, 'ext/')
-            result = deck.apply_deck(loaded, SLIDES + deck.source_pages(loaded))
-            self.assertEqual([deck.page_label(p) for p in result.pages], ['a/01_x', 'ext:c/01_u'])
+            self.assertEqual(loaded.sources['ext'], str(Path(root, 'ext').resolve()) + '/')
+            result = deck.apply_deck(loaded, SLIDES + discover(Source('ext', loaded.sources['ext'])))
+            self.assertEqual([p.label for p in result.pages], ['a/01_x', 'ext:c/01_u'])
+            self.assertEqual(result.pages[1].site_directory, 'ext/c/01_u/')
             # unlisted: local pages only
             self.assertEqual(len(result.unlisted), len(SLIDES) - 1)
 
@@ -249,7 +251,7 @@ class DeckProjectsTests(unittest.TestCase):
 
     def test_mount_conflict_and_unknown_source(self):
         (self.root / 'talk/src/course').mkdir()
-        self.assertIn('already exists', self.build(self.DECK, ok=False))
+        self.assertIn('rename the source', self.build(self.DECK, ok=False))
         self.assertIn("unknown source 'other'", self.build({'slides': ['other:x']}, ok=False))
 
 
@@ -260,35 +262,36 @@ class DeckRegressionTests(unittest.TestCase):
         source = pages('a/01_x/index.html.j2', 's/01_only/index.html.j2')
         ids, result = order(['s', 'a', 's/01_only'], source)
         self.assertEqual(ids, ['a/01_x', 's/01_only'])
-        self.assertEqual([p.get('occurrence', 1) for p in result.pages], [1, 1])
+        self.assertEqual([p.occurrence for p in result.pages], [1, 1])
 
     def test_duration_of_a_directory_counts_once(self):
         _, result = order([{'path': 'a', 'duration': 3}, {'path': 'b/01_w', 'duration': 1}])
-        self.assertEqual(deck.total_duration(result.pages), (4, 5))
+        self.assertEqual(result.duration(), (4, 5))
 
     def test_label_of_several_pages_in_a_directory(self):
         site = pages('m/index.html.j2', 'm/other.html.j2')
-        self.assertEqual([deck.page_label(p) for p in site], ['m', 'm/other.html'])
+        self.assertEqual([p.label for p in site], ['m', 'm/other.html'])
 
-    def test_mount_checks(self):
+    def test_source_names(self):
         with tempfile.TemporaryDirectory() as root:
-            for name in ('e1', 'e2', 'src'):
-                (Path(root) / name).mkdir()
-            for sources, message in (
-                    ({'a': {'path': 'e1', 'mount': 'shared'}, 'b': {'path': 'e2', 'mount': 'shared'}}, 'overlap'),
-                    ({'a': {'path': 'e1', 'mount': 'x'}, 'b': {'path': 'e2', 'mount': 'x/y'}}, 'overlap'),
-                    ({'a': {'path': 'e1', 'mount': 'sitemap'}}, 'used by the generator'),
-                    ({'a': {'path': 'e1', 'mount': 'theme/x'}}, 'used by the generator')):
-                loaded = deck.load_deck({'sources': sources, 'slides': []}, root)
-                with self.assertRaisesRegex(deck.DeckError, message):
-                    deck.check_mounts(loaded, Path(root) / 'src')
+            for name in ('e1', 'src/taken'):
+                (Path(root) / name).mkdir(parents=True)
+            for name in ('sitemap', 'theme', 'structure'):
+                with self.assertRaisesRegex(deck.DeckError, 'directory of the generator'):
+                    deck.load_deck({'sources': {name: 'e1'}, 'slides': []}, root)
+            loaded = deck.load_deck({'sources': {'taken': 'e1'}, 'slides': []}, root)
+            with self.assertRaisesRegex(deck.DeckError, "already has a directory 'taken/'"):
+                deck.check_sources(loaded, Path(root) / 'src')
+            with self.assertRaises(deck.DeckError):   # mount was removed
+                deck.load_deck({'sources': {'a': {'path': 'e1', 'mount': 'x'}}, 'slides': []}, root)
 
     def test_watched_paths(self):
         with tempfile.TemporaryDirectory() as root:
-            (Path(root) / 'ext').mkdir()
-            (Path(root) / 'deck.yaml').write_text('sources: {ext: ext}\nslides: []\n')
-            paths = deck.watched_paths(str(Path(root) / 'deck.yaml'), root)
-            self.assertIn(Path(root, 'ext').resolve(), [p.resolve() for p in paths])
+            (Path(root) / 'ext/c/d').mkdir(parents=True)
+            (Path(root) / 'deck.yaml').write_text("sources: {ext: ext}\nslides: ['ext:c/d', 'ext:c/0*']\n")
+            paths = [p.resolve() for p in deck.watched_paths(str(Path(root) / 'deck.yaml'), root)]
+            ext = Path(root, 'ext').resolve()
+            self.assertEqual(paths[1:], [ext / 'c/d', ext / 'c'])   # pointed directories, not the project
             self.assertEqual(deck.deck_source('deck.yaml', None, root), str(Path(root) / 'deck.yaml'))
             self.assertEqual(deck.deck_source(None, 'conf.yaml', root), 'conf.yaml')
 

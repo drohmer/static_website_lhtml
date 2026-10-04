@@ -11,8 +11,13 @@ key. Example:
       small: {class: small, css: '.small { font-size: var(--font-small); }',
               doc: 'Smaller text. small:: text ::'}
 
+A design file may start from another one: `extends: ../slides/design.yaml`
+(relative to the file), then override it key by key.
+
 The generator writes `theme/css/design.css` (the tokens as CSS variables on
-:root, then the `css` of each macro) and passes the macros to LHTML.
+:root, then the `css` of each macro) and `structure/design.md` (reference of
+the macros and tokens, for authors and LLMs), and passes the macros to LHTML
+(which ignores their `css` and `doc` fields).
 """
 from __future__ import annotations
 
@@ -24,12 +29,17 @@ import yaml
 
 DESIGN_FILE = 'design.yaml'
 CSS_PATH = 'theme/css/design.css'
+REFERENCE_PATH = 'structure/design.md'
 SECTIONS = ('tokens', 'macros')
+MAX_EXTENDS = 10
 TOKEN_NAME = re.compile(r'[A-Za-z0-9_-]+$')
 
 
 class DesignError(ValueError):
-    """Invalid design file or design configuration."""
+    """Invalid design file or design configuration (the message starts with 'Design: ')."""
+
+    def __init__(self, message):
+        super().__init__(f'Design: {message}')
 
 
 def _read_yaml(path):
@@ -37,11 +47,11 @@ def _read_yaml(path):
         with open(path, encoding='utf-8') as stream:
             data = yaml.safe_load(stream)
     except (OSError, yaml.YAMLError) as exc:
-        raise DesignError(f"Cannot read design file '{path}': {exc}") from exc
+        raise DesignError(f"cannot read '{path}': {exc}") from exc
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise DesignError(f"Design file '{path}' must contain a mapping")
+        raise DesignError(f"'{path}' must contain a mapping")
     return data
 
 
@@ -60,7 +70,7 @@ def merge(base, override):
 
 
 def _check(design, origin):
-    unknown = set(design) - set(SECTIONS)
+    unknown = set(design) - set(SECTIONS) - {'extends'}
     if unknown:
         raise DesignError(f"{origin}: unknown design section(s) {', '.join(sorted(unknown))} "
                           f"(expected {', '.join(SECTIONS)})")
@@ -74,18 +84,35 @@ def _check(design, origin):
     return design
 
 
-def load_design(theme_directory, override=None):
-    """Design of the theme merged with `override` (a mapping, a YAML file path, or None)."""
+def _load(source, base, origin, depth=0):
+    """A design given as a YAML file path or a mapping, with what it extends."""
+    if depth > MAX_EXTENDS:
+        raise DesignError(f"{origin}: too many 'extends' (loop?)")
+    if isinstance(source, (str, Path)):
+        origin = str(source)
+        base = Path(source).parent
+        source = _read_yaml(source)
+    design = _check(dict(source), origin)
+    parent = design.pop('extends', None)
+    if parent is None:
+        return design
+    if not isinstance(parent, str):
+        raise DesignError(f"{origin}: 'extends' must be the path of a design file")
+    path = Path(parent).expanduser()
+    if not path.is_absolute():
+        path = Path(base) / path
+    return merge(_load(path, path.parent, str(path), depth + 1), design)
+
+
+def load_design(theme_directory, override=None, base_directory='.'):
+    """Design of the theme merged with `override` (a mapping, a YAML file path,
+    or None); relative paths of a mapping are resolved from `base_directory`."""
     design = {}
     theme_file = Path(theme_directory) / DESIGN_FILE
     if theme_file.is_file():
-        design = _check(_read_yaml(theme_file), str(theme_file))
-    if isinstance(override, (str, Path)):
-        override = _check(_read_yaml(override), str(override))
-    elif override:
-        override = _check(dict(override), "'design' of the configuration")
+        design = _load(theme_file, theme_directory, str(theme_file))
     if override:
-        design = merge(design, override)
+        design = merge(design, _load(override, base_directory, "'design' of the configuration"))
     return {section: design.get(section) or {} for section in SECTIONS}
 
 
@@ -114,12 +141,6 @@ def design_css(design):
         if css:
             lines += ['', f'/* {name}:: */', str(css).strip()]
     return '\n'.join(lines) + '\n'
-
-
-def lhtml_macros(design):
-    """Macro definitions for LHTML (without the fields used only here)."""
-    return {name: {k: v for k, v in (spec or {}).items() if k not in ('css', 'doc')}
-            for name, spec in design['macros'].items()}
 
 
 def _resolve(value, tokens, depth=0):
@@ -167,8 +188,9 @@ def design_markdown(design):
 
 
 def write_design(meta, design):
-    """Write theme/css/design.css in the site directory."""
-    path = Path(meta['site_directory']) / CSS_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(design_css(design), encoding='utf-8')
-    return path
+    """Write theme/css/design.css and structure/design.md in the site directory."""
+    site = Path(meta['site_directory'])
+    for relative, text in ((CSS_PATH, design_css(design)), (REFERENCE_PATH, design_markdown(design))):
+        (site / relative).parent.mkdir(parents=True, exist_ok=True)
+        (site / relative).write_text(text, encoding='utf-8')
+    return site / CSS_PATH
