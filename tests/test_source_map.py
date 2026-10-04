@@ -1,17 +1,17 @@
 """Source map of the pages (lib/source_map.py): markers of the source lines
-through LHTML, then data-src="file:line" on the top-level blocks."""
+through LHTML, then data-lhtml-src="file:line" on the blocks."""
 import re
 import unittest
 
 import lhtml
 
-from lib import source_map
+from lib import source_map, source_scan
 
 MACROS = {'gap': {'class': 'gap', 'empty': True, 'variant': ['s', 'm', 'l'], 'default': 'm'},
           'credit': {'tag': 'span', 'class': 'credit'},
           'media': {'class': 'media'},
           'demo': {'tag': 'iframe', 'empty': True, 'url': 'src'}}
-TAGS = source_map.value_tags(MACROS)
+TAGS = source_scan.value_tags(MACROS)
 
 PAGE = '''{% set layout = 'side' %}
 = Title
@@ -35,7 +35,7 @@ div::(.x)[margin:0]
 {% endfor %}
 code::[python]
 x = 1
-::
+code::[-]
 demo::assets/d.html
 <div
   class="raw">raw</div>
@@ -76,9 +76,35 @@ class SourceMapTests(unittest.TestCase):
         html = '<html><body>' + run(source_map.add_markers(PAGE, TAGS)) + '</body></html>'
         result = source_map.apply(html, 'src/a/index.html.j2')
         self.assertNotIn(source_map.OPEN, result)
-        found = re.findall(r'<(\w+) data-src="src/a/index.html.j2:(\d+)"', result)
+        found = re.findall(r'<(\w+) data-lhtml-src="src/a/index.html.j2:(\d+)"', result)
         self.assertEqual(found[:6], [('h1', '2'), ('div', '6'), ('ul', '11'), ('div', '14'),
                                      ('div', '15'), ('ul', '19')])     # 16: inside 15
+
+    def test_after_a_code_block(self):
+        page = 'code::[python]\nx = 1\ncode::[-]\ndiv::(.small)\ntext\n::\n'
+        lines = source_map.add_markers(page, TAGS).split('\n')
+        self.assertEqual(lines[:3], ['code::[python]', 'x = 1', 'code::[-]'])
+        self.assertEqual(lines[3], 'div::(.small)' + source_map.marker(4))
+        result = source_map.apply('<body>' + run(source_map.add_markers(page, TAGS)) + '</body>', 's')
+        self.assertIn('<div data-lhtml-src="s:4" class="small">', result)
+
+    def test_jinja_expression_on_several_lines(self):
+        page = '{{ parts | join(", ",\n   attribute=None) }}\ntext\n'
+        lines = source_map.add_markers(page, TAGS).split('\n')
+        self.assertEqual(lines[:2], ['{{ parts | join(", ",', '   attribute=None) }}'])
+        self.assertEqual(lines[2], 'text' + source_map.marker(3))
+
+    def test_empty_list_item_and_comment(self):
+        page = '* a\n* \n* b ::# note\n'
+        self.assertEqual(source_map.add_markers(page, TAGS).split('\n')[1:3], ['* ', '* b ::# note'])
+        self.assertEqual(source_map.strip(run(source_map.add_markers(page, TAGS))), run(page))
+
+    def test_blocks_inside_the_wrapper_of_the_theme(self):
+        body = run(source_map.add_markers('= Title\n\ntext\n\n* item\n', TAGS))
+        html = ('<body><nav>menu</nav><div id="main-content-margin"><div id="main-content-centered">'
+                + body + '</div></div></body>')
+        found = re.findall(r'<(\w+) data-lhtml-src="s:(\d+)"', source_map.apply(html, 's'))
+        self.assertEqual(found, [('h1', '1'), ('ul', '5')])
 
     def test_without_markers(self):
         self.assertEqual(source_map.apply('<body><p>x</p></body>', 'a'), '<body><p>x</p></body>')

@@ -15,26 +15,20 @@ def clean_string(s):
     return re.sub(r"[/'\"()]", '', s).strip()
 
 
-def extract_data_from_file(file, regex):
-    with open(file, 'r') as fid:
-        file_content = fid.read()
-
+def extract_data(text, regex):
+    """The first match of the first regex of `regex` that matches, or None."""
     for r in regex:
-        regex_compiled = re.compile(r, re.DOTALL | re.MULTILINE)
-        match = re.findall(regex_compiled, file_content)
-        if len(match) >= 1:
+        match = re.findall(re.compile(r, re.DOTALL | re.MULTILINE), text)
+        if match:
             return match[0]
+    return None
 
-    print('Failed to extract data in file ', file)
+
+TITLE_ID = re.compile(r'title_id.*?=(.*?)%}', re.DOTALL | re.MULTILINE)
 
 
-def extract_title_id_from_file(path, title):
-    with open(path, 'r') as fid:
-        file_content = fid.read()
-
-    regex = r'title_id.*?=(.*?)%}'
-    regex_compiled = re.compile(regex, re.DOTALL | re.MULTILINE)
-    match = re.findall(regex_compiled, file_content)
+def extract_title_id(text, title):
+    match = TITLE_ID.findall(text)
     data = match[0] if match else title
     return clean_string(data).replace(' ', '_').replace('#', '').lower()
 
@@ -65,11 +59,10 @@ def extract_titles(pages):
     """Title of each page (page.title, read in its source) and the sitemap {id: page}."""
     sitemap = {}
     for page in sorted(pages, key=_sitemap_priority):
-        path = page.src
-        title = extract_data_from_file(path, TITLE_REGEX)
+        title = extract_data(page.text, TITLE_REGEX)
         if title is not None:
             title = RAW_MARKERS.sub('', title)
-        title_id = generate_unique_id(extract_title_id_from_file(path, title), sitemap)
+        title_id = generate_unique_id(extract_title_id(page.text, title), sitemap)
         page.title = clean_string(title)
         sitemap[title_id] = page
     return sitemap
@@ -82,7 +75,7 @@ def export_structure(pages, structure_path):
     Returns the entries."""
     structure_to_export = []
     for page in pages:
-        structure = {'title': page.title, **page.config, **page.meta,
+        structure = {'title': page.title, **page.settings,
                      'dir': page.site_directory, 'filename': os.path.basename(page.site_html),
                      'template': page.site_template, 'level': page.site_directory.count('/'),
                      'src': str(page.src)}

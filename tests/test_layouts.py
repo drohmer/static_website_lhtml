@@ -81,6 +81,14 @@ class LayoutBuildTests(unittest.TestCase):
                       layout_report.summary_markdown([], design='../site/structure/design.md'))
         self.assertIn('Lint: 2 value(s) written by hand in 2 of 3', output)    # b, c: a layout without media::
 
+    def test_layout_after_an_import_or_a_comment(self):
+        self.write('src/m.html', '{% macro hello() %}Hello{% endmacro %}')
+        self.write('src/a/index.html.j2', "{% import 'm.html' as m %}\n::# a comment\n"
+                                          "{% set layout = 'side' %}\n= A\n{{ m.hello() }}\nmedia::\nimg::x.png\n::\n")
+        self.build()
+        self.assertEqual(self.body('a'), '<body class="layout-side">')
+        self.assertIn('Hello', (self.site / 'a/index.html').read_text())
+
     def test_lint_option(self):
         self.write('src/a/index.html.j2', '= A\ndiv::[height:50px;]::\n::[position:fixed; top:100px;] x ::\n')
         self.write('src/b/index.html.j2', '= B\ngap::\n')
@@ -144,13 +152,30 @@ class LintTests(unittest.TestCase):
         self.assertTrue(found[5][2].startswith('tiny::'))          # a size, not credit:: (gray)
 
     def test_code_blocks_are_not_linted(self):
-        self.assertEqual(self.kinds('code::[css]\ndiv::[height:25px;]::\n::\ncode::[css] a ::\n'), [])
+        self.assertEqual(self.kinds('code::[css]\ndiv::[height:25px;]::\n::\ncode::[-]\n'
+                                    'verbatim::[]\n::[font-size:85%] x ::\nverbatim::[-]\n'
+                                    '`::[font-size:85%] x ::` ::# ::[font-size:85%] x ::\n'), [])
+        # what follows a code block is linted
+        found = self.kinds('code::[python]\nx = 1\ncode::[-]\ndiv::[position:fixed; top:100px]\n::\n')
+        self.assertEqual(found[0][:2], (4, 'position'))
 
     def test_layouts(self):
         self.assertEqual(self.kinds("{% set layout = 'grid' %}\n= T\n")[0][1], 'layout')
         self.assertIn('media::', self.kinds('= T\n', layout='stack')[0][2])
         self.assertEqual(self.kinds("{% set layout = 'side-l' %}\n= T\nmedia::\nimg::a.png\n::\n"), [])
         self.assertEqual(self.kinds("{% set layout = 'side' %}\nmedia::\n::\naside::\n::\n")[0][2], 'media::')
+
+    def test_layout_names_with_a_dash(self):
+        linter = lint.Linter({**SLIDES, 'layouts': {**SLIDES['layouts'], 'two-cols': {}}})
+        self.assertEqual(linter.lint("{% set layout = 'two-cols' %}\n= T\n"), [])
+        self.assertEqual(linter.lint("{% set layout = 'grid-s' %}\n= T\n")[0].kind, 'layout')
+
+    def test_layout_not_at_the_top(self):
+        page = "{% import 'm.html' as m %}\n::# a comment\n{% set layout = 'side' %}\nmedia::\n::\n"
+        self.assertEqual(self.kinds(page), [])
+        found = self.kinds("= T\n{% set layout = 'side' %}\nmedia::\n::\n")
+        self.assertEqual(found[0][:2], (2, 'layout'))
+        self.assertIn('top of the page', found[0][2])
 
 
 if __name__ == '__main__':

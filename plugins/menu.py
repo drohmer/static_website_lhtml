@@ -7,10 +7,6 @@ from lib.structure import structure
 menu_path_relative = '/theme/js/menu.js'
 
 
-def clean_title(input):
-    return input.replace('"', '').replace("'", '').strip()
-
-
 def post_process(meta):
     menu_path = meta['site_directory'] + menu_path_relative
 

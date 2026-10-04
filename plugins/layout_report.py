@@ -35,6 +35,7 @@ Options (configure.yaml):
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -134,11 +135,6 @@ def find_overlaps(blocks, threshold=4, tight_ratio=0.4):
             elif soft:
                 tight.append({'a': a['id'], 'b': b['id'], **_bounds(soft)})
     return collisions, tight, intentional
-
-
-def find_collisions(blocks, threshold=4):
-    """Pairs of blocks whose drawn content overlaps (see find_overlaps)."""
-    return find_overlaps(blocks, threshold)[0]
 
 
 def find_hidden_text(blocks):
@@ -277,20 +273,45 @@ def find_fit(blocks, empty=0.25, cropped=0.05):
     return found
 
 
-def largest_free_rect(blocks, area, step=10, reserved=()):
-    """Largest rectangle of the usable area without ink (nor reserved area):
-    {x, y, w, h, share}, on a grid of `step` px."""
-    if area['w'] <= 0 or area['h'] <= 0:
-        return None
-    rects = [r[:4] for b in blocks for r in _ink(b)]
-    rects += [(z['x'], z['y'], z['x'] + z['w'], z['y'] + z['h']) for z in reserved or []]
-    nx, ny = area['w'] // step, area['h'] // step
-    heights, best = [0] * nx, (0, 0, 0, 0)        # area, column, row, width (histogram method)
-    for j in range(ny):
-        y = area['y'] + j * step + step // 2
+def coverage(rects, area, step=10, rows=None):
+    """Grid of the usable area, one cell per `step` px: rows of bytes, 1 where
+    the centre of the cell is inside one of the rectangles (x0, y0, x1, y1).
+    Filled rectangle by rectangle (in `rows` when given): shared by occupancy
+    and largest_free_rect."""
+    nx, ny = max(0, area['w'] // step), max(0, area['h'] // step)
+    if rows is None:
+        rows = [bytearray(nx) for _ in range(ny)]
+    off = step // 2
+    cell = lambda v, origin, n: min(n, max(0, -(-(v - origin - off) // step)))  # first centre >= v
+    for x0, y0, x1, y1 in rects:
+        i0, i1 = cell(x0, area['x'], nx), cell(x1, area['x'], nx)
+        if i1 > i0:
+            ones = b'\x01' * (i1 - i0)
+            for j in range(cell(y0, area['y'], ny), cell(y1, area['y'], ny)):
+                rows[j][i0:i1] = ones
+    return rows
+
+
+def _ink_rects(blocks):
+    return [r[:4] for b in blocks for r in _ink(b)]
+
+
+def _reserved_rects(reserved):
+    return [(z['x'], z['y'], z['x'] + z['w'], z['y'] + z['h']) for z in reserved or []]
+
+
+def _covered_share(rows):
+    total = sum(len(r) for r in rows)
+    return sum(r.count(1) for r in rows) / total if total else 0.0
+
+
+def _free_rect(rows, area, step=10):
+    """Largest rectangle of empty cells (histogram method)."""
+    nx, ny = (len(rows[0]), len(rows)) if rows else (0, 0)
+    heights, best = [0] * nx, (0, 0, 0, 0, 0)        # area, column, row, width, height
+    for j, row in enumerate(rows):
         for i in range(nx):
-            x = area['x'] + i * step + step // 2
-            heights[i] = 0 if any(x0 <= x < x1 and y0 <= y < y1 for x0, y0, x1, y1 in rects) else heights[i] + 1
+            heights[i] = 0 if row[i] else heights[i] + 1
         stack = []
         for i in range(nx + 1):
             h = heights[i] if i < nx else 0
@@ -307,6 +328,12 @@ def largest_free_rect(blocks, area, step=10, reserved=()):
             'share': round(w * h / (nx * ny), 2)}
 
 
+def largest_free_rect(blocks, area, step=10, reserved=()):
+    """Largest rectangle of the usable area without ink (nor reserved area):
+    {x, y, w, h, share}, on a grid of `step` px."""
+    return _free_rect(coverage(_ink_rects(blocks) + _reserved_rects(reserved), area, step), area, step)
+
+
 def vertical_gaps(blocks):
     """Gaps between consecutive in-flow blocks, top to bottom: [(id_above, id_below, gap px)]."""
     flow = sorted((b for b in blocks if b.get('position') in FLOW_POSITIONS), key=lambda b: _rect(b)[1])
@@ -315,16 +342,7 @@ def vertical_gaps(blocks):
 
 def occupancy(blocks, area, step=10):
     """Fraction of the usable area covered by the ink of the blocks (sampled on a grid)."""
-    if area['w'] <= 0 or area['h'] <= 0:
-        return 0.0
-    rects = [r[:4] for b in blocks for r in _ink(b)]
-    covered = total = 0
-    for y in range(area['y'] + step // 2, area['y'] + area['h'], step):
-        for x in range(area['x'] + step // 2, area['x'] + area['w'], step):
-            total += 1
-            if any(x0 <= x < x1 and y0 <= y < y1 for x0, y0, x1, y1 in rects):
-                covered += 1
-    return covered / total if total else 0.0
+    return _covered_share(coverage(_ink_rects(blocks), area, step))
 
 
 # ---------------------------------------------------------------------------
@@ -495,10 +513,6 @@ def _anchor(values):
     return best[0], best[1]
 
 
-def _title_variant(title):
-    return {'tag': _tag(title), 'font': title['font_size']}
-
-
 def deck_norms(layouts, min_share=0.25, min_pages=3):
     """Usual values of a deck (its style), from the measured layouts of all
     its pages:
@@ -555,7 +569,8 @@ def deck_norms(layouts, min_share=0.25, min_pages=3):
     norms['text_fonts'] = sorted(f for f, c in font_pages.items() if c >= min_pages)
     norms['title_gap'] = _median([g for g in map(_title_gap, pages) if g is not None])
     norms['words'] = _median([sum((b.get('text') or {}).get('words', 0) for b in blocks) for blocks in pages])
-    norms['occupancy'] = round(_median([occupancy(blocks, l['area']) for blocks, l in zip(pages, layouts)]), 2)
+    norms['occupancy'] = round(_median([l['analysis']['occupancy'] if 'analysis' in l else occupancy(blocks, l['area'])
+                                        for blocks, l in zip(pages, layouts)]), 2)
     return norms
 
 
@@ -610,6 +625,9 @@ def analyse(layout, threshold=4, norms=None, limits=None):
     # a collision between a text and the block hiding it is reported once, as hidden text
     hiding = {frozenset((h['id'], h['by'])) for h in hidden_text}
     collisions = [c for c in collisions if frozenset((c['a'], c['b'])) not in hiding]
+    grid = coverage(_ink_rects(blocks), area)          # occupancy, then free area (with the reserved areas)
+    covered = _covered_share(grid)
+    coverage(_reserved_rects(layout.get('reserved')), area, rows=grid)
     layout['analysis'] = {
         'reserved': find_reserved_overlaps(blocks, layout.get('reserved'), threshold),
         'collisions': collisions,
@@ -622,13 +640,13 @@ def analyse(layout, threshold=4, norms=None, limits=None):
         'background_overlaps': find_background_overlaps(blocks, collisions + intentional, threshold),
         'gaps': vertical_gaps(blocks),  # spacers count as gaps
         'free_bottom': area['y'] + area['h'] - bottom,
-        'occupancy': round(occupancy(blocks, area), 2),
+        'occupancy': round(covered, 2),
         'near_aligned': find_near_alignments(blocks, area, norms.get('columns', ())),
         'density': density(blocks, area),
         'wrapped': find_wrapped(blocks),
         'rows': find_row_misalignments(blocks),
         'fit': find_fit(blocks),
-        'free': largest_free_rect(blocks, area, reserved=layout.get('reserved')),
+        'free': _free_rect(grid, area),
         'deviations': find_deviations(blocks, norms) if norms else [],
     }
     # the limits are meant for slides, not for scrolling web pages
@@ -663,6 +681,27 @@ def _zone(o):
     return f"x {o['x0']}..{o['x1']}, y {o['y0']}..{o['y1']}"
 
 
+def problem_lines(analysis):
+    """The problems of a page, one Markdown line each: '- KIND #id ...: details'."""
+    problems = []
+    for h in analysis.get('hidden_text', []):
+        problems.append(f"- HIDDEN TEXT #{h['id']} under #{h['by']}: {_zone(h)} "
+                        f"({round(100 * h['fraction'])} % of the text of #{h['id']} is covered)")
+    for c in analysis.get('collisions', []):
+        problems.append(f"- COLLISION #{c['a']} × #{c['b']}: {_zone(c)} ({c['area']} px² of drawn content)")
+    for o in analysis.get('out_of_area', []):
+        sides = ', '.join(f'{v} px {k}' for k, v in o.items() if k != 'id')
+        problems.append(f"- OUT OF AREA #{o['id']}: {sides}")
+    for c in analysis.get('clipped', []):
+        problems.append(f"- CLIPPED #{c['id']}: {c['w']} px (width) / {c['h']} px (height) of content hidden")
+    for u in analysis.get('upscaled_images', []):
+        problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
+    for r in analysis.get('reserved', []):
+        problems.append(f"- RESERVED AREA #{r['id']}: covers the {r['name']} of the theme "
+                        f"(x {r['x0']}..{r['x1']}, y {r['y0']}..{r['y1']})")
+    return problems
+
+
 def page_markdown(name, source, layout):
     """Markdown report of one page."""
     area, analysis = layout['area'], layout['analysis']
@@ -686,22 +725,7 @@ def page_markdown(name, source, layout):
                      f"{' '.join(str(m) for m in b['margin'])} | {b['position']} | {b['font_size']} | "
                      f"{_md_cell(b['signature'])} |")
 
-    problems = []
-    for h in analysis.get('hidden_text', []):
-        problems.append(f"- HIDDEN TEXT #{h['id']} under #{h['by']}: {_zone(h)} "
-                        f"({round(100 * h['fraction'])} % of the text of #{h['id']} is covered)")
-    for c in analysis['collisions']:
-        problems.append(f"- COLLISION #{c['a']} × #{c['b']}: {_zone(c)} ({c['area']} px² of drawn content)")
-    for o in analysis['out_of_area']:
-        sides = ', '.join(f'{v} px {k}' for k, v in o.items() if k != 'id')
-        problems.append(f"- OUT OF AREA #{o['id']}: {sides}")
-    for c in analysis['clipped']:
-        problems.append(f"- CLIPPED #{c['id']}: {c['w']} px (width) / {c['h']} px (height) of content hidden")
-    for u in analysis['upscaled_images']:
-        problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
-    for r in analysis.get('reserved', []):
-        problems.append(f"- RESERVED AREA #{r['id']}: covers the {r['name']} of the theme "
-                        f"(x {r['x0']}..{r['x1']}, y {r['y0']}..{r['y1']})")
+    problems = problem_lines(analysis)
     lines += ['', '## Problems', ''] + (problems or ['None.'])
 
     warnings = [f"- TIGHT #{t['a']} × #{t['b']}: line box of text overlapping by {t['y1'] - t['y0']} px "
@@ -839,14 +863,30 @@ An overlap is intentional when one of the blocks has the class `overlay`
 '''
 
 
+def _problems_by_key(layout):
+    """{(kind, signatures of its blocks): line} of the problems of a measure
+    (the ids of the blocks change from a measure to the next, not their signature)."""
+    signature = {b['id']: b['signature'] for b in layout.get('blocks', [])}
+    found = {}
+    for line in problem_lines(layout.get('analysis') or {}):
+        head = line.split(':', 1)[0]
+        kind = re.match(r'- ([A-Z][A-Z ]*?) #', head)
+        key = (kind.group(1) if kind else head, tuple(signature.get(int(i)) for i in re.findall(r'#(\d+)', head)))
+        found.setdefault(key, line)
+    return found
+
+
 def layout_changes(old, new, threshold=4):
-    """What changed between two measures of a page: counts of problems,
-    warnings and lint, blocks moved or resized (matched by signature),
-    blocks added or removed. Returns lines of Markdown (none: no change)."""
+    """What changed between two measures of a page: problems that appeared or
+    were solved, counts of warnings and lint, blocks moved or resized (matched
+    by signature), blocks added or removed. Returns lines of Markdown (none:
+    no change)."""
     lines = []
     a, b = old.get('analysis', {}), new.get('analysis', {})
-    for label, count in (('problems', count_problems), ('warnings', count_warnings),
-                         ('values written by hand', lambda x: len(x.get('lint', [])))):
+    before, after = _problems_by_key(old), _problems_by_key(new)
+    lines += [f'- new problem: {line[2:]}' for key, line in after.items() if key not in before]
+    lines += [f'- solved: {line[2:]}' for key, line in before.items() if key not in after]
+    for label, count in (('warnings', count_warnings), ('values written by hand', lambda x: len(x.get('lint', [])))):
         if count(a) != count(b):
             lines.append(f'- {label}: {count(a)} -> {count(b)}')
     old_blocks, new_blocks = list(old.get('blocks', [])), list(new.get('blocks', []))
@@ -1079,6 +1119,7 @@ def post_process(meta):
     finally:
         os.remove(pages_json)
 
+    remeasured = {p['name'] for p in pages}
     measured = []
     for p in previous + pages:
         layout_path = os.path.join(p['out'], 'layout.json')
@@ -1089,16 +1130,19 @@ def post_process(meta):
     limits = {k: options[k] for k in ('max_words', 'min_font')}
 
     rows = []
-    linter = Linter(meta['design']) if meta.get('design') else None
+    loaded_design = meta.get('loaded_design')
+    linter = Linter(loaded_design) if loaded_design else None
     order = {entry['dir'] + entry['filename']: k for k, entry in enumerate(structure(meta))}
     measured.sort(key=lambda m: order[m[0]['name']])
     for p, layout_path, layout in measured:
-        if p in previous:           # analysed by its build
+        if p['name'] not in remeasured:         # analysed by its build
             rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
                          layout['analysis']))
             continue
         analyse(layout, options['threshold'], norms, limits)
-        if linter is not None and os.path.isfile(p['source']):
+        if p['source'] in (meta.get('lint_findings') or {}):       # lint of the build
+            layout['analysis']['lint'] = meta['lint_findings'][p['source']]
+        elif linter is not None and os.path.isfile(p['source']):
             layout['analysis']['lint'] = [f.as_dict() for f in linter.lint_file(p['source'], p['layout'])]
         layout['source'] = os.path.relpath(p['source'], meta.get('config_directory') or '.')
         with open(layout_path, 'w') as fid:
@@ -1111,8 +1155,8 @@ def post_process(meta):
     with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace') as fid:
         reference = os.path.join(meta.get('published_site_directory') or site_dir, 'structure', 'design.md')
         fid.write(summary_markdown(rows, norms, design=os.path.relpath(reference, output_dir)
-                                   if meta.get('design') and any(meta['design'].values()) else None))
-    changes = [(p['name'], lines) for p, _, layout in measured if p not in previous
+                                   if loaded_design and any(loaded_design.values()) else None))
+    changes = [(p['name'], lines) for p, _, layout in measured if p['name'] in remeasured
                and p['name'] in previous_layouts
                and (lines := layout_changes(previous_layouts[p['name']], layout))]
     with open(os.path.join(output_dir, 'changes.md'), 'w', encoding='utf-8') as fid:
@@ -1123,7 +1167,7 @@ def post_process(meta):
         write_contact_sheets(output_dir, [(p['name'], os.path.relpath(p['out'], output_dir), layout['analysis'])
                                           for p, _, layout in measured],
                              measured[0][2]['viewport'], options, log,
-                             changed={k for k, (p, _, _) in enumerate(measured) if p not in previous}
+                             changed={k for k, (p, _, _) in enumerate(measured) if p['name'] in remeasured}
                              if partial else None)
 
     n_problems = sum(count_problems(r[2]) for r in rows)

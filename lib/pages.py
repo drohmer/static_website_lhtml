@@ -11,6 +11,7 @@ The names of templates are given by is_template, html_name and template_name.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 import os
 import shutil
@@ -83,6 +84,17 @@ class Page:
     @property
     def src(self):
         return Path(self.source.root) / self.directory / self.template
+
+    @cached_property
+    def text(self):
+        """Its source, read once by the scanners (titles, lint, credits...)."""
+        with open(self.src, encoding='utf-8', errors='replace') as fid:
+            return fid.read()
+
+    @property
+    def settings(self):
+        """Its settings: its config.yaml, then its deck entry (which takes precedence)."""
+        return {**self.config, **self.meta}
 
     @property
     def site_directory(self):
@@ -194,8 +206,6 @@ def place(pages, site_directory, project_assets=False, transform=None):
         if transform is None:
             shutil.copy2(page.src, site + page.site_template)
         else:
-            with open(page.src, encoding='utf-8') as fid:
-                text = transform(fid.read())
             with open(site + page.site_template, 'w', encoding='utf-8') as fid:
-                fid.write(text)
+                fid.write(transform(page.text))
     return warnings

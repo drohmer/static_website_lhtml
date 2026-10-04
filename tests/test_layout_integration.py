@@ -49,7 +49,7 @@ def test_nested_fixed_element_lines_and_changes(tmp_path):
                                  capture_output=True, text=True, timeout=90)
     assert run().returncode == 0
     report = (tmp_path / '.layout/pages/s/index.html/layout.md').read_text()
-    assert '| 1 | 1 | title |' in report                     # line of the source (data-src)
+    assert '| 1 | 1 | title |' in report                     # line of the source (data-lhtml-src)
     assert 'in #2 |' in report                              # the fixed box, measured on its own
     assert 'HIDDEN TEXT #2 under #3' in report or 'COLLISION #2 × #3' in report
     page.write_text(page.read_text().replace('top:60px', 'top:550px'))

@@ -15,6 +15,7 @@ import argparse
 import sys
 import importlib.util
 import traceback
+import warnings as python_warnings
 
 from lib import deck
 from lib import credits
@@ -25,6 +26,7 @@ from lib import filesystem
 from lib import generator_tool
 from lib import lint
 from lib import source_map
+from lib import source_scan
 from lib import logger
 from lib import pages
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
@@ -131,16 +133,28 @@ def add_layout_plugin(meta):
     meta['plugin'] = plugins
 
 
+_plugin_modules = {}     # {(path, mtime): module}: each plugin is loaded once (again when it changes)
+
+
+def load_plugin(full_path):
+    """The module of a plugin: loaded once, so that it keeps its state from a
+    hook to the next (pre_process, mid_process, post_process)."""
+    key = (full_path, os.path.getmtime(full_path))
+    if key not in _plugin_modules:
+        spec = importlib.util.spec_from_file_location('plugin', full_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _plugin_modules[key] = module
+    return _plugin_modules[key]
+
+
 def run_plugins(meta, hook_name, log):
     """Run a plugin hook (pre_process / mid_process / post_process) for the
     plugins in meta['plugin_paths']. Returns the number of plugins that failed."""
     failures = 0
     for full_path in meta['plugin_paths']:
         try:
-            spec = importlib.util.spec_from_file_location('plugin', full_path)
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-
+            module = load_plugin(full_path)
             if hasattr(module, hook_name):
                 log.keyvalue('Run plugin', full_path.split('/')[-1])
                 getattr(module, hook_name)(meta)
@@ -202,11 +216,15 @@ def select_pages(meta, log, scaffold=False):
     return result.pages
 
 
+def other_sources(selected):
+    """{name: root} of the other projects of the pages."""
+    return {p.source.name: p.source.root for p in selected if p.source.name}
+
+
 def only_pages(meta, selected, log):
     """--only: the pages it names, or None for a full build (no previous site,
     or its pages are not those of this build: a deck or a page changed)."""
-    sources = {p.source.name: p.source.root for p in selected if p.source.name}
-    built = deck.named_pages(selected, meta['args'].only, sources)
+    built = deck.named_pages(selected, meta['args'].only, other_sources(selected))
     previous = os.path.join(meta['site_directory'], 'structure/structure.json')
     if not os.path.isfile(previous):
         log.keyvalue('info', '--only: no previous build, full build', indent_level=1)
@@ -247,8 +265,7 @@ def prepare_data(meta, selected, built, log):
                     meta['previous_pages'][page.site_html] = fid.read()
     transform = None
     if meta.get('source_map'):
-        tags = source_map.value_tags(design.lhtml_macros(design.load_design(
-            meta['theme'], meta.get('design'), meta['config_directory'])))
+        tags = source_scan.value_tags(meta['macros'])
         transform = lambda text: source_map.add_markers(text, tags)
     warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
     for warning in warnings:
@@ -265,19 +282,25 @@ def prepare_data(meta, selected, built, log):
     generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
     meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/')
     shutil.copy2(AGENTS_GUIDE, dir_site + 'structure/agents.md')
-    built_ids = {id(page) for page in built}
-    meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if id(page) in built_ids]
-    credits_of = write_credits_and_todo(meta, selected, log)
-    return sitemap, credits_of
+    built_set = set(built)
+    meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if page in built_set]
+    return sitemap, write_credits_and_todo(meta, selected, log)
 
 
 def write_credits_and_todo(meta, selected, log):
     """structure/credits.md (origin of the pages, credits of the images) and
     structure/todo.md (planned figures and slides). Returns the credits of
-    each page (lib/credits.py)."""
-    credits_of = {id(page): credits.page_credits(page) for page in selected}
+    each page (lib/credits.py) and the errors of the pages whose credits are
+    invalid ({page: message}: these pages fail)."""
+    credits_of, errors = {}, {}
+    for page in selected:
+        try:
+            credits_of[page] = credits.page_credits(page)
+        except credits.CreditsError as exc:
+            credits_of[page], errors[page] = {}, str(exc)
     structure_dir = meta['site_directory'] + 'structure/'
-    text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'])
+    text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'],
+                                                       meta['macros'])
     with open(structure_dir + 'credits.md', 'w', encoding='utf-8') as fid:
         fid.write(text)
     planned_figures = credits.placeholders(selected)
@@ -288,21 +311,27 @@ def write_credits_and_todo(meta, selected, log):
     if planned_figures or planned_slides:
         log.keyvalue('info', f'To do: {len(planned_figures)} planned figure(s), {len(planned_slides)} planned '
                              f'slide(s) (structure/todo.md)', indent_level=1)
-    return credits_of
+    return credits_of, errors
 
 
 def discard_page(meta, page):
     """Remove the outputs of a page that failed (the template is kept in debug
-    mode); with --only, its previous version is restored."""
+    mode). Its previous version (--only) is restored at the end of the build
+    (restore_previous_pages), not before the next stages."""
     paths = [page.site_html] + ([] if meta['debug'] else [page.site_template])
     for path in paths:
         full_path = meta['site_directory'] + path
         if os.path.isfile(full_path):
             os.remove(full_path)
-    previous = meta.get('previous_pages', {}).get(page.site_html)
-    if previous is not None:
-        with open(meta['site_directory'] + page.site_html, 'wb') as fid:
-            fid.write(previous)
+
+
+def restore_previous_pages(meta, failed):
+    """--only: the pages that failed get their previous version back."""
+    for page in failed:
+        previous = meta.get('previous_pages', {}).get(page.site_html)
+        if previous is not None:
+            with open(meta['site_directory'] + page.site_html, 'wb') as fid:
+                fid.write(previous)
 
 
 def sitemap_keywords_used(env, templates):
@@ -338,15 +367,16 @@ def jinja_environment(meta, selected, built):
     for page in built:
         with open(dir_site + page.site_template, encoding='utf-8') as fid:
             templates[page.site_template] = fid.read()
-    roots = [meta['source_directory']] + sorted({p.source.root for p in selected if p.source.name})
+    roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
     return Environment(loader=loader, extensions=['jinja_markdown.MarkdownExtension'])
 
 
-def render_jinja(meta, selected, built, sitemap, log, credits_of=None):
+def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=None):
     """Render the Jinja2 templates of the pages to generate (`built`, among the
-    pages of the site `selected`). Returns the list of pages that failed."""
+    pages of the site `selected`); `errors`: {page: message} of the pages that
+    already failed. Returns the list of pages that failed."""
     dir_site = meta['site_directory']
     env = jinja_environment(meta, selected, built)
     used = sitemap_keywords_used(env, [page.site_template for page in built])
@@ -355,12 +385,17 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None):
 
     log.keyvalue('Found', f'{len(built)} template files')
     failed = []
-    built_ids = {id(page) for page in built}
-    entries = {id(page): entry for page, entry in zip(selected, meta['structure'])}
-    credits_of = credits_of or {id(page): {} for page in selected}
+    built_set = set(built)
+    entries = dict(zip(selected, meta['structure']))
+    credits_of = credits_of or {page: {} for page in selected}
     deck_credits = credits.all_credits(selected, credits_of)
     for k, page in enumerate(selected):
-        if id(page) not in built_ids:
+        if page not in built_set:
+            continue
+        if page in (errors or {}):
+            log.error(errors[page])
+            failed.append(page)
+            discard_page(meta, page)
             continue
         links = {}
         for id_site, target in targets.items():
@@ -372,8 +407,8 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None):
         try:
             template = env.get_template(page.site_template)
             output_html = template.render({**meta['keywords'], **links, 'params': page.params,
-                                           'page': entries[id(page)],
-                                           'credit': credits.credit_function(page, credits_of[id(page)]),
+                                           'page': entries[page],
+                                           'credit': credits.credit_function(page, credits_of[page]),
                                            'credits': deck_credits,
                                            'pathToRoot': page.path_to_root, 'pageID': k})
         except Exception as e:
@@ -387,39 +422,53 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None):
     return failed
 
 
+def load_project_design(meta):
+    """The design of the project: design.yaml of the theme + 'design' of the configuration."""
+    return design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+
+
 def prepare_design(meta, log):
-    """Load the design (theme design.yaml + 'design' of the configuration),
-    write theme/css/design.css and structure/design.md, give the macros to LHTML."""
-    meta['design'] = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
-    meta['macros'] = design.lhtml_macros(meta['design'])
+    """Write theme/css/design.css and structure/design.md of the design
+    (meta['loaded_design'], loaded at the start of the build)."""
     # Always written (even empty): the theme may link it, and --only must not
     # keep the design.css of a previous design.
-    path = design.write_design(meta, meta['design'])
+    path = design.write_design(meta, meta['loaded_design'])
     log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
 
 
-def render_lhtml(meta, selected, log):
-    """Run LHTML conversion on all rendered templates, with optional HTML tidy.
-    Returns the list of pages that failed."""
+# Options of the generator given to LHTML (lhtml.run reads no other key)
+LHTML_OPTIONS = ('wrap-auto', 'title', 'css', 'js', 'line-breaks', 'directory_include', 'macros')
+
+
+def render_lhtml(meta, selected, log, failed_before=()):
+    """Run LHTML conversion on all rendered templates, with optional HTML tidy
+    (not on the pages that failed before: `failed_before`). Returns the list
+    of pages that failed."""
     tidy_options = {'doctype': 'html5', 'show-warnings': 'no', 'warn-proprietary-attributes': 'no'}
 
     tidylib.BASE_OPTIONS = {}
     failed = []
 
+    skipped = set(failed_before)
     for page in selected:
         html_path = meta['site_directory'] + page.site_html
 
-        if not os.path.isfile(html_path):
+        if page in skipped or not os.path.isfile(html_path):
             # Jinja2 rendering failed for this page (error already reported)
             continue
         log.debug(f'- {html_path}')
         with open(html_path, 'r') as fid:
             input_html = fid.read()
 
-        meta['current_directory'] = meta['site_directory'] + page.site_directory
+        options = {k: meta[k] for k in LHTML_OPTIONS if k in meta}
+        options['current_directory'] = meta['site_directory'] + page.site_directory
 
         try:
-            output_html = lhtml.run(input_html, meta)
+            with python_warnings.catch_warnings(record=True) as caught:
+                python_warnings.simplefilter('always')
+                output_html = lhtml.run(input_html, options)
+            for warning in caught:          # with the page they come from
+                log.warning(f'{page.label}: {warning.message}')
             if meta.get('source_map'):
                 output_html = source_map.apply(output_html, os.path.relpath(page.src, meta['config_directory']))
             if meta.get('feedback'):
@@ -486,7 +535,7 @@ def clean_directories(meta):
     site_dir = meta['site_directory']
     if os.path.isdir(site_dir):
         shutil.rmtree(site_dir)
-    print('Directories cleaned\n')
+    meta['log'].plain('Directories cleaned\n')
 
 
 # ---------------------------------------------------------------------------
@@ -509,7 +558,7 @@ def build_once(args):
     context = BuildContext(config, config_file, args, log)
     meta = context.meta
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
-    # data-src="file:line" on the blocks (lib/source_map.py) in the builds for development
+    # data-lhtml-src="file:line" on the blocks (lib/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
     if args.layout:
@@ -532,7 +581,7 @@ def build_once(args):
         # The deck and the design are read (not the pages): errors before any build
         try:
             loaded_deck = load_deck(meta)
-            loaded_design = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+            loaded_design = load_project_design(meta)
         except (deck.DeckError, design.DesignError) as exc:
             log.error(str(exc))
             sys.exit(1)
@@ -563,9 +612,8 @@ def build_once(args):
             selected += [p for p in pages.discover(pages.Source(None, meta['source_directory']),
                                                    exclude=[meta['site_directory']]) if p.src not in listed]
             if args.only:
-                sources = {p.source.name: p.source.root for p in selected if p.source.name}
-                selected = deck.named_pages(selected, args.only, sources)
-            loaded_design = design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+                selected = deck.named_pages(selected, args.only, other_sources(selected))
+            loaded_design = load_project_design(meta)
         except (deck.DeckError, design.DesignError, ValueError) as exc:
             log.error(str(exc))
             sys.exit(1)
@@ -592,27 +640,26 @@ def build_once(args):
 
 def lint_pages(selected, loaded_design, log, details=False):
     """Design lint of the pages (lib/lint.py): the summary, and with `details`
-    each finding (path:line). Returns the number of findings."""
+    each finding (path:line). Returns the findings {source path: [Finding]}."""
     linter = lint.Linter(loaded_design)
-    total, pages_with, seen = 0, 0, set()
+    found = {}
     for page in selected:
-        if page.src in seen:            # occurrences of a page: once
-            continue
-        seen.add(page.src)
-        findings = linter.lint_file(page.src, {**page.config, **page.meta}.get('layout'))
-        total += len(findings)
-        pages_with += bool(findings)
-        if details:
-            path = os.path.relpath(page.src)
-            for f in findings:
-                print(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
-    summary = (f'{total} value(s) written by hand in {pages_with} of {len(seen)} page(s)' if total
-               else f'no value written by hand in {len(seen)} page(s)')
+        if str(page.src) not in found:          # occurrences of a page: once
+            found[str(page.src)] = linter.lint(page.text, page.settings.get('layout'))
+    total = sum(map(len, found.values()))
     if details:
-        print(f'\nLint: {summary}')
+        for src, findings in found.items():
+            path = os.path.relpath(src)
+            for f in findings:
+                log.plain(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
+    pages_with = sum(1 for findings in found.values() if findings)
+    summary = (f'{total} value(s) written by hand in {pages_with} of {len(found)} page(s)' if total
+               else f'no value written by hand in {len(found)} page(s)')
+    if details:
+        log.plain(f'\nLint: {summary}')
     elif total:
         log.keyvalue('info', f'Lint: {summary} (python generate.py --lint)', indent_level=1)
-    return total
+    return found
 
 
 def generate_site(meta, selected, built):
@@ -629,9 +676,12 @@ def generate_site(meta, selected, built):
     # Data preparation
     log.title('Data preparation', pre='\n')
     log.tic()
-    sitemap, credits_of = prepare_data(meta, selected, built, log)
+    meta['loaded_design'] = load_project_design(meta)
+    meta['macros'] = design.lhtml_macros(meta['loaded_design'])
+    sitemap, (credits_of, credit_errors) = prepare_data(meta, selected, built, log)
     prepare_design(meta, log)
-    lint_pages(built, meta['design'], log)
+    meta['lint_findings'] = {src: [f.as_dict() for f in findings]
+                             for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
     log.ok_elapsed()
 
     # Pre-process plugins
@@ -643,7 +693,7 @@ def generate_site(meta, selected, built):
     # Jinja2 rendering
     log.title('Convert HTML', pre='\n')
     log.tic()
-    failed = render_jinja(meta, selected, built, sitemap, log, credits_of)
+    failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
     if failed:
         log.error(f'{len(failed)} page(s) not generated because of Jinja2 errors')
 
@@ -654,7 +704,7 @@ def generate_site(meta, selected, built):
     log.ok_elapsed()
 
     # LHTML conversion
-    failed += render_lhtml(meta, built, log)
+    failed += render_lhtml(meta, built, log, failed_before=failed)
     log.ok_elapsed()
 
     # SASS compilation
@@ -667,7 +717,8 @@ def generate_site(meta, selected, built):
         plugin_failures += run_plugins(meta, 'post_process', log)
     log.ok_elapsed()
 
-    print()
+    restore_previous_pages(meta, failed)
+    log.plain()
     if failed:
         log.error(f'{len(failed)} page(s) failed (see errors above)')
     if plugin_failures:

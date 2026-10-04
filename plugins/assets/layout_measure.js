@@ -390,8 +390,10 @@ function extractBlocks(rootSelector, excludeSelector) {
         const text = excerpt(el.innerText);
         if (text) signature += ` "${text}"`;
         if (media.length) signature += ' ' + media.map(m => m.src).join(', ');
-        // line of the source (data-src="file:line" of the builds for development)
-        const source = el.getAttribute('data-src');
+        // line of the source (data-lhtml-src="file:line" of the builds for
+        // development): of the block, else of the first block inside it
+        const marked = el.hasAttribute('data-lhtml-src') ? el : el.querySelector('[data-lhtml-src]');
+        const source = marked ? marked.getAttribute('data-lhtml-src') : null;
         return {
             kind: visual ? kindOf(el) : 'spacer',
             signature,

@@ -16,14 +16,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from lib import source_scan
+
 STYLE = re.compile(r'([A-Za-z][\w-]*::(?:\([^()\n]*\))?[^\s\[]*)?\[([^\[\]\n]*:[^\[\]\n]*)\]|style="([^"]*)"')
 RAW_IFRAME = re.compile(r'<iframe\b[^>]*style=')
 SIZE_MACROS = ('small', 'tiny', 'large')     # macros of a font size (credit:: is also gray)
 OFFSET_MACROS = ('aside',)                 # their documented offsets: aside::[top:400px;]
 SPACER = re.compile(r'^\s*(?:div)?::\[\s*height:\s*([\d.]+)px;?\s*\]::?\s*$')
-LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
-CODE_START = re.compile(r'^\s*(?:code|verbatim)::')
-MACRO = re.compile(r'(?<![\w-])([A-Za-z][\w-]*)::')
 PX = re.compile(r'^\s*([\d.]+)px\s*$')
 PERCENT = re.compile(r'^\s*([\d.]+)%\s*$')
 
@@ -128,21 +127,24 @@ class Linter:
     def lint(self, text, layout=None):
         """Findings of the source `text` of a page; `layout`: the layout given
         by its configuration or deck entry (a {% set layout %} of the page
-        takes precedence)."""
+        takes precedence). Code and verbatim blocks, math, comments and inline
+        code are not read (lib/source_scan.py)."""
         findings = []
-        in_code = False
-        lines = text.split('\n')
-        set_layout = LAYOUT_SET.search(text)
-        layout = set_layout.group(1) if set_layout else layout
-        base = str(layout).split('-')[0] if layout else None
-        for number, line in enumerate(lines, 1):
+        found = source_scan.zones(text)
+        read = source_scan.mask(text, found=found)
+        set_layout = source_scan.layout_setting(text)
+        if set_layout:
+            layout, layout_line = set_layout
+            leading = source_scan.leading_settings(text)
+            if layout_line > leading.count('\n') + (1 if leading and not leading.endswith('\n') else 0):
+                findings.append(Finding(layout_line, 'layout', f"{{% set layout = '{layout}' %}} not at the top",
+                                        'move it to the top of the page: only blank lines, comments, '
+                                        '{% set %} and {% import %} may come before it (else it is ignored)'))
+        else:
+            layout_line = 1
+        base = self._layout_base(layout)
+        for number, line in enumerate(read.split('\n'), 1):
             stripped = line.strip()
-            if in_code:
-                in_code = stripped != '::'
-                continue
-            if CODE_START.match(line):
-                in_code = not line.split('::', 1)[1].rstrip().endswith('::')    # else inline code
-                continue
             if (m := SPACER.match(line)):
                 height = float(m.group(1))
                 gap = self._gap(height)
@@ -155,22 +157,23 @@ class Linter:
                 findings.append(Finding(number, 'iframe', '<iframe style=...>',
                                         'demo::url (size: the tokens of the design, or media::)'))
         if layout:
-            line = text[:set_layout.start()].count('\n') + 1 if set_layout else 1
-            if base not in self.layouts:
-                findings.append(Finding(line, 'layout', f'layout {layout}',
+            if base is None:
+                findings.append(Finding(layout_line, 'layout', f'layout {layout}',
                                         f"a layout of the design: {', '.join(sorted(self.layouts)) or 'none'}"))
-            elif base in ('side', 'stack') and 'media::' not in text:
-                findings.append(Finding(line, 'layout', f'layout {layout} without media::',
+            elif base in ('side', 'stack') and 'media::' not in read:
+                findings.append(Finding(layout_line, 'layout', f'layout {layout} without media::',
                                         'put the figures in media:: ... ::'))
-            elif base == 'side' and re.search(r'(?<![\w-])aside::', text):
-                findings.append(Finding(line, 'layout', 'aside:: in layout side', 'media::'))
+            elif base == 'side' and re.search(r'(?<![\w-])aside::', read):
+                findings.append(Finding(layout_line, 'layout', 'aside:: in layout side', 'media::'))
         return findings
 
-
-def report(findings_by_page):
-    """Text report: {label: (path, findings)} -> lines 'path:line: kind: text -> advice'."""
-    lines = []
-    for label, (path, findings) in findings_by_page.items():
-        for f in findings:
-            lines.append(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
-    return lines
+    def _layout_base(self, layout):
+        """The layout of the design named by `layout`, or None: its name, or
+        the part before its first - (side-s: side), as the theme reads it."""
+        if not layout:
+            return None
+        layout = str(layout)
+        if layout in self.layouts:
+            return layout
+        base = layout.split('-', 1)[0]
+        return base if base in self.layouts else None

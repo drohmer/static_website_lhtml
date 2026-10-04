@@ -21,15 +21,20 @@ def block(id, x, y, w, h, kind='div', position='static', **extra):
             'overflow': 'visible', 'scroll': None, 'media': [], **extra}
 
 
+def find_collisions(blocks, threshold=4):
+    """Pairs of blocks whose drawn content overlaps."""
+    return layout_report.find_overlaps(blocks, threshold)[0]
+
+
 def test_collision_with_overlap_rectangle():
     blocks = [block(1, 0, 0, 100, 100), block(2, 50, 60, 100, 100, position='fixed')]
-    assert layout_report.find_collisions(blocks) == [{'a': 1, 'b': 2, 'x0': 50, 'y0': 60, 'x1': 100, 'y1': 100,
+    assert find_collisions(blocks) == [{'a': 1, 'b': 2, 'x0': 50, 'y0': 60, 'x1': 100, 'y1': 100,
                                                       'area': 2000}]
 
 
 def test_touching_or_tiny_overlap_is_not_a_collision():
     blocks = [block(1, 0, 0, 100, 100), block(2, 100, 0, 100, 100), block(3, 0, 97, 100, 50)]
-    assert layout_report.find_collisions(blocks, threshold=4) == []
+    assert find_collisions(blocks, threshold=4) == []
 
 
 def test_empty_corner_of_an_irregular_block_is_not_a_collision():
@@ -38,9 +43,9 @@ def test_empty_corner_of_an_irregular_block_is_not_a_collision():
     text = block(1, 0, 0, 800, 120, ink=[{'x': 0, 'y': 0, 'w': 800, 'h': 40},
                                          {'x': 0, 'y': 40, 'w': 300, 'h': 80}])
     image = block(2, 400, 50, 300, 200, position='fixed')
-    assert layout_report.find_collisions([text, image]) == []
+    assert find_collisions([text, image]) == []
     image_over_text = block(3, 250, 60, 300, 100, position='fixed')
-    collisions = layout_report.find_collisions([text, image_over_text])
+    collisions = find_collisions([text, image_over_text])
     assert collisions == [{'a': 1, 'b': 3, 'x0': 250, 'y0': 60, 'x1': 300, 'y1': 120, 'area': 3000}]
 
 
@@ -309,12 +314,13 @@ def test_largest_free_rect():
 
 def test_changes_between_two_measures():
     old = {'blocks': [block(1, 0, 0, 100, 50), {**block(2, 0, 100, 100, 50), 'signature': 'img a.png'}],
-           'analysis': {'collisions': [{}], 'lint': []}}
+           'analysis': {'collisions': [{'a': 1, 'b': 2, 'x0': 0, 'y0': 40, 'x1': 100, 'y1': 50, 'area': 1000}],
+                        'lint': []}}
     new = {'blocks': [block(1, 0, 0, 100, 50), {**block(2, 0, 120, 100, 80), 'signature': 'img a.png'},
                       {**block(3, 0, 300, 10, 10), 'signature': 'p "new"'}],
            'analysis': {'collisions': [], 'lint': []}}
     lines = layout_report.layout_changes(old, new)
-    assert lines[0] == '- problems: 1 -> 0'
+    assert lines[0].startswith('- solved: COLLISION #1 × #2')
     assert lines[1].startswith('- #2 moved by (+0, +20) px, 100×50 -> 100×80 px')
     assert lines[2].startswith('- new block #3')
     assert layout_report.layout_changes(new, new) == []

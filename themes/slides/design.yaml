@@ -182,7 +182,8 @@ macros:
       figure and its caption in a `col::`). A `media::` or `cols::` inside it shares its space.
       `media::(.top)`, `(.middle)`, `(.bottom)`: vertical position in its area. In layout side,
       `media::(.here)` is placed in the right column at its place in the text (facing the
-      text that follows it), instead of filling the column.
+      text that follows it), instead of filling the column; it never goes above the bottom
+      of the previous one (a tall figure pushes the next one down).
     css: |
       .media { display: flex; flex-direction: column; align-items: center; justify-content: center;
                gap: var(--space-s); min-width: 0; min-height: 0; }
@@ -248,7 +249,8 @@ macros:
     css: |
       .demo { display: block; overflow: hidden; border: 0; width: var(--demo-width); height: var(--demo-height); }
 
-# Layouts of a page: {% set layout = 'side' %} at the top of its file, or `layout: side`
+# Layouts of a page: {% set layout = 'side' %} at the top of its file (before it: only blank
+# lines, comments, {% set %} and {% import %}), or `layout: side`
 # in its config.yaml or its deck entry (default: the blocks in the flow, as written).
 # Types measured on 780 slides: side 36 %, stack 21 %, section 11 %, the others (text,
 # text and code, columns) in the flow with the macros.
@@ -261,7 +263,8 @@ layouts:
       column below the title and fitted in it (at its top; `media::(.middle)` or `(.bottom)`
       to place them lower). `side-s` and `side-l` give a narrower or wider column. Text on the
       whole width above the columns: `intro::` (the column starts below it). A figure facing
-      a given part of the text: `media::(.here)` written just before that text. Replaces
+      a given part of the text: `media::(.here)` written just before that text (below the
+      previous one when that one is taller than the text between them). Replaces
       `div::[position:fixed; top:...; left:...]` and aside::.
     css: |
       body.layout-side { --layout-width: var(--layout-side); }

@@ -70,10 +70,14 @@ the key `c`): click a block, write a comment, save. The comments are kept next
 to the configuration in `.feedback/comments.md` (and `comments.jsonl`), with
 the page and the file and line of the block (source map), for an agent or the
 author to treat; open comments are shown on the pages as numbered pins (click:
-read, "Done"). Only the script of the served pages can write them (custom
-header and JSON, refused to other sites).
+read, "Done"; setting `"status": "done"` in `comments.jsonl` by hand works
+too, `comments.md` is written again at the next build). Only the script of the
+pages of this server can read and write them: the requests must name the
+server (`127.0.0.1` or `localhost` and its port: a page of another site
+reaching it by DNS rebinding is refused), and the writes need a custom header
+and JSON.
 
-Builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
+Builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained (with `--only`, the build is made in the site itself, which is kept).
 
 ### Generating some pages (`--only`)
 
@@ -88,7 +92,8 @@ these pages, in the site itself: their template, the files of their
 directory (assets), the menu, the sitemap and the structure of the site; the
 other pages are those of the previous build. Their numbering, their links
 (`pathTo_*`) and the ids of the titles are those of a full build. A page that
-fails keeps its previous version. When there is no previous build, or when
+fails keeps its previous version (put back at the end of the build, as it
+was), and the build reports the failure. When there is no previous build, or when
 the pages of the site changed (deck, new, renamed or removed page), a full
 build is done instead. Edits of the theme or of files outside the page
 directories (shared images, sources included from elsewhere are read from the
@@ -181,7 +186,8 @@ static_website_lhtml/
     configuration.py       # Validated Config and BuildContext plugin adapter
     development.py         # --serve / --watch, server of the comments
     feedback.py, feedback.js  # Comments on the render (--serve)
-    source_map.py          # data-src="file:line" on the blocks (builds for development)
+    source_scan.py         # Reading of the sources as LHTML reads them (code, comments, Jinja, URLs)
+    source_map.py          # data-lhtml-src="file:line" on the blocks (builds for development)
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
@@ -386,8 +392,10 @@ Macros of the slide themes: `gap::` (`gap::s`, `gap::l`, `gap::xl`),
 Brackets still work for exceptions; the classes, style and attributes of
 the source are added to those of the macro.
 
-**Layouts.** A page chooses a layout with `{% set layout = 'side' %}` as its
-first line (or `layout: side` in its `config.yaml` or its deck entry); the
+**Layouts.** A page chooses a layout with `{% set layout = 'side' %}` at its
+top (only blank lines, comments, other `{% set %}` and `{% import %}` may come
+before it: elsewhere it is ignored, and the lint says so), or with
+`layout: side` in its `config.yaml` or its deck entry; the
 theme then places and sizes its blocks, and `media::` holds its figures,
 fitted in the area of the layout: no positions, widths or spacers to write.
 
@@ -435,9 +443,11 @@ src/03_squelette/04_ik/index.html.j2:9: spacer: div::[height:25px;]::
 ```
 
 Each build gives their number (the style debt of the deck), and the layout
-report lists them per page (column `lint` of `summary.md`). Code blocks are
-not linted; a value that nothing in the design covers (an annotation drawn
-over a figure) can stay.
+report lists them per page (column `lint` of `summary.md`). What LHTML does
+not read as text is not linted: code and verbatim blocks, inline code, math,
+comments (the lint, the source map and the credits read the sources with the
+patterns of LHTML itself, `lib/source_scan.py`). A value that nothing in the
+design covers (an annotation drawn over a figure) can stay.
 
 The generator:
 
@@ -498,8 +508,10 @@ credits:
 
 In the page, `credit:: {{ credit('assets/euler.jpg') }} ::` writes the
 caption from it ("J. E. Handmann, 1753, Wikimedia Commons, public domain"; an
-error if the file has no credit), and `credits` lists the credits of all the
-pages, for a credits slide:
+error if the file has no credit; shown as written: `__init__` or `a::b` in a
+credit is not read as LHTML), and `credits` lists the credits of all the
+pages, for a credits slide (`c.text`: shown as written, the fields `c.author`,
+`c.source`... as given):
 
 ```
 = Credits
@@ -512,7 +524,9 @@ small::
 
 Each build writes `structure/credits.md`: the origin of each page (`origin`,
 or its project), the credits, and the images and videos used by the pages
-without credit (to check: your own figures need none).
+without credit (`img::`, `video::`, `videoplay::`, the macros showing an image
+or a video, `src="..."`; to check: your own figures need none). A page whose
+`credits` are invalid fails, with the error; the others are generated.
 
 **To do.** `placeholder:: video of the walk cycle ::` draws a planned figure;
 each build lists the planned figures (with their line) and the planned slides
@@ -545,7 +559,7 @@ def post_process(meta):  # After all conversions
     ...
 ```
 
-Each hook still receives a real mutable `meta` dictionary with configuration and runtime state. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
+Each plugin module is loaded once per build (again when its file changes, with `--watch`), so it can keep a state from a hook to the next. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets only its own options (`macros`, `line-breaks`...), and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
 
 With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 
@@ -647,9 +661,10 @@ parts of the area covered by text and images, and the largest free area.
 
 Renders are reproducible: videos are measured at their first frame, animated
 GIFs at their first image, CSS animations stopped. `changes.md` lists what
-changed since the previous report for the pages measured again: counts of
-problems, warnings and values written by hand, blocks moved or resized
-(matched by their signature), added or removed.
+changed since the previous report for the pages measured again: the problems
+that appeared or were solved, the counts of warnings and of values written
+by hand, the blocks moved or resized (matched by their signature), added or
+removed.
 
 Differences with the deck: the usual values of the deck are measured over
 all its pages (`summary.md`, `deck.json`): page title variants (heading tag
@@ -683,11 +698,15 @@ source where it starts (column `line`, from the source map below), and its
 signature (tag, inline style, beginning of the text, image names).
 
 **Source map.** In the builds for development (`--layout`, `--serve`,
-`--watch`), the top-level elements of the pages carry
-`data-src="<file>:<line>"`: the line of the template where they start. The
-generator marks the lines of the templates with invisible characters before
-Jinja and LHTML, then moves them to the attribute (`lib/source_map.py`); the
-HTML is otherwise the same as in a normal build.
+`--watch`), the blocks of the pages carry `data-lhtml-src="<file>:<line>"`:
+the line of the template where they start. The blocks are the children of
+`<body>`, or of the wrapper of the theme that holds all the content (the
+`webpage-frame` theme: `#main-content-centered`). The generator marks the
+lines of the templates with invisible characters before Jinja and LHTML, then
+moves them to the attribute (`lib/source_map.py`); the lines inside a zone
+that LHTML keeps as it is (code block, multi-line Jinja or HTML tag, math)
+are not marked. Without the attributes, the HTML is the same as in a normal
+build.
 
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources

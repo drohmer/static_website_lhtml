@@ -1,5 +1,6 @@
 """Comments on the render (lib/feedback.py, the server of lib/development.py)."""
 from http.server import ThreadingHTTPServer
+import http.client
 import json
 import threading
 import unittest
@@ -60,6 +61,43 @@ class FeedbackServerTests(unittest.TestCase):
         self.assertEqual(self.post('/__feedback/comment', comment, {'Origin': 'http://evil.example'})[0], 403)
         self.assertEqual(self.post('/__feedback/comment', {'page': '/', 'comment': ' '})[0], 400)
         self.assertFalse((self.root / '.feedback/comments.jsonl').exists())
+
+    def raw(self, method, path, body=b'', headers=None):
+        """A request with any headers (urllib sets Host and Content-Length itself)."""
+        connection = http.client.HTTPConnection('127.0.0.1', int(self.url.rsplit(':', 1)[1]), timeout=5)
+        self.addCleanup(connection.close)
+        connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+        for key, value in {'Host': self.url[len('http://'):], 'Content-Type': 'application/json',
+                           'X-Feedback': '1', 'Content-Length': str(len(body)), **(headers or {})}.items():
+            connection.putheader(key, value)
+        connection.endheaders(body)
+        return connection.getresponse().status
+
+    def test_other_host_names_are_refused(self):
+        """DNS rebinding: a page of another site whose name leads to the server."""
+        evil = {'Host': 'evil.example:8765', 'Origin': 'http://evil.example:8765'}
+        body = json.dumps({'page': '/', 'comment': 'x'}).encode()
+        self.assertEqual(self.raw('POST', '/__feedback/comment', body, evil), 403)
+        self.assertEqual(self.raw('GET', '/__feedback/comments', headers={'Host': 'evil.example:8765'}), 403)
+        self.assertEqual(self.raw('POST', '/__feedback/comment', body, {'Host': 'localhost:' + self.url.rsplit(':', 1)[1]}), 200)
+
+    def test_malformed_requests(self):
+        for body in (b'[1, 2]', b'{"comment": "x", "rect": [1, 2]}', b'{"comment": "x", "rect": {"x": 1e999}}',
+                     b'{"id": 1e999}', b'not json'):
+            path = '/__feedback/resolve' if b'"id"' in body else '/__feedback/comment'
+            self.assertIn(self.raw('POST', path, body), (200, 400, 404), body)
+        self.assertEqual(self.raw('POST', '/__feedback/comment', b'{}', {'Content-Length': 'abc'}), 400)
+        self.assertEqual(self.raw('POST', '/__feedback/comment', b'', {'Content-Length': '-1'}), 400)
+        rects = [c['rect'] for c in feedback.load(self.root / feedback.DIRECTORY)]
+        self.assertEqual(rects, [{'x': 0, 'y': 0, 'w': 0, 'h': 0}] * 2)
+
+    def test_comments_md_written_again(self):
+        self.post('/__feedback/comment', {'page': '/', 'comment': 'x'})
+        directory = self.root / feedback.DIRECTORY
+        jsonl = directory / 'comments.jsonl'
+        jsonl.write_text(jsonl.read_text().replace('"open"', '"done"'))
+        feedback.refresh(directory)
+        self.assertIn('## Done (1)', (directory / 'comments.md').read_text())
 
     def test_script_and_site(self):
         self.assertIn(b'__feedback', self.get('/__feedback/feedback.js'))

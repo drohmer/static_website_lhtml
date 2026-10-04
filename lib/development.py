@@ -27,7 +27,13 @@ def watch_paths(config, filename, deck_arg=None):
 
 class PreviewHandler(SimpleHTTPRequestHandler):
     """Serves the site, and the comments on the render (lib/feedback.py) under
-    /__feedback/: the script, the comments of a page, new comments, done."""
+    /__feedback/: the script, the comments of a page, new comments, done.
+
+    The comments are only for the pages of this server: every /__feedback/
+    request must name it in its Host header (127.0.0.1 or localhost and its
+    port: a page of another site whose name leads here, by DNS rebinding,
+    does not), and the writes need a custom header and JSON (another site
+    cannot send them without a CORS preflight, which is refused)."""
     feedback_directory = None
     MAX_BODY = 100_000
 
@@ -43,8 +49,17 @@ class PreviewHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _local_host(self):
+        """Whether the request names this server (Host and, if any, Origin)."""
+        port = self.server.server_address[1]
+        allowed = {f'127.0.0.1:{port}', f'localhost:{port}'}
+        origin = self.headers.get('Origin')
+        return self.headers.get('Host') in allowed and (not origin or urlsplit(origin).netloc in allowed)
+
     def do_GET(self):
         url = urlsplit(self.path)
+        if url.path.startswith(feedback.URL) and not self._local_host():
+            return self._send(403, '{"error": "forbidden"}')
         if url.path == feedback.URL + 'feedback.js':
             return self._send(200, feedback.SCRIPT.read_bytes(), 'text/javascript; charset=utf-8')
         if url.path == feedback.URL + 'comments':
@@ -55,24 +70,25 @@ class PreviewHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         url = urlsplit(self.path)
-        # only the script of the served pages: a custom header and JSON (another
-        # site cannot send them without a CORS preflight, which is refused)
-        origin = self.headers.get('Origin')
-        if (self.headers.get('X-Feedback') != '1'
-                or not self.headers.get('Content-Type', '').startswith('application/json')
-                or (origin and urlsplit(origin).netloc != self.headers.get('Host'))):
+        if (not self._local_host() or self.headers.get('X-Feedback') != '1'
+                or not self.headers.get('Content-Type', '').startswith('application/json')):
             return self._send(403, '{"error": "forbidden"}')
-        length = int(self.headers.get('Content-Length') or 0)
-        if length > self.MAX_BODY:
-            return self._send(413, '{"error": "too large"}')
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+        except ValueError:
+            length = -1
+        if not 0 <= length <= self.MAX_BODY:
+            return self._send(413 if length > 0 else 400, '{"error": "invalid length"}')
         try:
             data = json.loads(self.rfile.read(length) or b'{}')
+            if not isinstance(data, dict):
+                raise feedback.FeedbackError('a JSON object is expected')
             if url.path == feedback.URL + 'comment':
                 return self._send(200, json.dumps(feedback.add(self.feedback_directory, data), ensure_ascii=False))
             if url.path == feedback.URL + 'resolve':
                 return self._send(200, json.dumps(feedback.resolve(self.feedback_directory, int(data.get('id'))),
                                                   ensure_ascii=False))
-        except (ValueError, TypeError) as exc:
+        except (ValueError, TypeError, OverflowError) as exc:
             return self._send(400, json.dumps({'error': str(exc)}))
         return self._send(404, '{"error": "not found"}')
 
@@ -104,12 +120,15 @@ def develop(args, build):
         raise SystemExit(str(exc))
     state = {'directory': config.site_directory}
     paths = watch_paths(config, filename, args.deck)
+    PreviewHandler.feedback_directory = filename.parent / feedback.DIRECTORY
 
     def rebuild():
         nonlocal paths
         try:
             fresh, resolved, _ = load_config(filename, args.debug)
             paths = watch_paths(fresh, resolved, args.deck)
+            if args.serve:
+                feedback.refresh(PreviewHandler.feedback_directory)    # comments.jsonl edited by hand
             build(args)
             state['directory'] = fresh.site_directory
             print('Build complete.', flush=True)
@@ -121,7 +140,6 @@ def develop(args, build):
     server = None
     thread = None
     if args.serve:
-        PreviewHandler.feedback_directory = filename.parent / feedback.DIRECTORY
 
         def handler(*handler_args, **kwargs):
             return PreviewHandler(*handler_args, directory=state['directory'], **kwargs)

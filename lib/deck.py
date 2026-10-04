@@ -251,7 +251,7 @@ class _Index:
 
     def __init__(self, pages):
         self.pages = pages
-        self.order = {id(p): k for k, p in enumerate(pages)}
+        self.order = {p: k for k, p in enumerate(pages)}
         self.by_id = defaultdict(list)
         self.by_file = defaultdict(list)
         self.by_source = defaultdict(list)
@@ -261,7 +261,7 @@ class _Index:
             self.by_id[(source, page.id)].append(page)
             for key in {page.file, template_name(page.file), page.file[:-len('.html')]}:
                 self.by_file[(source, key)].append(page)
-        self.sorted_ids = {source: sorted((p.id, self.order[id(p)]) for p in ps)
+        self.sorted_ids = {source: sorted((p.id, self.order[p]) for p in ps)
                            for source, ps in self.by_source.items()}
 
     def _under(self, source, pointer):
@@ -292,8 +292,8 @@ class _Index:
             return list(pages)
         if entry.is_glob:
             return [q for q in pages if fnmatch.fnmatchcase(q.id, p) or fnmatch.fnmatchcase(q.file, p)]
-        hits = set(self._under(entry.source, p)) | {self.order[id(q)] for q in self.by_id.get((entry.source, p), [])} \
-            | {self.order[id(q)] for q in self.by_file.get((entry.source, p), [])}
+        hits = set(self._under(entry.source, p)) | {self.order[q] for q in self.by_id.get((entry.source, p), [])} \
+            | {self.order[q] for q in self.by_file.get((entry.source, p), [])}
         return [self.pages[k] for k in sorted(hits)]
 
 
@@ -308,26 +308,25 @@ def apply_deck(deck, pages):
         hits = index.matching(e)
         if not hits:
             warnings.append(f"{e.line}: '!{e.label}' excludes no page")
-        excluded.update(id(p) for p in hits)
+        excluded.update(hits)
 
     includes = [e for e in deck.entries if not e.exclude]
-    explicit = {}
+    explicit = []               # the page named by each entry, or None
     for e in includes:
         named = index.named(e)
-        explicit[id(e)] = named[0] if len(named) == 1 else None
-    named_pages = {id(p) for p in explicit.values() if p is not None}
+        explicit.append(named[0] if len(named) == 1 else None)
+    named_pages = {p for p in explicit if p is not None}
 
     ordered, placed, missing, occurrences = [], set(), [], {}
-    for e in includes:
+    for e, page in zip(includes, explicit):
         meta = {k: v for k, v in e.meta.items() if k != 'params'}
         params = e.meta.get('params', {})
-        page = explicit[id(e)]
         if page is not None:
-            if id(page) in excluded:
+            if page in excluded:
                 warnings.append(f"{e.line}: '{e.label}' is listed but also excluded (not generated)")
                 continue
-            placed.add(id(page))
-            n = occurrences[id(page)] = occurrences.get(id(page), 0) + 1
+            placed.add(page)
+            n = occurrences[page] = occurrences.get(page, 0) + 1
             if n == 1:
                 page.meta, page.params, page.deck_line = meta, params, e.line
             else:
@@ -345,18 +344,18 @@ def apply_deck(deck, pages):
                             + (f" (did you mean '{hint[0]}'?)" if hint else '')
                             + (f" (no source named '{alias.group(1)}')" if alias and not e.source else ''))
         # Pages named explicitly in the deck are placed there, not here.
-        if all(id(p) in placed or id(p) in excluded or id(p) in named_pages for p in hits):
+        if all(p in placed or p in excluded or p in named_pages for p in hits):
             first = hits[0]
             name = (f'{first.source.name}:' if first.source.name else '') + first.file
             warnings.append(f"{e.line}: '{e.label}' places no page (its pages are placed elsewhere); "
                             f"to repeat a page, name its file ('{name}')")
         for page in hits:
-            if id(page) in placed or id(page) in excluded or id(page) in named_pages:
+            if page in placed or page in excluded or page in named_pages:
                 continue
-            placed.add(id(page))
+            placed.add(page)
             page.meta, page.params, page.deck_line = dict(meta), params, e.line
             ordered.append(page)
-    unlisted = [p for p in pages if id(p) not in placed and not p.source.name]
+    unlisted = [p for p in pages if p not in placed and not p.source.name]
     return DeckResult(ordered, unlisted, missing, warnings)
 
 
@@ -372,8 +371,8 @@ def named_pages(pages, pointers, sources=None):
             hint = difflib.get_close_matches(entry.label, sorted({p.label for p in pages}), n=1)
             raise DeckError(f"--only: no page of the site matches '{entry.label}'"
                             + (f" (did you mean '{hint[0]}'?)" if hint else ''))
-        found.update(id(p) for p in hits)
-    return [p for p in pages if id(p) in found]
+        found.update(hits)
+    return [p for p in pages if p in found]
 
 
 def scaffold(entries, source_directory):

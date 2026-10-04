@@ -1,60 +1,19 @@
-"""Regressions of the third review: copies of linked directories, sitemap ids,
-Jinja includes, light mode, scaffold, watch, hidden files."""
+"""Builds of a deck with pages of other projects, and of a project without
+deck: copies of assets, includes, sitemap ids, scaffold, structure."""
 from pathlib import Path
 import os
+import shutil
 import tempfile
 import unittest
 
 import yaml
 
-from lib import deck, design, filesystem
-from lib.configuration import ConfigError, load_config
 from tests.test_deck import REPO, DeckProjectsTests
 
 HEAD = "{% extends 'theme/template/base.html' %}\n{% block content %}\n"
 
 
-class CopyTreeTests(unittest.TestCase):
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory(prefix='lhtml copy ')
-        self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name).resolve()
-
-    def write(self, name, text='x'):
-        path = self.root / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
-        return path
-
-    def test_relative_link_in_a_linked_directory_still_resolves(self):
-        self.write('ext/img/logo.png', 'logo')
-        (self.root / 'ext/common').mkdir(parents=True)
-        os.symlink('../img/logo.png', self.root / 'ext/common/logo.png')
-        self.write('src/a.txt')
-        os.symlink('../ext/common', self.root / 'src/shared')
-        os.symlink('a.txt', self.root / 'src/b.txt')
-        filesystem.copy_directories(self.root / 'src', self.root / 'site')
-        self.assertFalse((self.root / 'site/shared').is_symlink())
-        self.assertEqual((self.root / 'site/shared/logo.png').read_text(), 'logo')
-        self.assertEqual(os.readlink(self.root / 'site/b.txt'), 'a.txt')    # stays relative
-
-    def test_link_to_the_site_and_to_an_ancestor(self):
-        self.write('src/a.txt')
-        self.write('_site/html/index.html')
-        os.symlink('../_site', self.root / 'src/out')
-        (self.root / 'src/b').mkdir()
-        os.symlink('..', self.root / 'src/b/parent')
-        os.symlink(str(self.root / 'src'), self.root / 'src/absolute')
-        staging = self.root / '_site/.site-build-1'
-        warnings = filesystem.copy_directories(self.root / 'src', staging,
-                                               exclude=[self.root / '_site/html'])
-        self.assertEqual(sorted(os.listdir(staging / 'out')), [])       # neither the site nor the copy
-        self.assertEqual(os.readlink(staging / 'b/parent'), '..')
-        self.assertFalse((staging / 'absolute').exists())
-        self.assertEqual(len(warnings), 1)
-
-
-class Round3BuildTests(DeckProjectsTests):
+class ProjectBuildTests(DeckProjectsTests):
 
     def test_linked_assets_of_another_project_are_copied(self):
         self.write('shared/s.sass', 'a\n  color: red\n')
@@ -115,7 +74,43 @@ class Round3BuildTests(DeckProjectsTests):
         self.assertNotIn(str(self.root), (self.site / 'theme/js/menu.js').read_text())   # no local path
 
 
-class Round3WithoutDeckTests(unittest.TestCase):
+class SiteDiscoveryTests(DeckProjectsTests):
+
+    def test_file_links_of_the_theme_are_not_written_through(self):
+        shared = self.root / 'shared/menu.js'
+        theme = self.root / 'theme'
+        shutil.copytree(REPO / 'themes/slides', theme)
+        shared.parent.mkdir()
+        shutil.move(theme / 'js/menu.js', shared)
+        os.symlink('../../shared/menu.js', theme / 'js/menu.js')
+        before = shared.read_text()
+        config = yaml.safe_load(self.config.read_text())
+        config['theme'] = str(theme)
+        self.config.write_text(yaml.safe_dump(config))
+        self.build(self.DECK)
+        self.assertEqual(shared.read_text(), before)
+        self.assertFalse((self.site / 'theme/js/menu.js').is_symlink())
+        self.assertIn('Plan (2)', (self.site / 'theme/js/menu.js').read_text())
+
+    def test_a_link_to_the_site_is_not_discovered(self):
+        os.symlink('../site', self.root / 'talk/src/out')
+        config = yaml.safe_load(self.config.read_text())
+        config['debug'] = True
+        del config['deck']                                  # all the pages of the sources
+        self.config.write_text(yaml.safe_dump(config))
+        for _ in range(2):
+            structure = self.build({})
+        self.assertEqual([e['dir'] for e in structure], ['00_plan/', '01_a/'])
+
+    def test_scaffolded_title_with_jinja_and_title_ids(self):
+        config = yaml.safe_load(self.config.read_text())
+        config['plugin'] = ['plugins/title_submenu.py']
+        self.config.write_text(yaml.safe_dump(config))
+        self.build({'slides': [{'path': '07_new', 'title': 'New {{ slide }}'}]}, '--scaffold')
+        self.assertIn('New {{ slide }}', (self.site / '07_new/index.html').read_text())
+
+
+class WithoutDeckTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='lhtml nodeck ')
         self.addCleanup(temp.cleanup)
@@ -148,31 +143,6 @@ class Round3WithoutDeckTests(unittest.TestCase):
         self.build()
         self.assertTrue((self.root / 'site/a/.drafts/index.html').is_file())
         self.assertFalse((self.root / 'site/.top.html').exists())
-
-
-class Round3ConfigTests(unittest.TestCase):
-    def test_params_keyword_is_reserved(self):
-        with tempfile.TemporaryDirectory() as temp:
-            config = Path(temp) / 'c.yaml'
-            (Path(temp) / 'src').mkdir()
-            config.write_text(yaml.safe_dump({'source_directory': 'src', 'keywords': {'params': 1}}))
-            with self.assertRaises(ConfigError):
-                load_config(config)
-
-    def test_watched_paths_of_a_file_pointer(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp).resolve()
-            (root / 'ext/e1').mkdir(parents=True)
-            (root / 'ext/e1/index.html.j2').write_text('= E\n')
-            paths = deck.watched_paths({'sources': {'x': 'ext'}, 'slides': ['x:e1/index.html', 'x:e1/index']},
-                                       root)
-            self.assertEqual(paths, [root / 'ext/e1', root / 'ext/e1'])
-
-    def test_design_files_follow_extends(self):
-        files = design.design_files(REPO / 'themes/slides-pdf')
-        self.assertEqual([f.resolve() for f in files],
-                         [(REPO / 'themes/slides-pdf/design.yaml').resolve(),
-                          (REPO / 'themes/slides/design.yaml').resolve()])
 
 
 if __name__ == '__main__':

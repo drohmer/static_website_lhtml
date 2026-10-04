@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import yaml
 
+from lib import deck, design
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
 from lib.logger import Logger
 
@@ -143,6 +144,46 @@ class ConfigurationTests(unittest.TestCase):
         validate_paths(config, path)
         self.assertEqual(Path(config.source_directory), self.root / 'example')
         self.assertEqual(len(warnings), 2)
+
+
+class ReservedKeysAndWatchTests(unittest.TestCase):
+    def test_params_keyword_is_reserved(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / 'c.yaml'
+            (Path(temp) / 'src').mkdir()
+            config.write_text(yaml.safe_dump({'source_directory': 'src', 'keywords': {'params': 1}}))
+            with self.assertRaises(ConfigError):
+                load_config(config)
+
+    def test_watched_paths_of_a_file_pointer(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            (root / 'ext/e1').mkdir(parents=True)
+            (root / 'ext/e1/index.html.j2').write_text('= E\n')
+            paths = deck.watched_paths({'sources': {'x': 'ext'}, 'slides': ['x:e1/index.html', 'x:e1/index']},
+                                       root)
+            self.assertEqual(paths, [root / 'ext/e1', root / 'ext/e1'])
+
+    def test_design_files_follow_extends(self):
+        files = design.design_files(REPO / 'themes/slides-pdf')
+        self.assertEqual([f.resolve() for f in files],
+                         [(REPO / 'themes/slides-pdf/design.yaml').resolve(),
+                          (REPO / 'themes/slides/design.yaml').resolve()])
+
+
+class ReservedConfigTests(unittest.TestCase):
+
+    def test_page_configuration_cannot_set_structure_keys(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'src/a').mkdir(parents=True)
+            (root / 'src/a/index.html.j2').write_text('= A\n')
+            (root / 'src/a/config.yaml').write_text('template: wide\n')
+            (root / 'c.yaml').write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site'}))
+            result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(root / 'c.yaml')],
+                                    capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('reserved key(s) template', ' '.join((result.stdout + result.stderr).split()))
 
 
 if __name__ == '__main__':

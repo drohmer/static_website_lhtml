@@ -12,6 +12,21 @@ GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
 RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}
 
 
+# Keys of meta set by the generator during a build (never by the configuration)
+RUNTIME_KEYS = frozenset((
+    'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory', 'extras',
+    'current_directory',
+    'published_site_directory',     # the site, while the build is made in a staging directory
+    'only',                         # --only: the build is made in the site, for some pages
+    'structure', 'built',           # all the pages of the site / those generated (lib/structure.py)
+    'previous_pages',               # --only: HTML of the pages before the build (restored if they fail)
+    'loaded_design', 'macros',      # the design (lib/design.py) and its macros for LHTML
+    'lint_findings',                # {source path: [finding]} of the generated pages (lib/lint.py)
+    'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
+    'planned_slides',               # entries of the deck without a source yet
+))
+
+
 class ConfigError(ValueError):
     """An actionable configuration error, displayed without a traceback."""
 
@@ -109,12 +124,9 @@ def load_config(filename, debug_override=None):
 
     defaults = Config().to_meta()
     known = set(defaults) | {'cache_video_directory', 'design', 'deck'}
-    reserved = {'args', 'log', 'plugin_paths', 'config_file', 'config_directory',
-                'lib_directory', 'current_directory', 'published_site_directory', 'extras',
-                'only', 'structure', 'built', 'previous_pages', 'macros', 'source_map', 'feedback', 'planned_slides'}
     extras = {}
     for key in set(data) - known:
-        if key in reserved:
+        if key in RUNTIME_KEYS:
             raise ConfigError(f"'{key}' is runtime state and cannot be set in YAML")
         suggestion = difflib.get_close_matches(key, sorted(known), n=1)
         hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ''

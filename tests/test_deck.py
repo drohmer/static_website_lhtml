@@ -217,6 +217,8 @@ class DeckProjectsTests(unittest.TestCase):
         (self.root / 'talk/deck.yaml').write_text(yaml.safe_dump(deck_data))
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config), *args],
                                 capture_output=True, text=True)
+        if ok is None:                  # any result: the output
+            return result.stdout + result.stderr
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         if ok:
             return yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
@@ -356,7 +358,7 @@ class DeckBuildRegressionTests(DeckProjectsTests):
         self.assertIn('no page selected', ' '.join((result.stdout + result.stderr).split()))
 
 
-class DeckRound2Tests(unittest.TestCase):
+class DeckEdgeCaseTests(unittest.TestCase):
     """Second review: one test per bug."""
 
     def test_directory_with_own_page_and_subpages(self):
@@ -393,7 +395,7 @@ class DeckRound2Tests(unittest.TestCase):
                 deck.check_sources(loaded, Path(root) / 'src', Path(root) / 'site')
 
 
-class DeckBuildRound2Tests(DeckProjectsTests):
+class DeckBuildEdgeCaseTests(DeckProjectsTests):
     def run_generator(self, *args):
         return subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config), *args],
                               capture_output=True, text=True)
@@ -437,3 +439,23 @@ class DeckBuildRound2Tests(DeckProjectsTests):
         result = self.run_generator('--check-config')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('directory not found', ' '.join((result.stdout + result.stderr).split()))
+
+
+class DeckWarningTests(unittest.TestCase):
+
+    def test_repeated_page_of_a_directory_with_several_pages_warns(self):
+        pages = SLIDES[:2] + [type(SLIDES[0])(SLIDES[0].source, 'a/01_x/', 'extra.html.j2')]
+        result = deck.apply_deck(deck.load_deck({'slides': ['a/01_x', 'a/00_section', 'a/01_x']}), pages)
+        self.assertEqual(len(result.pages), 3)
+        self.assertIn("name its file ('a/01_x/index.html')", result.warnings[0])
+
+    def test_invalid_titles_and_numbers(self):
+        for slides, message in (([{'path': 'a', 'title': None}], 'title'),
+                                ([{'path': 'a', 'title': ' '}], 'title'),
+                                ([0], "quote the path")):
+            with self.assertRaisesRegex(deck.DeckError, message):
+                deck.load_deck({'slides': slides})
+
+
+if __name__ == '__main__':
+    unittest.main()

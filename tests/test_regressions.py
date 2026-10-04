@@ -209,6 +209,8 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                 'structure': [{'dir': '', 'filename': 'index.html'}]}
         with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
+            generate_pdf.post_process({**meta, 'only': True})       # --only: built in the site itself
+            self.assertTrue(self.site.exists())
             generate_pdf.post_process(meta)
         self.assertFalse(self.site.exists())
         self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')
