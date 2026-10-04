@@ -15,6 +15,10 @@ def watch_paths(config, filename):
         paths.append(candidate if candidate.is_file() else GENERATOR_DIRECTORY / plugin)
     for include in config.plugin_arg.get('pre_include', []):
         paths.append(filename.parent / include)
+    for key in ('deck', 'design'):
+        value = getattr(config, key, None)
+        if isinstance(value, str):
+            paths.append(Path(value))
     return paths
 
 

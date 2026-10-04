@@ -31,6 +31,7 @@ class Config:
     plugin_arg: dict = field(default_factory=dict)
     cache_video_directory: str | None = None
     design: dict | str | None = None
+    deck: list | dict | str | None = None
     # Legacy extensions stay available to custom plugins, with a warning.
     extras: dict = field(default_factory=dict)
 
@@ -39,8 +40,9 @@ class Config:
         values.update(values.pop('extras'))
         if values['cache_video_directory'] is None:
             del values['cache_video_directory']
-        if values['design'] is None:
-            del values['design']
+        for key in ('design', 'deck'):
+            if values[key] is None:
+                del values[key]
         return values
 
 
@@ -88,7 +90,7 @@ def load_config(filename, debug_override=None):
         data['plugin'] = data.pop('plugin_post')
 
     defaults = Config().to_meta()
-    known = set(defaults) | {'cache_video_directory', 'design'}
+    known = set(defaults) | {'cache_video_directory', 'design', 'deck'}
     reserved = {'args', 'log', 'plugin_paths', 'config_file', 'config_directory',
                 'lib_directory', 'current_directory', 'published_site_directory', 'extras'}
     extras = {}
@@ -129,6 +131,18 @@ def load_config(filename, debug_override=None):
             values['design'] = str(design_file.resolve())
         elif not isinstance(design, dict) or any(not isinstance(k, str) for k in design):
             raise ConfigError("'design' must be a mapping (tokens, macros) or the path of a YAML file")
+
+    deck = values.get('deck')
+    if deck is not None:
+        if isinstance(deck, str) and deck.strip():
+            deck_file = Path(deck).expanduser()
+            if not deck_file.is_absolute():
+                deck_file = path.parent / deck_file
+            if not deck_file.is_file():
+                raise ConfigError(f"'deck' file not found: '{deck_file}'")
+            values['deck'] = str(deck_file.resolve())
+        elif not isinstance(deck, (list, dict)):
+            raise ConfigError("'deck' must be the path of a YAML file, or a list of slides")
 
     for key in ('source_directory', 'site_directory', 'theme', 'cache_video_directory'):
         if key not in values:

@@ -37,7 +37,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config] [--layout] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -49,6 +49,8 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config]
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
   --layout             Write a layout report of each page in .layout/ (see below)
+  --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
+  --scaffold           Create the source of the deck slides that do not exist yet
 ```
 
 ## Local preview
@@ -57,7 +59,7 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [-l] [--check-config]
 python generate.py --serve --watch
 ```
 
-The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. Use full builds with `--watch` (it cannot be combined with `--light`). Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
+The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files, configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. Use full builds with `--watch` (it cannot be combined with `--light`). Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
 
 Complete and light builds run in a hidden temporary sibling directory. Only a successful build replaces the output; failures preserve the previous site. Light mode copies the existing output into staging to retain its assets. With `--debug`, failed staging directories are kept and their location is reported. Publication uses a backup/rename with rollback on failure; there is a brief directory swap, not an atomic filesystem exchange. Plugin side effects outside the site directory (reports, PDF, caches or custom actions) are not covered by the site transaction. PDF-only exports can remove their staged HTML on success; an existing published site is retained.
 
@@ -100,6 +102,7 @@ Optional keys:
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
 | `title_id` | Generate heading IDs (default: true) |
+| `deck` | Order of the pages: path of a deck file, or list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens and macros overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-and-macros)) |
 
 ## Pipeline
@@ -123,6 +126,7 @@ static_website_lhtml/
   requirements.txt
   lib/
     configuration.py       # Validated Config and BuildContext plugin adapter
+    deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens and macros (design.yaml -> design.css)
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
@@ -154,6 +158,54 @@ Three built-in themes are available:
 - **`slides-pdf/`** — Presentation slides optimized for PDF export
 
 Themes use Jinja2 template inheritance. The base template (`template/base.html`) provides blocks that content pages can override.
+
+## Deck: order of the slides
+
+Without a deck, the pages are generated in the order of the files (sorted
+paths, hence numbered directories such as `02_rotations/04_representations`).
+A deck lists the slides with pointers to their sources, so that the order
+does not depend on the names of the directories:
+
+```yaml
+# deck.yaml (configure.yaml: deck: 'deck.yaml')
+title: Talk, short version
+slides:
+  - 00_ouverture                      # directory: all its pages, in file order
+  - 02_rotations/00_section           # one page (its directory)
+  - 02_rotations/0[5-8]*              # glob on the page paths
+  - 02_rotations                      # the rest of the section
+  - path: 02_rotations/13_interpolation   # moved after the rest of the section
+    title: Interpolation (summary)    # title in the menu
+    duration: 1.5                     # minutes: the build log sums them
+  - path: 03_squelette/10_bilan       # planned slide, no source yet
+    title: Kinematics, summary
+    message: IK = optimisation, FK = composition
+  - '!06_recherche/*_todo_*'          # excluded, wherever it is listed
+  - '!*/00b_histoire'
+```
+
+- A pointer is a path relative to the source directory: the directory of a
+  page, a parent directory (all its pages, in file order), a page file
+  (`course/intro.html`, when a directory holds several pages), or a glob.
+- A pointer that names exactly one page takes precedence over directories and
+  globs: the page is placed there, and skipped by the directories and globs.
+  The same page named twice keeps its first place (with a warning).
+- `!pattern` excludes the matching pages from the whole deck.
+- A slide may be a mapping with `path` and metadata. `title` replaces the
+  title in the menu; `duration` (minutes) is summed in the build log; every
+  other key (`message`, `notes`, ...) is exported in `structure.yaml`, like
+  the page `config.yaml`. The metadata of a directory or a glob applies to
+  each of its pages.
+- Pages that are not in the deck are not generated (they are listed in the
+  build log); the files of their directory (assets) are still copied.
+- A pointer that matches no page is an error (with a suggestion), unless the
+  slide has a `title`: it is a planned slide, reported in the log.
+  `--scaffold` creates its source, `<path>/index.html.j2`, with the title and
+  the other metadata as LHTML comments (existing files are never modified).
+
+The menu, the previous/next navigation, the redirection to the first page,
+the PDF export and the layout report follow the deck. Several decks can share
+the same sources (`python generate.py --deck deck_short.yaml`).
 
 ## Design: tokens and macros
 

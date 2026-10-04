@@ -15,6 +15,7 @@ import importlib.util
 import platform
 import traceback
 
+from lib import deck
 from lib import design
 from lib import filesystem
 from lib import generator_tool
@@ -45,6 +46,10 @@ def parse_arguments():
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
                              'of each page in .layout/ (plugin layout_report.py, requires npm install).')
+    parser.add_argument('--deck', metavar='FILE',
+                        help='Deck file (order of the slides) replacing the deck of the configuration.')
+    parser.add_argument('--scaffold', action='store_true',
+                        help='Create the source of the deck slides that do not exist yet (slides with a title).')
     parser.add_argument('--serve', action='store_true', help='Serve the generated site on localhost.')
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
@@ -137,14 +142,58 @@ def run_plugins(meta, hook_name, log):
 # Pipeline stages
 # ---------------------------------------------------------------------------
 
+def load_deck_entries(meta):
+    """Entries of the deck (--deck, else the 'deck' of the configuration), or None."""
+    source = meta['args'].deck if getattr(meta['args'], 'deck', None) else meta.get('deck')
+    if source is None:
+        return None
+    try:
+        return deck.load_deck(source)
+    except deck.DeckError as exc:
+        raise RuntimeError(f'Deck: {exc}') from exc
+
+
+def select_pages(meta, entries, pages, log):
+    """Order the pages by the deck (all pages in file order without deck)."""
+    if entries is None:
+        return pages
+    try:
+        result = deck.apply_deck(entries, pages)
+    except deck.DeckError as exc:
+        raise RuntimeError(f'Deck: {exc}') from exc
+    for warning in result.warnings:
+        log.warning(f'Deck: {warning}')
+    for entry in result.missing:
+        log.warning(f"Deck: '{entry.pointer}' ({entry.meta['title']}) has no source yet "
+                    f"(--scaffold creates it)")
+    minutes, timed = deck.total_duration(result.pages)
+    summary = f'{len(result.pages)} pages'
+    if timed:
+        summary += f', {minutes:g} min' + (f' ({timed} pages timed)' if timed < len(result.pages) else '')
+    log.keyvalue('info', f'Deck: {summary}', indent_level=1)
+    if result.unlisted:
+        names = ', '.join(deck.page_id(p) or deck.page_file(p) for p in result.unlisted[:5])
+        more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
+        log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
+                             f'{names}{more}', indent_level=1)
+    meta['deck_unlisted'] = result.unlisted
+    return result.pages
+
+
 def prepare_data(meta, log):
-    """Copy sources and theme, find templates, extract metadata."""
+    """Copy sources and theme, find templates (in deck order), extract metadata."""
     dir_source = meta['source_directory']
     dir_site = meta['site_directory']
+    entries = load_deck_entries(meta)
+    if entries is not None and getattr(meta['args'], 'scaffold', False):
+        for path in deck.scaffold([e for e in entries if not e.exclude and 'title' in e.meta
+                                   and not e.is_glob], dir_source):
+            log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
 
     if meta['args'].light:
         log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
         source_files = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
+        source_files = select_pages(meta, entries, source_files, log)
         structure_path = os.path.join(dir_site, 'structure/structure.yaml')
         current_pages = {e['path'].filepath_local().replace('.html.j2', '.html')
                          for e in source_files}
@@ -171,11 +220,19 @@ def prepare_data(meta, log):
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
 
-    template_files = (source_files if meta['args'].light else
-                      filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2')))
+    if meta['args'].light:
+        template_files = source_files
+    else:
+        template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
+        template_files = select_pages(meta, entries, template_files, log)
+        for element in meta.get('deck_unlisted', []):
+            os.remove(element['path'].filepath())
     log.debug(f"Found {len(template_files)} template files in '{dir_site}'")
     if not meta['args'].light:
         generator_tool.extract_additional_config(template_files)
+    for element in template_files:
+        if element.get('deck'):
+            element['extra-config'] = {**element.get('extra-config', {}), **element['deck']}
     sitemap = generator_tool.extract_titles(template_files)
 
     sitemap_dir = os.path.join(dir_site, 'sitemap')
@@ -388,6 +445,7 @@ def build_once(args):
             'source_directory': config.source_directory,
             'site_directory': config.site_directory,
             'theme': config.theme,
+            'deck': args.deck or config.deck,
             'plugin_paths': context.plugin_paths,
             'debug': config.debug,
             'level_print': config.level_print,
