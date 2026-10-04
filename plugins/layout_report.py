@@ -263,8 +263,8 @@ def find_fit(blocks, empty=0.25, cropped=0.05):
     for b in blocks:
         for m in b.get('media', []):
             d, box = m.get('drawn'), m.get('box')
-            if not d or not box or not box['w'] or not box['h']:
-                continue
+            if not d or not box or not box['w'] or not box['h'] or m.get('vector'):
+                continue        # an SVG fills its area on purpose (media::)
             ratio = d['w'] * d['h'] / (box['w'] * box['h'])
             if d['fit'] == 'cover' and ratio > 1 / (1 - cropped):
                 cut = 'left and right' if d['w'] > box['w'] else 'top and bottom'

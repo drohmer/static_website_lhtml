@@ -277,6 +277,7 @@ layouts:
           top: var(--layout-top); top: anchor(--layout-intro bottom, var(--layout-top));
           bottom: var(--layout-bottom); width: var(--layout-width); }
       body.layout-side > .media:not(.middle):not(.bottom) { justify-content: flex-start; }
+      body.layout-side > .media:not(.middle):not(.bottom) > img { object-position: center top; }
       /* media::(.here): in the right column, at its place in the text */
       body.layout-side > .media.here { float: right; clear: right; width: var(--layout-width);
           margin-right: calc(-1 * (var(--layout-width) + var(--layout-gap))); }
