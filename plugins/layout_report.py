@@ -278,10 +278,11 @@ def coverage(rects, area, step=10, rows=None):
     the centre of the cell is inside one of the rectangles (x0, y0, x1, y1).
     Filled rectangle by rectangle (in `rows` when given): shared by occupancy
     and largest_free_rect."""
-    nx, ny = max(0, area['w'] // step), max(0, area['h'] // step)
+    off = step // 2
+    # the cells whose centre is inside the area
+    nx, ny = (max(0, -(-(area[k] - off) // step)) for k in ('w', 'h'))
     if rows is None:
         rows = [bytearray(nx) for _ in range(ny)]
-    off = step // 2
     cell = lambda v, origin, n: min(n, max(0, -(-(v - origin - off) // step)))  # first centre >= v
     for x0, y0, x1, y1 in rects:
         i0, i1 = cell(x0, area['x'], nx), cell(x1, area['x'], nx)
@@ -864,15 +865,16 @@ An overlap is intentional when one of the blocks has the class `overlay`
 
 
 def _problems_by_key(layout):
-    """{(kind, signatures of its blocks): line} of the problems of a measure
-    (the ids of the blocks change from a measure to the next, not their signature)."""
+    """{(kind, signatures of its blocks): [line]} of the problems of a measure
+    (the ids of the blocks change from a measure to the next, not their
+    signature; identical blocks have the same key: one line each)."""
     signature = {b['id']: b['signature'] for b in layout.get('blocks', [])}
     found = {}
     for line in problem_lines(layout.get('analysis') or {}):
         head = line.split(':', 1)[0]
         kind = re.match(r'- ([A-Z][A-Z ]*?) #', head)
         key = (kind.group(1) if kind else head, tuple(signature.get(int(i)) for i in re.findall(r'#(\d+)', head)))
-        found.setdefault(key, line)
+        found.setdefault(key, []).append(line)
     return found
 
 
@@ -884,8 +886,8 @@ def layout_changes(old, new, threshold=4):
     lines = []
     a, b = old.get('analysis', {}), new.get('analysis', {})
     before, after = _problems_by_key(old), _problems_by_key(new)
-    lines += [f'- new problem: {line[2:]}' for key, line in after.items() if key not in before]
-    lines += [f'- solved: {line[2:]}' for key, line in before.items() if key not in after]
+    lines += [f'- new problem: {line[2:]}' for key, found in after.items() for line in found[len(before.get(key, [])):]]
+    lines += [f'- solved: {line[2:]}' for key, found in before.items() for line in found[len(after.get(key, [])):]]
     for label, count in (('warnings', count_warnings), ('values written by hand', lambda x: len(x.get('lint', [])))):
         if count(a) != count(b):
             lines.append(f'- {label}: {count(a)} -> {count(b)}')
@@ -1100,6 +1102,7 @@ def post_process(meta):
                     previous_layouts[p['name']] = json.load(fid)
             except (OSError, ValueError):
                 pass
+            os.remove(path)             # a page whose measure fails has none (not the previous one)
     if os.path.isdir(output_dir) and not partial:
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)

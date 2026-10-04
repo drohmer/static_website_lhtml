@@ -20,6 +20,7 @@ import unicodedata
 import yaml
 
 from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy
+from lib import source_scan
 from lib.generator_tool import STRUCTURE_KEYS
 
 TEMPLATE_SUFFIX = '.j2'         # the template of a page index.html is index.html.j2
@@ -88,8 +89,17 @@ class Page:
     @cached_property
     def text(self):
         """Its source, read once by the scanners (titles, lint, credits...)."""
-        with open(self.src, encoding='utf-8', errors='replace') as fid:
-            return fid.read()
+        try:
+            with open(self.src, encoding='utf-8') as fid:
+                return fid.read()
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"'{self.src}' is not UTF-8 text (byte {exc.start}): "
+                             f"save it in UTF-8") from None
+
+    @cached_property
+    def scan(self):
+        """Its zones and its text read as LHTML (lib/source_scan.py), computed once."""
+        return source_scan.Scan(self.text)
 
     @property
     def settings(self):

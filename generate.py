@@ -133,19 +133,19 @@ def add_layout_plugin(meta):
     meta['plugin'] = plugins
 
 
-_plugin_modules = {}     # {(path, mtime): module}: each plugin is loaded once (again when it changes)
+_plugin_modules = {}     # {path: module} of the build (emptied by generate_site)
 
 
 def load_plugin(full_path):
-    """The module of a plugin: loaded once, so that it keeps its state from a
-    hook to the next (pre_process, mid_process, post_process)."""
-    key = (full_path, os.path.getmtime(full_path))
-    if key not in _plugin_modules:
+    """The module of a plugin: loaded once per build, so that it keeps its
+    state from a hook to the next (pre_process, mid_process, post_process),
+    but not from a build to the next (--watch)."""
+    if full_path not in _plugin_modules:
         spec = importlib.util.spec_from_file_location('plugin', full_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        _plugin_modules[key] = module
-    return _plugin_modules[key]
+        _plugin_modules[full_path] = module
+    return _plugin_modules[full_path]
 
 
 def run_plugins(meta, hook_name, log):
@@ -323,6 +323,14 @@ def discard_page(meta, page):
         full_path = meta['site_directory'] + path
         if os.path.isfile(full_path):
             os.remove(full_path)
+
+
+def drop_failed_pages(meta, selected, failed):
+    """Remove the pages that failed from meta['built']: the plugins that run
+    after (mid_process) only see the pages generated."""
+    entries = dict(zip(selected, meta['structure']))
+    dropped = {id(entries[page]) for page in failed}
+    meta['built'] = [entry for entry in meta['built'] if id(entry) not in dropped]
 
 
 def restore_previous_pages(meta, failed):
@@ -645,7 +653,7 @@ def lint_pages(selected, loaded_design, log, details=False):
     found = {}
     for page in selected:
         if str(page.src) not in found:          # occurrences of a page: once
-            found[str(page.src)] = linter.lint(page.text, page.settings.get('layout'))
+            found[str(page.src)] = linter.lint(page.scan, page.settings.get('layout'))
     total = sum(map(len, found.values()))
     if details:
         for src, findings in found.items():
@@ -667,6 +675,7 @@ def generate_site(meta, selected, built):
     of them, except with --only)."""
     log = meta['log']
     plugin_failures = 0
+    _plugin_modules.clear()
     log.display('[bold white]****************************', pre='\n')
     log.display('[bold white]  Start website generator')
     log.display('[bold white]****************************')
@@ -695,7 +704,9 @@ def generate_site(meta, selected, built):
     log.tic()
     failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
     if failed:
-        log.error(f'{len(failed)} page(s) not generated because of Jinja2 errors')
+        log.error(f'{len(failed)} page(s) not generated (see errors above)')
+    drop_failed_pages(meta, selected, failed)
+    log.ok_elapsed()
 
     # Mid-process plugins
     log.title('Mid-process', pre='\n')
@@ -704,6 +715,8 @@ def generate_site(meta, selected, built):
     log.ok_elapsed()
 
     # LHTML conversion
+    log.title('LHTML', pre='\n')
+    log.tic()
     failed += render_lhtml(meta, built, log, failed_before=failed)
     log.ok_elapsed()
 

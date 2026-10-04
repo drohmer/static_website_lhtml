@@ -74,6 +74,15 @@ class ProjectBuildTests(DeckProjectsTests):
         self.assertNotIn(str(self.root), (self.site / 'theme/js/menu.js').read_text())   # no local path
 
 
+    def test_source_not_in_utf8(self):
+        """The page is named, in a build as in a build for development."""
+        (self.root / 'talk/src/01_a/index.html.j2').write_bytes(b'= A \xe9t\xe9\n')
+        for args in ((), ('--layout',)):
+            output = self.build(self.DECK, *args, ok=False)
+            self.assertIn('01_a/index.html.j2', output)
+            self.assertIn('is not UTF-8 text', output)
+
+
 class SiteDiscoveryTests(DeckProjectsTests):
 
     def test_file_links_of_the_theme_are_not_written_through(self):

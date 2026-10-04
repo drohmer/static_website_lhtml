@@ -41,7 +41,7 @@ def _load(directory):
     if not path.is_file():
         return []
     comments = []
-    for line in path.read_text(encoding='utf-8').splitlines():
+    for line in path.read_text(encoding='utf-8', errors='replace').splitlines():   # edited by hand
         if line.strip():
             try:
                 comment = json.loads(line)
@@ -67,11 +67,13 @@ def _save(directory, comments):
 
 
 def refresh(directory):
-    """Write comments.md again from comments.jsonl (edited by hand: status done)."""
+    """Write comments.md again from comments.jsonl when the latter was edited
+    by hand (status done, a comment removed) since comments.md was written."""
+    directory = Path(directory)
+    source, target = directory / 'comments.jsonl', directory / 'comments.md'
     with _lock:
-        comments = _load(directory)
-        if comments:
-            _write(Path(directory) / 'comments.md', markdown(comments))
+        if source.is_file() and (not target.is_file() or target.stat().st_mtime_ns <= source.stat().st_mtime_ns):
+            _write(target, markdown(_load(directory)))
 
 
 def _text(value, limit=500):
@@ -123,16 +125,16 @@ def markdown(comments):
     out = ['# Comments on the render', '',
            'Written on the pages served by `generate.py --serve` (💬, or the key c, then a click on a block).',
            'Treat the open ones, then click their number on the page, then "Done" (or set their "status"',
-           'to "done" in comments.jsonl: this file is written again at the next build of --serve).', '']
+           'to "done" in comments.jsonl: this file is written again when a page of --serve is loaded).', '']
     for status, title in (('open', 'Open'), ('done', 'Done')):
-        selected = [c for c in comments if c.get('status') == status]
+        selected = [c for c in comments if (c.get('status') == 'done') == (status == 'done')]
         out += [f'## {title} ({len(selected)})', '']
-        for c in selected:
+        for c in selected:          # the fields may be missing or of any type (comments.jsonl edited by hand)
             where = f"`{c['src']}`" if c.get('src') else 'source unknown'
-            rect = c.get('rect') or {}
-            out += [f"### {c['id']}. {c['page']} — {where}", '',
+            rect = c.get('rect') if isinstance(c.get('rect'), dict) else {}
+            out += [f"### {c.get('id', '?')}. {c.get('page') or 'page unknown'} — {where}", '',
                     f"Block: {c.get('block') or '-'} (x {rect.get('x')}, y {rect.get('y')}, "
-                    f"{rect.get('w')}×{rect.get('h')} px)", '', c['comment'], '']
+                    f"{rect.get('w')}×{rect.get('h')} px)", '', str(c.get('comment') or ''), '']
     return '\n'.join(out) + '\n'
 
 

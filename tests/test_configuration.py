@@ -38,7 +38,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(Path(config.site_directory), self.root / '.site')
         context = BuildContext(config, path, SimpleNamespace(), Logger())
         context.meta['keywords']['nested']['value'] = 'changed'
-        context.meta['title_id'] = {'runtime': []}
+        context.meta['headings'] = {'runtime': []}
         self.assertEqual(config.keywords['nested']['value'], 'original')
         self.assertTrue(config.title_id)
         self.write(debug=True)
@@ -188,3 +188,18 @@ class ReservedConfigTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LoggerTests(unittest.TestCase):
+    def test_shown_as_written(self):
+        from lib import logger
+        with logger.console.capture() as captured:
+            log = Logger()
+            log.warning('path\\')
+            log.keyvalue('a[b]', '[bold]x[/bold]')
+            log.keyvalue('info', 'plain')
+        text = captured.get()
+        self.assertIn('[Warning] path\\\n', text)
+        self.assertIn('[a[b]] [bold]x[/bold]', text)
+        self.assertIn('plain', text)
+        self.assertNotIn('[info]', text)

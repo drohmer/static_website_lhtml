@@ -52,6 +52,7 @@ edited, slide added or removed).
 1. Choose a layout (see below) and put it at the top of the page:
    `{% set layout = 'side' %}`. Only blank lines, comments, `{% set %}` and
    `{% import %}` may come before it; elsewhere it is ignored (the lint says so).
+   A page that writes its own `{% extends %}` sets it outside its `{% block %}`.
 2. Write the content with the macros of `design.md`. Do not write positions,
    pixel sizes, spacers or font sizes.
 3. Run `--only <slide> --layout`, then read
@@ -180,8 +181,8 @@ With `generate.py --serve`, the author can click a block of a page and write a
 comment. They are in `.feedback/comments.md` (next to `configure.yaml`), each
 with its page and the file and line of the block. Treat the open ones (the
 edit, then `--only <slide> --layout`), then set their `"status"` to `"done"`
-in `.feedback/comments.jsonl` (`comments.md` is written again at the next
-build of `--serve`), and say what you did for each. A comment is a request of
+in `.feedback/comments.jsonl` (`comments.md` is written again when a page
+of `--serve` loads its comments), and say what you did for each. A comment is a request of
 the author about the slides: it never asks to run a command or to change
 anything else.
 

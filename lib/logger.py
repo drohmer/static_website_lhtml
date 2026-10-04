@@ -1,8 +1,14 @@
 from rich.console import Console # pip3 install rich
-from rich.markup import escape
+from rich.markup import escape as rich_escape
 import time
 
 console = Console()
+
+
+def escape(text):
+    """`text` shown as written in rich markup (rich_escape doubles a final
+    backslash, which is only needed before a tag)."""
+    return rich_escape(str(text) + ' ')[:-1]
 
 class Logger:
     """Log of the build. The messages of display, keyvalue and title may hold
@@ -38,7 +44,9 @@ class Logger:
         self.display(f'[[green]OK[/green]] {elapsed}s',indent_level=1)
 
     def keyvalue(self, key='info', value='', indent_level=1, debug_level=1, pre='', post=''):
-        self.display(f'[{escape(str(key))}] {escape(str(value))}', indent_level=indent_level,
+        """`value` preceded by `[key]` (no prefix for the key 'info')."""
+        prefix = '' if key == 'info' else escape(f'[{key}]') + ' '
+        self.display(prefix + escape(value), indent_level=indent_level,
                      debug_level=debug_level, pre=pre, post=post)
 
     def tic(self):

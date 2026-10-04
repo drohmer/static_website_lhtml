@@ -109,6 +109,18 @@ class LayoutBuildTests(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 load_config(self.root / 'config.yaml')
 
+    def test_own_extends_with_a_layout(self):
+        self.write('src/a/index.html.j2', "{% extends 'theme/template/base.html' %}\n{% set layout = 'side' %}\n"
+                                          "{% block content %}\n= A\nmedia::\nimg::x.png\n::\n{% endblock %}\n")
+        self.build()
+        self.assertEqual(self.body('a'), '<body class="layout-side">')
+
+    def test_several_tags_on_a_line_at_the_top(self):
+        """auto_wrap keeps only the lines holding one {% set %} before {% extends %}."""
+        self.write('src/a/index.html.j2', "{% set n = 2 %}{% if n > 1 %}\n= Big\n{% endif %}\n")
+        self.build()
+        self.assertIn('Big', (self.site / 'a/index.html').read_text())
+
 
 class LintTests(unittest.TestCase):
     linter = lint.Linter(SLIDES)
@@ -176,6 +188,11 @@ class LintTests(unittest.TestCase):
         found = self.kinds("= T\n{% set layout = 'side' %}\nmedia::\n::\n")
         self.assertEqual(found[0][:2], (2, 'layout'))
         self.assertIn('top of the page', found[0][2])
+        # a page with its own {% extends %}: the set outside its blocks applies
+        own = "{% extends 'theme/template/base.html' %}\n{% set layout = 'side' %}\n{% block content %}\nmedia::\n::\n"
+        self.assertEqual(self.kinds(own + '{% endblock %}\n'), [])
+        inside = "{% extends 'b.html' %}\n{% block content %}\n{% set layout = 'side' %}\nmedia::\n::\n{% endblock %}\n"
+        self.assertEqual(self.kinds(inside)[0][:2], (3, 'layout'))
 
 
 if __name__ == '__main__':

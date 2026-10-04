@@ -106,6 +106,14 @@ def test_occupancy():
     assert layout_report.analyse(layout)['occupancy'] == 0.5
 
 
+def test_cells_of_the_grid():
+    """A cell counts when its centre is inside the area (also for a size that is not a multiple of 10)."""
+    for w, cells in ((1920, 192), (106, 11), (104, 10), (5, 0)):
+        assert len(layout_report.coverage([], {'x': 0, 'y': 0, 'w': w, 'h': 20})[0]) == cells
+    area = {'x': 0, 'y': 0, 'w': 108, 'h': 108}
+    assert layout_report.occupancy([block(1, 0, 0, 108, 108)], area) == 1.0
+
+
 def test_markdown_report_and_summary():
     layout = {'area': AREA, 'blocks': [block(1, 0, 0, 100, 100), block(2, 50, 50, 100, 100, position='fixed')]}
     layout_report.analyse(layout)
@@ -324,3 +332,12 @@ def test_changes_between_two_measures():
     assert lines[1].startswith('- #2 moved by (+0, +20) px, 100×50 -> 100×80 px')
     assert lines[2].startswith('- new block #3')
     assert layout_report.layout_changes(new, new) == []
+
+
+def test_changes_of_problems_that_repeat():
+    """Two identical blocks with the same problem, then one: one problem solved."""
+    image = lambda n: {**block(n, 0, 100 * n, 100, 50), 'signature': 'img a.png'}
+    upscaled = lambda n: {'id': n, 'src': 'a.png', 'scale': 2}
+    old = {'blocks': [image(1), image(2)], 'analysis': {'upscaled_images': [upscaled(1), upscaled(2)], 'lint': []}}
+    new = {'blocks': [image(1), image(2)], 'analysis': {'upscaled_images': [upscaled(1)], 'lint': []}}
+    assert layout_report.layout_changes(old, new) == ['- solved: UPSCALED IMAGE #2: a.png displayed at ×2 (blurry)']

@@ -99,6 +99,32 @@ class FeedbackServerTests(unittest.TestCase):
         feedback.refresh(directory)
         self.assertIn('## Done (1)', (directory / 'comments.md').read_text())
 
+    def test_comments_edited_by_hand(self):
+        """Missing fields, a rect that is not a mapping, invalid UTF-8: the
+        builds and the server go on, and always answer."""
+        directory = self.root / feedback.DIRECTORY
+        directory.mkdir()
+        (directory / 'comments.jsonl').write_bytes(
+            b'{"id": 1, "comment": "fix title", "status": "done"}\n{"id": 2, "rect": [1]}\n\xff\n')
+        feedback.refresh(directory)
+        text = (directory / 'comments.md').read_text()
+        self.assertIn('### 1. page unknown', text)
+        self.assertIn('## Open (1)', text)
+        self.assertEqual(len(json.loads(self.get('/__feedback/comments'))), 2)
+        status, record = self.post('/__feedback/comment', {'page': '/', 'comment': 'x'})
+        self.assertEqual((status, record['id']), (200, 3))
+        port = self.url.rsplit(':', 1)[1]
+        self.assertEqual(self.raw('GET', '/__feedback/comments', headers={'Host': 'LOCALHOST:' + port}), 200)
+
+    def test_comments_md_follows_the_jsonl(self):
+        """comments.md is written again when the page loads its comments,
+        also when comments.jsonl was emptied."""
+        self.post('/__feedback/comment', {'page': '/', 'comment': 'x'})
+        directory = self.root / feedback.DIRECTORY
+        (directory / 'comments.jsonl').write_text('')
+        self.get('/__feedback/comments?page=/')
+        self.assertIn('## Open (0)', (directory / 'comments.md').read_text())
+
     def test_script_and_site(self):
         self.assertIn(b'__feedback', self.get('/__feedback/feedback.js'))
         self.assertIn(b'<h1>T</h1>', self.get('/index.html'))

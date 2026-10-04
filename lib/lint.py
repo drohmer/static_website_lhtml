@@ -18,6 +18,8 @@ import re
 
 from lib import source_scan
 
+EXTENDS = re.compile(r'\{%-?\s*extends\s')
+BLOCK = re.compile(r'\{%-?\s*(end)?block\b')
 STYLE = re.compile(r'([A-Za-z][\w-]*::(?:\([^()\n]*\))?[^\s\[]*)?\[([^\[\]\n]*:[^\[\]\n]*)\]|style="([^"]*)"')
 RAW_IFRAME = re.compile(r'<iframe\b[^>]*style=')
 SIZE_MACROS = ('small', 'tiny', 'large')     # macros of a font size (credit:: is also gray)
@@ -46,6 +48,23 @@ def _px_tokens(tokens):
 
 def _nearest(value, candidates):
     return min(candidates, key=lambda name: abs(candidates[name] - value)) if candidates else None
+
+
+def _layout_applies(source, offset):
+    """Whether the {% set layout %} at `offset` of a page is seen by the theme:
+    in the settings at the top of the page (auto_wrap puts them before its
+    {% extends %}), or, in a page that writes its own {% extends %}, outside
+    its {% block %}."""
+    leading = source_scan.leading_settings(source.text)
+    if offset < len(leading):
+        return True
+    masked = source.masked
+    if not EXTENDS.search(masked):
+        return False
+    depth = 0
+    for m in BLOCK.finditer(masked, 0, offset):
+        depth += -1 if m.group(1) else 1
+    return depth <= 0
 
 
 class Linter:
@@ -124,19 +143,18 @@ class Linter:
         with open(path, encoding='utf-8', errors='replace') as fid:
             return self.lint(fid.read(), layout)
 
-    def lint(self, text, layout=None):
-        """Findings of the source `text` of a page; `layout`: the layout given
-        by its configuration or deck entry (a {% set layout %} of the page
-        takes precedence). Code and verbatim blocks, math, comments and inline
-        code are not read (lib/source_scan.py)."""
+    def lint(self, source, layout=None):
+        """Findings of the source of a page (a text or a source_scan.Scan);
+        `layout`: the layout given by its configuration or deck entry (a
+        {% set layout %} of the page takes precedence). Code and verbatim
+        blocks, math, comments and inline code are not read (lib/source_scan.py)."""
         findings = []
-        found = source_scan.zones(text)
-        read = source_scan.mask(text, found=found)
-        set_layout = source_scan.layout_setting(text)
+        source = source_scan.scan(source)
+        read = source.masked
+        set_layout = source_scan.layout_setting(source)
         if set_layout:
-            layout, layout_line = set_layout
-            leading = source_scan.leading_settings(text)
-            if layout_line > leading.count('\n') + (1 if leading and not leading.endswith('\n') else 0):
+            layout, layout_line, offset = set_layout
+            if not _layout_applies(source, offset):
                 findings.append(Finding(layout_line, 'layout', f"{{% set layout = '{layout}' %}} not at the top",
                                         'move it to the top of the page: only blank lines, comments, '
                                         '{% set %} and {% import %} may come before it (else it is ignored)'))

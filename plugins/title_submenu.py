@@ -3,6 +3,7 @@ import re
 import json
 from collections import Counter
 
+from lib import source_scan
 from lib.source_map import strip as strip_markers
 from lib.structure import built_pages, structure, template_path
 
@@ -34,6 +35,8 @@ def generate_new_id(text, id_storage):
 
 
 def pre_process(meta):
+    if not meta.get('title_id', True):          # title_id: false in the configuration
+        return
     pages = structure(meta)
     built = {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
     summary_path = meta['site_directory'] + 'structure/title_id.json'
@@ -61,26 +64,28 @@ def pre_process(meta):
 
         title_id_summary[page_key] = []
 
-        def add_id(it, page=page_key):
+        # The headings of the text read as LHTML (not in a code block or a
+        # comment), each replaced at its own position (identical headings
+        # get distinct ids)
+        parts, position = [], 0
+        for it in source_scan.find(TITLE_REGEX, file_content):
             n = str(len(it.group(1)))
-            class_id = (it.group(2) or '').strip()
-            title = it.group(3)
+            class_id = file_content[it.start(2):it.end(2)].strip() if it.group(2) is not None else ''
+            title = file_content[it.start(3):it.end(3)]
 
             generated_id = generate_new_id(strip_markers(title), id_storage) + '_l' + str(n)
             if not class_id:
                 class_id = '#' + generated_id
 
-            title_id_summary[page].append({'level': n, 'title': strip_markers(title), 'id': class_id[1:]})
-            # Each heading is replaced at its own position (identical
-            # headings get distinct ids)
-            return '=' * int(n) + '(' + class_id + ') ' + title
-
-        file_content = TITLE_REGEX.sub(add_id, file_content)
+            title_id_summary[page_key].append({'level': n, 'title': strip_markers(title), 'id': class_id[1:]})
+            parts += [file_content[position:it.start()], '=' * int(n) + '(' + class_id + ') ' + title]
+            position = it.end()
+        file_content = ''.join(parts) + file_content[position:]
 
         with open(file_path, 'w') as fid:
             fid.write(file_content)
 
-    meta['title_id'] = title_id_summary
+    meta['headings'] = title_id_summary
 
     with open(summary_path, 'w') as fid:
         json.dump(title_id_summary, fid, indent=4)

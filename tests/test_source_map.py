@@ -3,6 +3,7 @@ through LHTML, then data-lhtml-src="file:line" on the blocks."""
 import re
 import unittest
 
+import jinja2
 import lhtml
 
 from lib import source_map, source_scan
@@ -105,6 +106,43 @@ class SourceMapTests(unittest.TestCase):
                 + body + '</div></div></body>')
         found = re.findall(r'<(\w+) data-lhtml-src="s:(\d+)"', source_map.apply(html, 's'))
         self.assertEqual(found, [('h1', '1'), ('ul', '5')])
+
+    def test_html_and_macros_on_one_line(self):
+        """Each block written on one line in HTML, or by a macro, gets its own line."""
+        page = ('= Title\n<div class="note">text</div>\n<div class="other">more</div>\n<img src="a.png">\n'
+                "{{ box('first') }}\n{{ box('second') }}\n")
+        marked = source_map.add_markers(page, TAGS)
+        self.assertIn('text' + source_map.marker(2) + '</div>', marked)        # before the final tag
+        rendered = marked.replace("{{ box('first') }}", '<div class="box">first</div>')
+        rendered = rendered.replace("{{ box('second') }}", '<div class="box">second</div>')
+        found = re.findall(r'<(\w+) data-lhtml-src="s:(\d+)"', source_map.apply('<body>' + run(rendered) + '</body>', 's'))
+        self.assertEqual(found, [('h1', '1'), ('div', '2'), ('div', '3'), ('img', '4'), ('div', '5'), ('div', '6')])
+
+    def test_same_html_with_line_breaks(self):
+        page = 'line one<br>\n\nline two\n<b>bold</b>\ntext <i>it</i>\n'
+        options = {'macros': MACROS, 'line-breaks': True}
+        self.assertEqual(source_map.strip(lhtml.run(source_map.add_markers(page, TAGS), options)),
+                         lhtml.run(page, options))
+
+    def test_no_markers_in_the_value_blocks_of_jinja(self):
+        page = ('{% set word %}\nhello\n{% endset %}\n{% markdown %}\nTitle\n-----\n{% endmarkdown %}\n'
+                '{% filter upper %}\nloud\n{% endfilter %}\nafter\n')
+        lines = source_map.add_markers(page, TAGS).split('\n')
+        self.assertEqual(lines[:10], page.split('\n')[:10])
+        self.assertEqual(lines[10], 'after' + source_map.marker(11))
+
+    def test_same_html_through_jinja(self):
+        page = ('{% set word %}\nhello\n{% endset %}\n{% if word|trim == "hello" %}EQUAL{% endif %}\n'
+                '{% markdown %}\nTitle\n-----\n\n---\n{% endmarkdown %}\n= End\n')
+        env = jinja2.Environment(extensions=['jinja_markdown.MarkdownExtension'])
+        render = lambda text: run(env.from_string(text).render())
+        self.assertIn('EQUAL', render(page))
+        self.assertEqual(source_map.strip(render(source_map.add_markers(page, TAGS))), render(page))
+
+    def test_empty_heading_with_a_class(self):
+        page = '=(.x) \ntext\n'
+        self.assertEqual(source_map.add_markers(page, TAGS).split('\n')[0], '=(.x) ')
+        self.assertEqual(source_map.strip(run(source_map.add_markers(page, TAGS))), run(page))
 
     def test_without_markers(self):
         self.assertEqual(source_map.apply('<body><p>x</p></body>', 'a'), '<body><p>x</p></body>')

@@ -22,6 +22,7 @@ RUNTIME_KEYS = frozenset((
     'previous_pages',               # --only: HTML of the pages before the build (restored if they fail)
     'loaded_design', 'macros',      # the design (lib/design.py) and its macros for LHTML
     'lint_findings',                # {source path: [finding]} of the generated pages (lib/lint.py)
+    'headings',                     # {page: [heading]} written by plugins/title_submenu.py
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
 ))

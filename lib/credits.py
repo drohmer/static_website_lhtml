@@ -94,13 +94,14 @@ def all_credits(pages, credits_of):
     return result
 
 
-def files_used(source_text, macros=None):
-    """Relative files of images and videos used by a page source (the macros
-    of the design: those rendering an image or a video count)."""
+def files_used(source, macros=None):
+    """Relative files of images and videos used by a page source (a text or
+    a source_scan.Scan; the macros of the design: those rendering an image or
+    a video count)."""
     found = []
-    masked = source_scan.mask(source_text)
-    values = [v for _, v, _ in source_scan.tag_values(source_text, source_scan.value_tags(macros))]
-    for file in values + SRC.findall(masked):
+    source = source_scan.scan(source)
+    values = [v for _, v, _ in source_scan.tag_values(source, source_scan.value_tags(macros))]
+    for file in values + SRC.findall(source.masked):
         if '://' not in file and not file.startswith(('/', '{', 'data:')) and MEDIA.search(file) \
                 and file not in found:
             found.append(file)
@@ -130,7 +131,7 @@ def credits_markdown(pages, credits_of, base, macros=None):
         if str(page.src) in seen:
             continue
         seen.add(str(page.src))
-        missing += [(page, f) for f in files_used(page.text, macros) if f not in credits_of[page]]
+        missing += [(page, f) for f in files_used(page.scan, macros) if f not in credits_of[page]]
     out += ['', f'## Images and videos without credit ({len(missing)})', '',
             'Your own figures need none; the others need a credit in the config.yaml of their page.', '']
     out += [f'- {page.site_html}: `{file}`' for page, file in missing]
@@ -144,7 +145,7 @@ def placeholders(pages):
         if str(page.src) in seen:
             continue
         seen.add(str(page.src))
-        for number, line in enumerate(source_scan.mask(page.text).split('\n'), 1):
+        for number, line in enumerate(page.scan.masked.split('\n'), 1):
             found += [(page, number, m.group(1).strip()) for m in PLACEHOLDER.finditer(line)]
     return found
 

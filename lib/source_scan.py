@@ -11,6 +11,7 @@ is code and what is text.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 import re
 
 from lhtml import patterns
@@ -26,9 +27,10 @@ URL_TAGS = frozenset(patterns.URL_TAGS)
 VALUE = patterns.URL_TOKEN
 LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
 # Lines kept before {% extends %} by auto_wrap: blank lines, Jinja comments,
-# {% set name = value %}, {% import %} / {% from ... import %}, LHTML comments
-LEADING_LINE = re.compile(r'[ \t]*(?:\{%-?\s*(?:set\s+[^%\n]*=|import\s|from\s)[^\n]*?-?%\}|\{#[^\n]*?#\}'
-                          r'|::#[^\n]*)?[ \t]*(?:\n|\Z)')
+# {% set name = value %}, {% import %} / {% from ... import %}, LHTML comments;
+# one tag per line (`{% set n = 2 %}{% if n %}` stays in the content)
+LEADING_LINE = re.compile(r'[ \t]*(?:\{%-?\s*(?:set\s+[^%\n]*=|import\s|from\s)(?:[^%\n]|%(?!\}))*%\}'
+                          r'|\{#(?:[^#\n]|#(?!\}))*#\}|::#[^\n]*)?[ \t]*(?:\n|\Z)')
 
 
 @dataclass(frozen=True)
@@ -81,7 +83,6 @@ def multiline_lines(text, found=None):
     """0-based indices of the lines touched by a zone that spans several lines
     (a code block, a Jinja tag or an HTML tag continued on the next lines,
     display math...): its first line, the lines inside it, its last line."""
-    offsets = line_offsets(text)
     lines = set()
     for zone in zones(text) if found is None else found:
         first = text.count('\n', 0, zone.start)
@@ -89,6 +90,33 @@ def multiline_lines(text, found=None):
         if last > first:
             lines.update(range(first, last + 1))
     return lines
+
+
+class Scan:
+    """A source read once by all the scanners: its zones and the text read as LHTML."""
+
+    def __init__(self, text):
+        self.text = text
+
+    @cached_property
+    def zones(self):
+        return zones(self.text)
+
+    @cached_property
+    def masked(self):
+        return mask(self.text, found=self.zones)
+
+
+def scan(source):
+    """The Scan of a source (a text, or already a Scan)."""
+    return source if isinstance(source, Scan) else Scan(source)
+
+
+def find(pattern, source):
+    """The matches of `pattern` in the text read as LHTML (a match inside a
+    code block or a comment is not one); their spans are those of the text:
+    source.text[m.start(1):m.end(1)] is a group as written."""
+    return list(pattern.finditer(scan(source).masked))
 
 
 def value_tags(macros=None):
@@ -103,22 +131,23 @@ def value_tags(macros=None):
     return tags
 
 
-def tag_values(text, tags):
+def tag_values(source, tags):
     """(tag, value, line) of the tags `tags` followed by a value in the text
     read as LHTML (img::a.png, figure::b.jpg(.wide) -> 'b.jpg')."""
     if not tags:
         return []
     pattern = re.compile(r'(?<![\w-])(' + '|'.join(sorted(map(re.escape, tags), key=len, reverse=True))
                          + r')::(' + VALUE + r')')
-    masked = mask(text)
+    masked = scan(source).masked
     return [(m.group(1), m.group(2), masked.count('\n', 0, m.start()) + 1) for m in pattern.finditer(masked)]
 
 
-def layout_setting(text):
-    """(layout, line) of the {% set layout = '...' %} of a source (not in a
-    code block or a comment), or None."""
-    m = LAYOUT_SET.search(mask(text))
-    return (m.group(1), text.count('\n', 0, m.start()) + 1) if m else None
+def layout_setting(source):
+    """(layout, line, offset) of the {% set layout = '...' %} of a source (not
+    in a code block or a comment), or None."""
+    source = scan(source)
+    m = LAYOUT_SET.search(source.masked)
+    return (m.group(1), source.text.count('\n', 0, m.start()) + 1, m.start()) if m else None
 
 
 def leading_settings(text):

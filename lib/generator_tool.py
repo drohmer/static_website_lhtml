@@ -5,6 +5,8 @@ import re
 import yaml
 import json
 
+from lib import source_scan
+
 # Keys of structure.yaml written by the generator (not available to the deck
 # metadata nor to the config.yaml of the pages)
 STRUCTURE_KEYS = {'path', 'dir', 'filename', 'template', 'level', 'title_id', 'src', 'source', 'occurrence'}
@@ -15,22 +17,24 @@ def clean_string(s):
     return re.sub(r"[/'\"()]", '', s).strip()
 
 
-def extract_data(text, regex):
-    """The first match of the first regex of `regex` that matches, or None."""
+def extract_data(source, regex):
+    """The first group of the first match of the first regex of `regex` that
+    matches in the text read as LHTML (not in a code block or a comment) of
+    `source` (a text or a source_scan.Scan), as written; or None."""
+    source = source_scan.scan(source)
     for r in regex:
-        match = re.findall(re.compile(r, re.DOTALL | re.MULTILINE), text)
-        if match:
-            return match[0]
+        found = source_scan.find(re.compile(r, re.DOTALL | re.MULTILINE), source)
+        if found:
+            return source.text[found[0].start(1):found[0].end(1)]
     return None
 
 
-TITLE_ID = re.compile(r'title_id.*?=(.*?)%}', re.DOTALL | re.MULTILINE)
+TITLE_ID = [r'title_id.*?=(.*?)%}']
 
 
-def extract_title_id(text, title):
-    match = TITLE_ID.findall(text)
-    data = match[0] if match else title
-    return clean_string(data).replace(' ', '_').replace('#', '').lower()
+def extract_title_id(source, title):
+    data = extract_data(source, TITLE_ID)
+    return clean_string(data if data is not None else title).replace(' ', '_').replace('#', '').lower()
 
 
 def generate_unique_id(title_id, sitemap):
@@ -59,10 +63,10 @@ def extract_titles(pages):
     """Title of each page (page.title, read in its source) and the sitemap {id: page}."""
     sitemap = {}
     for page in sorted(pages, key=_sitemap_priority):
-        title = extract_data(page.text, TITLE_REGEX)
+        title = extract_data(page.scan, TITLE_REGEX)
         if title is not None:
             title = RAW_MARKERS.sub('', title)
-        title_id = generate_unique_id(extract_title_id(page.text, title), sitemap)
+        title_id = generate_unique_id(extract_title_id(page.scan, title), sitemap)
         page.title = clean_string(title)
         sitemap[title_id] = page
     return sitemap

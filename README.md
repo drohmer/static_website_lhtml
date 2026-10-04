@@ -71,7 +71,8 @@ to the configuration in `.feedback/comments.md` (and `comments.jsonl`), with
 the page and the file and line of the block (source map), for an agent or the
 author to treat; open comments are shown on the pages as numbered pins (click:
 read, "Done"; setting `"status": "done"` in `comments.jsonl` by hand works
-too, `comments.md` is written again at the next build). Only the script of the
+too, `comments.md` is written again when a page loads its comments; a hand
+edit that misses fields is still read). Only the script of the
 pages of this server can read and write them: the requests must name the
 server (`127.0.0.1` or `localhost` and its port: a page of another site
 reaching it by DNS rebinding is refused), and the writes need a custom header
@@ -137,7 +138,7 @@ Optional keys:
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
-| `title_id` | Generate heading IDs (default: true) |
+| `title_id` | Give the headings IDs and write their summary (`title_id.json`) with `plugins/title_submenu.py` (default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
 
@@ -394,7 +395,8 @@ the source are added to those of the macro.
 
 **Layouts.** A page chooses a layout with `{% set layout = 'side' %}` at its
 top (only blank lines, comments, other `{% set %}` and `{% import %}` may come
-before it: elsewhere it is ignored, and the lint says so), or with
+before it: elsewhere it is ignored, and the lint says so; a page that writes
+its own `{% extends %}` sets it outside its `{% block %}`), or with
 `layout: side` in its `config.yaml` or its deck entry; the
 theme then places and sizes its blocks, and `media::` holds its figures,
 fitted in the area of the layout: no positions, widths or spacers to write.
@@ -526,7 +528,9 @@ Each build writes `structure/credits.md`: the origin of each page (`origin`,
 or its project), the credits, and the images and videos used by the pages
 without credit (`img::`, `video::`, `videoplay::`, the macros showing an image
 or a video, `src="..."`; to check: your own figures need none). A page whose
-`credits` are invalid fails, with the error; the others are generated.
+`credits` are invalid fails, with the error: a build publishes nothing, and
+with `--only` the other pages are generated (the page keeps its previous
+version).
 
 **To do.** `placeholder:: video of the walk cycle ::` draws a planned figure;
 each build lists the planned figures (with their line) and the planned slides
@@ -559,7 +563,7 @@ def post_process(meta):  # After all conversions
     ...
 ```
 
-Each plugin module is loaded once per build (again when its file changes, with `--watch`), so it can keep a state from a hook to the next. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets only its own options (`macros`, `line-breaks`...), and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
+Each plugin module is loaded once per build, so it can keep a state from a hook to the next, but not from a build to the next (`--watch` loads it again). The plugins that run after the rendering (`mid_process`) only get the pages generated: a page that failed is no longer in `built_pages`. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets only its own options (`macros`, `line-breaks`...), and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
 
 With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 
@@ -705,8 +709,11 @@ the line of the template where they start. The blocks are the children of
 lines of the templates with invisible characters before Jinja and LHTML, then
 moves them to the attribute (`lib/source_map.py`); the lines inside a zone
 that LHTML keeps as it is (code block, multi-line Jinja or HTML tag, math)
-are not marked. Without the attributes, the HTML is the same as in a normal
-build.
+and inside the Jinja blocks whose content is a value (`{% set x %}`,
+`{% markdown %}`, `{% filter %}`) are not marked. A block written on one line
+in HTML or by a macro (`{{ box() }}`) gets its own line. Without the
+attributes, the HTML is the same as in a normal build (also with
+`line-breaks`).
 
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources

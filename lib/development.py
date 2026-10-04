@@ -52,9 +52,12 @@ class PreviewHandler(SimpleHTTPRequestHandler):
     def _local_host(self):
         """Whether the request names this server (Host and, if any, Origin)."""
         port = self.server.server_address[1]
-        allowed = {f'127.0.0.1:{port}', f'localhost:{port}'}
+        allowed = {f'{host}:{port}' for host in ('127.0.0.1', 'localhost')}
+        if port == 80:
+            allowed |= {'127.0.0.1', 'localhost'}
         origin = self.headers.get('Origin')
-        return self.headers.get('Host') in allowed and (not origin or urlsplit(origin).netloc in allowed)
+        return ((self.headers.get('Host') or '').lower() in allowed
+                and (not origin or urlsplit(origin).netloc.lower() in allowed))
 
     def do_GET(self):
         url = urlsplit(self.path)
@@ -64,7 +67,12 @@ class PreviewHandler(SimpleHTTPRequestHandler):
             return self._send(200, feedback.SCRIPT.read_bytes(), 'text/javascript; charset=utf-8')
         if url.path == feedback.URL + 'comments':
             page = parse_qs(url.query).get('page', [None])[0]
-            comments = [c for c in feedback.load(self.feedback_directory) if page is None or c.get('page') == page]
+            try:
+                feedback.refresh(self.feedback_directory)       # comments.jsonl edited by hand
+                comments = [c for c in feedback.load(self.feedback_directory)
+                            if page is None or c.get('page') == page]
+            except Exception as exc:
+                return self._send(500, json.dumps({'error': str(exc)}))
             return self._send(200, json.dumps(comments, ensure_ascii=False))
         return super().do_GET()
 
@@ -90,6 +98,8 @@ class PreviewHandler(SimpleHTTPRequestHandler):
                                                   ensure_ascii=False))
         except (ValueError, TypeError, OverflowError) as exc:
             return self._send(400, json.dumps({'error': str(exc)}))
+        except Exception as exc:        # always an answer: the browser would send the comment again
+            return self._send(500, json.dumps({'error': str(exc)}))
         return self._send(404, '{"error": "not found"}')
 
 
@@ -128,7 +138,10 @@ def develop(args, build):
             fresh, resolved, _ = load_config(filename, args.debug)
             paths = watch_paths(fresh, resolved, args.deck)
             if args.serve:
-                feedback.refresh(PreviewHandler.feedback_directory)    # comments.jsonl edited by hand
+                try:
+                    feedback.refresh(PreviewHandler.feedback_directory)    # comments.jsonl edited by hand
+                except Exception as exc:
+                    print(f'comments.md not written again: {exc}', flush=True)
             build(args)
             state['directory'] = fresh.site_directory
             print('Build complete.', flush=True)

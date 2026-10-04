@@ -160,6 +160,8 @@ def mid_process(meta):
 
     for entry in built_pages(meta):
         file_path = meta['site_directory'] + entry['dir'] + entry['filename']
+        if not os.path.isfile(file_path):       # the page failed
+            continue
 
         with open(file_path, 'r') as fid:
             file_content = fid.read()
