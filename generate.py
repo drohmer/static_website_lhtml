@@ -142,24 +142,29 @@ def run_plugins(meta, hook_name, log):
 # Pipeline stages
 # ---------------------------------------------------------------------------
 
-def load_deck_entries(meta):
-    """Entries of the deck (--deck, else the 'deck' of the configuration), or None."""
+def load_deck(meta):
+    """The deck (--deck, else the 'deck' of the configuration), or None."""
     source = meta['args'].deck if getattr(meta['args'], 'deck', None) else meta.get('deck')
     if source is None:
         return None
     try:
-        return deck.load_deck(source)
+        loaded = deck.load_deck(source, meta['config_directory'])
+        deck.check_mounts(loaded, meta['source_directory'])
+        return loaded
     except deck.DeckError as exc:
         raise RuntimeError(f'Deck: {exc}') from exc
 
 
-def select_pages(meta, entries, pages, log):
-    """Order the pages by the deck (all pages in file order without deck)."""
-    if entries is None:
-        return pages
+def select_pages(meta, loaded_deck, pages, log):
+    """Order the pages by the deck (all pages in file order without deck),
+    adding the pages of other projects. Returns (pages, unlisted local pages)."""
+    if loaded_deck is None:
+        return pages, []
     try:
-        result = deck.apply_deck(entries, pages)
-    except deck.DeckError as exc:
+        external = deck.source_pages(loaded_deck)
+        generator_tool.extract_additional_config(external)
+        result = deck.apply_deck(loaded_deck, pages + external)
+    except (deck.DeckError, ValueError) as exc:
         raise RuntimeError(f'Deck: {exc}') from exc
     for warning in result.warnings:
         log.warning(f'Deck: {warning}')
@@ -168,35 +173,57 @@ def select_pages(meta, entries, pages, log):
                     f"(--scaffold creates it)")
     minutes, timed = deck.total_duration(result.pages)
     summary = f'{len(result.pages)} pages'
+    n_external = sum(1 for p in result.pages if p.get('source'))
+    n_repeated = sum(1 for p in result.pages if p.get('occurrence', 1) > 1)
+    if n_external:
+        summary += f', {n_external} from other projects'
+    if n_repeated:
+        summary += f', {n_repeated} repeated'
     if timed:
         summary += f', {minutes:g} min' + (f' ({timed} pages timed)' if timed < len(result.pages) else '')
     log.keyvalue('info', f'Deck: {summary}', indent_level=1)
     if result.unlisted:
-        names = ', '.join(deck.page_id(p) or deck.page_file(p) for p in result.unlisted[:5])
+        names = ', '.join(deck.page_label(p) for p in result.unlisted[:5])
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
         log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
                              f'{names}{more}', indent_level=1)
-    meta['deck_unlisted'] = result.unlisted
-    return result.pages
+    return result.pages, result.unlisted
 
 
 def prepare_data(meta, log):
     """Copy sources and theme, find templates (in deck order), extract metadata."""
     dir_source = meta['source_directory']
     dir_site = meta['site_directory']
-    entries = load_deck_entries(meta)
-    if entries is not None and getattr(meta['args'], 'scaffold', False):
-        for path in deck.scaffold([e for e in entries if not e.exclude and 'title' in e.meta
-                                   and not e.is_glob], dir_source):
+    light = meta['args'].light
+    loaded_deck = load_deck(meta)
+    if loaded_deck is not None and getattr(meta['args'], 'scaffold', False):
+        for path in deck.scaffold([e for e in loaded_deck.entries if not e.exclude
+                                   and 'title' in e.meta and not e.is_glob], dir_source):
             log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
 
-    if meta['args'].light:
+    if light:
         log.keyvalue('info', 'Light mode: copying only .html.j2 files', indent_level=1)
-        source_files = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
-        source_files = select_pages(meta, entries, source_files, log)
+        pages = filesystem.find_files_in_hierarchy(dir_source, lambda f: f.endswith('.html.j2'))
+    else:
+        log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
+        filesystem.copy_directories(dir_source, dir_site)
+        log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
+        filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
+        pages = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
+    generator_tool.extract_additional_config(pages)
+
+    pages, unlisted = select_pages(meta, loaded_deck, pages, log)
+    if not light:
+        for element in unlisted:
+            os.remove(element['path'].filepath())
+    # Pages of other projects, occurrences, and (light mode) sources: into the site
+    template_files = deck.materialize(pages, dir_site, loaded_deck.sources if loaded_deck else {},
+                                      copy_assets=not light)
+
+    if light:
+        # Remove the pages of the previous generation that are no longer generated
         structure_path = os.path.join(dir_site, 'structure/structure.yaml')
-        current_pages = {e['path'].filepath_local().replace('.html.j2', '.html')
-                         for e in source_files}
+        current_pages = {e['path'].filepath_local().replace('.html.j2', '.html') for e in template_files}
         if os.path.isfile(structure_path):
             with open(structure_path) as fid:
                 previous_pages = yaml.safe_load(fid) or []
@@ -207,36 +234,16 @@ def prepare_data(meta, log):
                         stale = os.path.join(dir_site, relative + suffix)
                         if os.path.isfile(stale):
                             os.remove(stale)
-        generator_tool.extract_additional_config(source_files)
-        for element in source_files:
-            src_path = element['path'].filepath()
-            dst_path = dir_site + '/' + element['path'].filepath_local()
-            os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-            shutil.copy2(src_path, dst_path)
-            element['path'].root_directory = dir_site
-    else:
-        log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        filesystem.copy_directories(dir_source, dir_site)
-        log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
-        filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
 
-    if meta['args'].light:
-        template_files = source_files
-    else:
-        template_files = filesystem.find_files_in_hierarchy(dir_site, lambda f: f.endswith('.html.j2'))
-        template_files = select_pages(meta, entries, template_files, log)
-        for element in meta.get('deck_unlisted', []):
-            os.remove(element['path'].filepath())
     log.debug(f"Found {len(template_files)} template files in '{dir_site}'")
-    if not meta['args'].light:
-        generator_tool.extract_additional_config(template_files)
     for element in template_files:
-        if element.get('deck'):
-            element['extra-config'] = {**element.get('extra-config', {}), **element['deck']}
+        extra = {k: v for k, v in element.get('deck', {}).items() if k != 'params'}
+        if extra:
+            element['extra-config'] = {**element.get('extra-config', {}), **extra}
     sitemap = generator_tool.extract_titles(template_files)
 
     sitemap_dir = os.path.join(dir_site, 'sitemap')
-    if meta['args'].light and os.path.isdir(sitemap_dir):
+    if light and os.path.isdir(sitemap_dir):
         shutil.rmtree(sitemap_dir)
     generator_tool.export_sitemap(sitemap, dir_site + '/sitemap/', meta)
     generator_tool.export_structure(template_files, dir_site + '/structure/', dir_site)
@@ -275,7 +282,8 @@ def render_jinja(meta, template_files, sitemap, log):
         log.debug(f'- {template_local}')
         try:
             template = env.get_template(template_local)
-            output_html = template.render({**meta['keywords'],
+            params = element.get('deck', {}).get('params', {})
+            output_html = template.render({**meta['keywords'], **params, 'params': params,
                                            'pathToRoot': path_to_root, 'pageID': k})
         except Exception as e:
             log.error(f'Jinja2 error in {template_local}: {e}')

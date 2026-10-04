@@ -61,10 +61,15 @@ class DeckTests(unittest.TestCase):
         self.assertEqual(ids, ['b/00_section', 'b/01_w'])
         self.assertIn('also excluded', result.warnings[0])
 
-    def test_duplicate_pointer_warns(self):
-        ids, result = order(['a/01_x', 'b', 'a/01_x'])
-        self.assertEqual(ids, ['a/01_x', 'b/00_section', 'b/01_w'])
-        self.assertIn('already listed', result.warnings[0])
+    def test_repeated_pointer_gives_occurrences(self):
+        ids, result = order([{'path': 'a/01_x', 'params': {'current': 1}}, 'b',
+                             {'path': 'a/01_x', 'params': {'current': 2}}, 'a'])
+        self.assertEqual(ids, ['a/01_x', 'b/00_section', 'b/01_w', 'a/01_x',
+                               'a/00_section', 'a/02_y', 'a/03_todo_z'])
+        self.assertEqual([p.get('occurrence', 1) for p in result.pages[:4]], [1, 1, 1, 2])
+        self.assertEqual(result.pages[0]['deck']['params'], {'current': 1})
+        self.assertEqual(result.pages[3]['deck']['params'], {'current': 2})
+        self.assertEqual(result.warnings, [])
 
     def test_several_pages_in_a_directory(self):
         site = pages('index.html.j2', 'course/intro.html.j2', 'course/index.html.j2')
@@ -84,13 +89,28 @@ class DeckTests(unittest.TestCase):
 
     def test_invalid_decks(self):
         for bad in ({'slides': 'a'}, {'pages': []}, ['../x'], ['a/../../x'], [{'title': 'T'}], [3],
-                    [{'path': 'a', 'level': 2}], [{'path': 'a', 'duration': 'long'}]):
+                    [{'path': 'a', 'level': 2}], [{'path': 'a', 'duration': 'long'}],
+                    [{'path': 'a', 'params': [1]}], ['other:a'],
+                    {'sources': {'x': '/does/not/exist'}, 'slides': []}):
             with self.assertRaises(deck.DeckError, msg=repr(bad)):
                 deck.load_deck(bad)
 
+    def test_external_source(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name in ('c/01_u', 'c/02_v'):
+                (Path(root) / 'ext' / name).mkdir(parents=True)
+                (Path(root) / 'ext' / name / 'index.html.j2').write_text('= u\n')
+            loaded = deck.load_deck({'sources': {'ext': 'ext'}, 'slides': ['a/01_x', 'ext:c', '!ext:c/02_v']},
+                                    root)
+            self.assertEqual(loaded.sources['ext'].mount, 'ext/')
+            result = deck.apply_deck(loaded, SLIDES + deck.source_pages(loaded))
+            self.assertEqual([deck.page_label(p) for p in result.pages], ['a/01_x', 'ext:c/01_u'])
+            # unlisted: local pages only
+            self.assertEqual(len(result.unlisted), len(SLIDES) - 1)
+
     def test_scaffold(self):
         with tempfile.TemporaryDirectory() as root:
-            entries = deck.load_deck([{'path': 'a/09_new', 'title': 'New', 'duration': 1}])
+            entries = deck.load_deck([{'path': 'a/09_new', 'title': 'New', 'duration': 1}]).entries
             created = deck.scaffold(entries, root)
             self.assertEqual(len(created), 1)
             self.assertEqual(Path(created[0]).read_text(), '= New\n\n::# duration: 1\n')
@@ -161,3 +181,73 @@ class DeckGenerationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DeckProjectsTests(unittest.TestCase):
+    """Pages of other projects and repeated pages with parameters, end to end."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='lhtml deck ')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        head = "{% extends 'theme/template/base.html' %}\n{% block content %}\n"
+        self.write('talk/src/00_plan/index.html.j2',
+                   head + "= Plan\n{% for s in ['A', 'B'] %}"
+                   "{% if loop.index == current %}**{{ s }}**{% else %}muted:: {{ s }} ::{% endif %}\n"
+                   "{% endfor %}\n{% endblock %}\n")
+        self.write('talk/src/01_a/index.html.j2', head + "= A\n{% endblock %}\n")
+        self.write('course/src/05_b/01_c/index.html.j2', head + "= C\nimg::assets/c.png\n{% endblock %}\n")
+        self.write('course/src/05_b/01_c/assets/c.png', 'png')
+        self.write('course/src/05_b/01_c/config.yaml', 'credit: course\n')
+        self.write('course/src/05_b/02_d/index.html.j2', head + "= D\n{% endblock %}\n")
+        self.site = self.root / 'talk/site'
+        self.config = self.root / 'talk/config.yaml'
+        self.config.write_text(yaml.safe_dump({
+            'source_directory': 'src', 'site_directory': 'site', 'deck': 'deck.yaml',
+            'theme': str(REPO / 'themes/slides'), 'plugin': ['plugins/menu.py']}))
+
+    def write(self, name, text):
+        path = self.root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+
+    def build(self, deck_data, *args, ok=True):
+        (self.root / 'talk/deck.yaml').write_text(yaml.safe_dump(deck_data))
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.config), *args],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
+        if ok:
+            return yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
+        return result.stdout + result.stderr
+
+    DECK = {'sources': {'course': '../course/src'},
+            'slides': [{'path': '00_plan', 'params': {'current': 1}}, '01_a', 'course:05_b/01_c',
+                       {'path': '00_plan', 'params': {'current': 2}, 'title': 'Plan (2)'}]}
+
+    def test_external_and_repeated_pages(self):
+        for args in ((), ('-l',)):
+            structure = self.build(self.DECK, *args)
+            self.assertEqual([e['dir'] + e['filename'] for e in structure],
+                             ['00_plan/index.html', '01_a/index.html', 'course/05_b/01_c/index.html',
+                              '00_plan/index-2.html'])
+            self.assertEqual(structure[2]['credit'], 'course')
+            self.assertEqual(structure[3]['title'], 'Plan (2)')
+            first = (self.site / '00_plan/index.html').read_text()
+            second = (self.site / '00_plan/index-2.html').read_text()
+            self.assertIn('<strong>A</strong>', first)
+            self.assertIn('<span class="muted"> B </span>', first)
+            self.assertIn('<strong>B</strong>', second)
+            self.assertIn('id="current-page-id" class="hidden">3<', second)
+            self.assertTrue((self.site / 'course/05_b/01_c/assets/c.png').is_file())
+            self.assertIn('../../../theme/css/main.css', (self.site / 'course/05_b/01_c/index.html').read_text())
+            self.assertFalse((self.site / 'course/05_b/02_d').exists())
+
+    def test_light_mode_removes_previous_occurrence(self):
+        self.build(self.DECK)
+        self.build({'slides': ['00_plan', '01_a']}, '-l')
+        self.assertFalse((self.site / '00_plan/index-2.html').exists())
+
+    def test_mount_conflict_and_unknown_source(self):
+        (self.root / 'talk/src/course').mkdir()
+        self.assertIn('already exists', self.build(self.DECK, ok=False))
+        self.assertIn("unknown source 'other'", self.build({'slides': ['other:x']}, ok=False))

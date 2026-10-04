@@ -102,7 +102,7 @@ Optional keys:
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
 | `title_id` | Generate heading IDs (default: true) |
-| `deck` | Order of the pages: path of a deck file, or list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
+| `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens and macros overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-and-macros)) |
 
 ## Pipeline
@@ -164,24 +164,33 @@ Themes use Jinja2 template inheritance. The base template (`template/base.html`)
 Without a deck, the pages are generated in the order of the files (sorted
 paths, hence numbered directories such as `02_rotations/04_representations`).
 A deck lists the slides with pointers to their sources, so that the order
-does not depend on the names of the directories:
+does not depend on the names of the directories, slides can come from other
+projects, and a slide can appear several times:
 
 ```yaml
 # deck.yaml (configure.yaml: deck: 'deck.yaml')
 title: Talk, short version
+sources:                              # other projects (relative to the deck file)
+  inf585: ~/teaching/inf585/lecture/inf585_lecture_slides/src
 slides:
-  - 00_ouverture                      # directory: all its pages, in file order
-  - 02_rotations/00_section           # one page (its directory)
+  - 00_ouverture/00_titre             # one page (its directory)
+  - path: 00_ouverture/02_partie      # parameterized slide...
+    title: Plan
+    params: {current: 0}
+  - 01_introduction                   # directory: all its pages, in file order
+  - path: 00_ouverture/02_partie      # ...the same slide again, other parameters
+    title: Transformations and rotations
+    params: {current: 2}
   - 02_rotations/0[5-8]*              # glob on the page paths
   - 02_rotations                      # the rest of the section
   - path: 02_rotations/13_interpolation   # moved after the rest of the section
     title: Interpolation (summary)    # title in the menu
     duration: 1.5                     # minutes: the build log sums them
+  - inf585:04_interpolation_position/content/07_hermite   # slide of another project
   - path: 03_squelette/10_bilan       # planned slide, no source yet
     title: Kinematics, summary
     message: IK = optimisation, FK = composition
-  - '!06_recherche/*_todo_*'          # excluded, wherever it is listed
-  - '!*/00b_histoire'
+  - '!*/00_section'                   # excluded, wherever it is listed
 ```
 
 - A pointer is a path relative to the source directory: the directory of a
@@ -189,19 +198,46 @@ slides:
   (`course/intro.html`, when a directory holds several pages), or a glob.
 - A pointer that names exactly one page takes precedence over directories and
   globs: the page is placed there, and skipped by the directories and globs.
-  The same page named twice keeps its first place (with a warning).
-- `!pattern` excludes the matching pages from the whole deck.
+- `!pattern` excludes the matching pages from the whole deck
+  (`!inf585:*/00_title` for another project).
 - A slide may be a mapping with `path` and metadata. `title` replaces the
-  title in the menu; `duration` (minutes) is summed in the build log; every
-  other key (`message`, `notes`, ...) is exported in `structure.yaml`, like
-  the page `config.yaml`. The metadata of a directory or a glob applies to
-  each of its pages.
+  title in the menu; `duration` (minutes) is summed in the build log;
+  `params` (see below); every other key (`message`, `notes`, ...) is exported
+  in `structure.yaml`, like the page `config.yaml`. The metadata of a
+  directory or a glob applies to each of its pages.
 - Pages that are not in the deck are not generated (they are listed in the
   build log); the files of their directory (assets) are still copied.
 - A pointer that matches no page is an error (with a suggestion), unless the
   slide has a `title`: it is a planned slide, reported in the log.
   `--scaffold` creates its source, `<path>/index.html.j2`, with the title and
   the other metadata as LHTML comments (existing files are never modified).
+
+**Other projects.** `sources` gives a name to the source directory of another
+project (`name: path`, or `name: {path: ..., mount: dir}`); its pages are
+named `name:path`. They are copied into the site under `name/` (or `mount`),
+with the files and asset directories of their directory, and their
+`config.yaml`; a mount that already exists in the sources is an error. The
+other project is only read: nothing is copied into its sources or yours.
+
+**Repeated slides and parameters.** Naming the same page explicitly again
+creates another occurrence: it is generated next to the first one
+(`index-2.html`, `index-3.html`, ...), so its relative assets still work, with
+its own place in the navigation and its own metadata. `params` are Jinja
+variables of the occurrence (also available as `params`), e.g. a plan that
+highlights the current part:
+
+```
+{% set parts = ["Introduction", "Rotations", "Skeleton"] %}
+{% set current = current | default(0) %}
+div::[margin-left:600px;]
+{%- for p in parts %}
+* {% if loop.index == current %}**{{ p }}**{% else %}muted:: {{ p }} ::{% endif %}
+{%- endfor %}
+::
+```
+
+(The `{%-` remove the line breaks of the loop, which would otherwise split the
+LHTML list.) Directories and globs never repeat a page.
 
 The menu, the previous/next navigation, the redirection to the first page,
 the PDF export and the layout report follow the deck. Several decks can share
