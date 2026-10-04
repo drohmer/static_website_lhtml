@@ -131,18 +131,30 @@ size of what is drawn, font, and a signature to find the block in the source.
 - `COLLISION`: drawn contents overlapping.
 - `OUT OF AREA`: a block beyond the slide frame.
 - `CLIPPED`: content cut by `overflow`.
-- `UPSCALED IMAGE`: a bitmap enlarged above 1.25×, so it looks blurry.
+- `UPSCALED IMAGE`: a bitmap or video enlarged above 1.25×, so it looks blurry.
+- `RESERVED AREA`: content over the navigation of the theme.
 
 **Warnings** should be checked:
 - `TIGHT`: lines too close to another block.
 - `NEAR-ALIGNED`: edges a few pixels apart; align them exactly or move them clearly.
 - `DENSE`: too many words.
 - `SMALL FONT`: text too small.
+- `WRAPPED`: a title on several lines, or an item with a few words on its
+  second line: shorten it, or give it more width.
+- `ROW`: figures side by side not aligned.
+- `SMALL IN ITS BOX` / `CROPPED`: a figure much smaller than its area
+  (`media::(.fill)`, or another arrangement), or cut.
 
 **Differences with the deck** (title position, text sizes used nowhere
 else) are breaks of consistency, not errors.
 
-**Values written by hand** are the lint findings of the page.
+**Values written by hand** are the lint findings of the page. The density
+section gives the largest free area of the slide.
+
+After an edit, `.layout/changes.md` lists what moved and which problems
+appeared or disappeared: check that only the intended blocks changed. The
+renders are reproducible (videos and GIFs at their first frame), so a change
+there is a real change.
 
 An intended overlap (an inset over a figure) takes the class `overlay`.
 

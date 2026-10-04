@@ -527,6 +527,7 @@ Files:
   per sheet, with badges `P` (problems), `W` (warnings), `D` (differences
   with the deck): the whole deck at a glance
 - `deck.json`: the usual values of the deck, for scripts
+- `changes.md`: what changed since the previous report (see below)
 - `summary.md` links to `structure/design.md` of the site: the macros and
   tokens of the design (when the theme or the configuration defines one), to
   use instead of inline styles
@@ -550,8 +551,10 @@ Detected problems:
   on the drawn part of an image, images, backgrounds)
 - `OUT OF AREA`: block beyond the usable area
 - `CLIPPED`: content cut by `overflow`
-- `UPSCALED IMAGE`: bitmap displayed more than 1.25× its native size, hence
-  blurry (vector images such as SVG are ignored)
+- `UPSCALED IMAGE`: bitmap or video drawn more than 1.25× its native size,
+  hence blurry (vector images such as SVG are ignored)
+- `RESERVED AREA`: content over an area of the theme (the navigation: the
+  elements of `exclude`)
 
 Warnings:
 
@@ -567,10 +570,22 @@ Warnings:
   from `text-align`); tops and bottoms only between blocks side by side.
 - `DENSE` (more than `max_words` words of text) and `SMALL FONT` (text
   smaller than `min_font` px), on slides only.
+- `WRAPPED`: a title on several lines, or a list item (or credit) whose
+  second line holds only a few words.
+- `ROW`: figures side by side whose tops (or bottoms) differ by 3 to 40 px.
+- `SMALL IN ITS BOX` / `CROPPED`: a figure drawn on less than 75 % of its
+  box, or cut, by `object-fit` (e.g. in `media::`: use `media::(.fill)` or
+  another arrangement).
 
 Each page report also gives its density: words (math and code excluded),
-formulas, lines of code, list items, lines of text, smallest font size, and
-the parts of the area covered by text and images.
+formulas, lines of code, list items, lines of text, smallest font size, the
+parts of the area covered by text and images, and the largest free area.
+
+Renders are reproducible: videos are measured at their first frame, animated
+GIFs at their first image, CSS animations stopped. `changes.md` lists what
+changed since the previous report for the pages measured again: counts of
+problems, warnings and values written by hand, blocks moved or resized
+(matched by their signature), added or removed.
 
 Differences with the deck: the usual values of the deck are measured over
 all its pages (`summary.md`, `deck.json`): page title variants (heading tag

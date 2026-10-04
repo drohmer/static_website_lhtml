@@ -268,3 +268,53 @@ def test_no_density_warnings_on_scrolling_pages():
     blocks = [block(1, 0, 0, 500, 2000, ink=[text(0, 0, 500, 2000)], text={'words': 900, 'min_font': 14})]
     analysis = layout_report.analyse({'area': AREA, 'blocks': blocks, 'scrolling': True})
     assert analysis['dense'] == [] and analysis['density']['words'] == 900
+
+
+def test_content_over_the_navigation():
+    blocks = [block(1, 900, 450, 80, 40), block(2, 0, 0, 100, 100)]
+    found = layout_report.find_reserved_overlaps(blocks, [{'x': 880, 'y': 440, 'w': 120, 'h': 60, 'name': 'nav'}])
+    assert [(f['id'], f['name']) for f in found] == [(1, 'nav')]
+
+
+def test_wrapped_titles_and_items():
+    b = block(1, 0, 0, 500, 100, wrapped=[
+        {'tag': 'h2', 'text': 'A long title', 'lines': 2, 'first_w': 500, 'last_w': 400},
+        {'tag': 'li', 'text': 'An item', 'lines': 2, 'first_w': 800, 'last_w': 100},
+        {'tag': 'li', 'text': 'A paragraph item', 'lines': 2, 'first_w': 800, 'last_w': 600},
+        {'tag': 'li', 'text': 'A long item', 'lines': 3, 'first_w': 800, 'last_w': 100}])
+    assert [w['text'] for w in layout_report.find_wrapped([b])] == ['A long title', 'An item']
+
+
+def test_row_of_figures_not_aligned():
+    rows = [{'figures': ['a.png', 'b.png', 'c.png'], 'tops': [363, 363, 377], 'bottoms': [500, 500, 500]},
+            {'figures': ['d.png', 'e.png'], 'tops': [100, 101], 'bottoms': [200, 300]}]     # 100 px: deliberate
+    found = layout_report.find_row_misalignments([block(1, 0, 0, 10, 10, rows=rows)])
+    assert [(f['edge'], f['spread']) for f in found] == [('top', 14)]
+
+
+def test_figure_small_in_its_box_or_cropped():
+    media = [{'src': 'a.png', 'box': {'x': 0, 'y': 0, 'w': 400, 'h': 400}, 'drawn': {'w': 400, 'h': 100, 'fit': 'contain'}},
+             {'src': 'b.png', 'box': {'x': 0, 'y': 0, 'w': 400, 'h': 400}, 'drawn': {'w': 600, 'h': 400, 'fit': 'cover'}},
+             {'src': 'c.png', 'box': {'x': 0, 'y': 0, 'w': 400, 'h': 400}, 'drawn': {'w': 400, 'h': 380, 'fit': 'contain'}}]
+    found = layout_report.find_fit([block(1, 0, 0, 400, 400, media=media)])
+    assert [(f['src'], f['kind'], f['sides']) for f in found] == [('a.png', 'small', 'top and bottom'),
+                                                                  ('b.png', 'cropped', 'left and right')]
+
+
+def test_largest_free_rect():
+    blocks = [block(1, 0, 0, 1000, 100), block(2, 0, 100, 400, 400)]
+    free = layout_report.largest_free_rect(blocks, AREA)
+    assert (free['x'], free['y'], free['w'], free['h']) == (400, 100, 600, 400)
+
+
+def test_changes_between_two_measures():
+    old = {'blocks': [block(1, 0, 0, 100, 50), {**block(2, 0, 100, 100, 50), 'signature': 'img a.png'}],
+           'analysis': {'collisions': [{}], 'lint': []}}
+    new = {'blocks': [block(1, 0, 0, 100, 50), {**block(2, 0, 120, 100, 80), 'signature': 'img a.png'},
+                      {**block(3, 0, 300, 10, 10), 'signature': 'p "new"'}],
+           'analysis': {'collisions': [], 'lint': []}}
+    lines = layout_report.layout_changes(old, new)
+    assert lines[0] == '- problems: 1 -> 0'
+    assert lines[1].startswith('- #2 moved by (+0, +20) px, 100×50 -> 100×80 px')
+    assert lines[2].startswith('- new block #3')
+    assert layout_report.layout_changes(new, new) == []

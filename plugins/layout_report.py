@@ -208,9 +208,103 @@ def find_upscaled_images(blocks, tolerance=1.25):
         for m in b.get('media', []):
             if m.get('vector') or not m.get('natural_w'):
                 continue
-            if m['w'] > m['natural_w'] * tolerance:
-                result.append({'id': b['id'], 'src': m['src'], 'scale': round(m['w'] / m['natural_w'], 2)})
+            width = (m.get('drawn') or {}).get('w') or m['w']      # drawn size (object-fit)
+            if width > m['natural_w'] * tolerance:
+                result.append({'id': b['id'], 'src': m['src'], 'scale': round(width / m['natural_w'], 2)})
     return result
+
+
+def find_reserved_overlaps(blocks, reserved, threshold=4):
+    """Blocks whose ink covers an area reserved by the theme (the
+    navigation): {id, name, x0, y0, x1, y1}."""
+    found = []
+    for zone in reserved or []:
+        z = (zone['x'], zone['y'], zone['x'] + zone['w'], zone['y'] + zone['h'])
+        for b in blocks:
+            parts = [o for r in _ink(b) if (o := _overlap(r, z, threshold))]
+            if parts:
+                bounds = _bounds(parts)
+                found.append({'id': b['id'], 'name': zone.get('name', 'reserved'),
+                              **{k: bounds[k] for k in ('x0', 'y0', 'x1', 'y1')}})
+    return found
+
+
+def find_wrapped(blocks, short=0.3):
+    """Titles written on several lines, and list items or credits whose last
+    line holds only a few words (shorter than `short` × the first line)."""
+    found = []
+    for b in blocks:
+        for w in b.get('wrapped', []):
+            title = w['tag'][0] == 'h'
+            if title or (w['lines'] == 2 and w['last_w'] < short * w['first_w']):
+                found.append({'id': b['id'], **w})
+    return found
+
+
+def find_row_misalignments(blocks, tolerance=2, intended=40):
+    """Rows of figures side by side whose tops or bottoms differ by a few
+    pixels (more than `tolerance`, up to `intended`: beyond, deliberate)."""
+    found = []
+    for b in blocks:
+        for row in b.get('rows', []):
+            for edge in ('tops', 'bottoms'):
+                spread = max(row[edge]) - min(row[edge])
+                if tolerance < spread <= intended:
+                    found.append({'id': b['id'], 'edge': edge[:-1], 'figures': row['figures'],
+                                  'values': row[edge], 'spread': spread})
+                    break
+    return found
+
+
+def find_fit(blocks, empty=0.25, cropped=0.05):
+    """Figures drawn much smaller than their box (object-fit contain: empty
+    bands) or cropped (cover)."""
+    found = []
+    for b in blocks:
+        for m in b.get('media', []):
+            d, box = m.get('drawn'), m.get('box')
+            if not d or not box or not box['w'] or not box['h']:
+                continue
+            ratio = d['w'] * d['h'] / (box['w'] * box['h'])
+            if d['fit'] == 'cover' and ratio > 1 / (1 - cropped):
+                cut = 'left and right' if d['w'] > box['w'] else 'top and bottom'
+                found.append({'id': b['id'], 'src': m['src'], 'kind': 'cropped',
+                              'part': round(1 - 1 / ratio, 2), 'sides': cut})
+            elif d['fit'] != 'cover' and ratio < 1 - empty:
+                bands = 'left and right' if d['w'] < box['w'] - 2 else 'top and bottom'
+                found.append({'id': b['id'], 'src': m['src'], 'kind': 'small',
+                              'part': round(ratio, 2), 'sides': bands})
+    return found
+
+
+def largest_free_rect(blocks, area, step=10, reserved=()):
+    """Largest rectangle of the usable area without ink (nor reserved area):
+    {x, y, w, h, share}, on a grid of `step` px."""
+    if area['w'] <= 0 or area['h'] <= 0:
+        return None
+    rects = [r[:4] for b in blocks for r in _ink(b)]
+    rects += [(z['x'], z['y'], z['x'] + z['w'], z['y'] + z['h']) for z in reserved or []]
+    nx, ny = area['w'] // step, area['h'] // step
+    heights, best = [0] * nx, (0, 0, 0, 0)        # area, column, row, width (histogram method)
+    for j in range(ny):
+        y = area['y'] + j * step + step // 2
+        for i in range(nx):
+            x = area['x'] + i * step + step // 2
+            heights[i] = 0 if any(x0 <= x < x1 and y0 <= y < y1 for x0, y0, x1, y1 in rects) else heights[i] + 1
+        stack = []
+        for i in range(nx + 1):
+            h = heights[i] if i < nx else 0
+            start = i
+            while stack and stack[-1][1] >= h:
+                start, sh = stack.pop()
+                if sh * (i - start) > best[0]:
+                    best = (sh * (i - start), start, j - sh + 1, i - start, sh)
+            stack.append((start, h))
+    if not best[0]:
+        return None
+    _, i, j, w, h = best
+    return {'x': area['x'] + i * step, 'y': area['y'] + j * step, 'w': w * step, 'h': h * step,
+            'share': round(w * h / (nx * ny), 2)}
 
 
 def vertical_gaps(blocks):
@@ -517,6 +611,7 @@ def analyse(layout, threshold=4, norms=None, limits=None):
     hiding = {frozenset((h['id'], h['by'])) for h in hidden_text}
     collisions = [c for c in collisions if frozenset((c['a'], c['b'])) not in hiding]
     layout['analysis'] = {
+        'reserved': find_reserved_overlaps(blocks, layout.get('reserved'), threshold),
         'collisions': collisions,
         'hidden_text': hidden_text,
         'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False)),
@@ -530,6 +625,10 @@ def analyse(layout, threshold=4, norms=None, limits=None):
         'occupancy': round(occupancy(blocks, area), 2),
         'near_aligned': find_near_alignments(blocks, area, norms.get('columns', ())),
         'density': density(blocks, area),
+        'wrapped': find_wrapped(blocks),
+        'rows': find_row_misalignments(blocks),
+        'fit': find_fit(blocks),
+        'free': largest_free_rect(blocks, area, reserved=layout.get('reserved')),
         'deviations': find_deviations(blocks, norms) if norms else [],
     }
     # the limits are meant for slides, not for scrolling web pages
@@ -538,10 +637,10 @@ def analyse(layout, threshold=4, norms=None, limits=None):
     return layout['analysis']
 
 
-PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images')
+PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images', 'reserved')
 
 
-WARNING_KEYS = ('tight', 'near_aligned', 'dense')
+WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit')
 
 
 def count_problems(analysis):
@@ -598,6 +697,9 @@ def page_markdown(name, source, layout):
         problems.append(f"- CLIPPED #{c['id']}: {c['w']} px (width) / {c['h']} px (height) of content hidden")
     for u in analysis['upscaled_images']:
         problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
+    for r in analysis.get('reserved', []):
+        problems.append(f"- RESERVED AREA #{r['id']}: covers the {r['name']} of the theme "
+                        f"(x {r['x0']}..{r['x1']}, y {r['y0']}..{r['y1']})")
     lines += ['', '## Problems', ''] + (problems or ['None.'])
 
     warnings = [f"- TIGHT #{t['a']} × #{t['b']}: line box of text overlapping by {t['y1'] - t['y0']} px "
@@ -606,6 +708,18 @@ def page_markdown(name, source, layout):
     warnings += [f"- NEAR-ALIGNED #{n['id']}: {n['edge']} at {n['axis']} {n['value']}, "
                  f"{abs(n['delta'])} px {_direction(n)} the {n['ref_label']} ({n['axis']} {n['ref']})"
                  for n in analysis.get('near_aligned', [])]
+    for w in analysis.get('wrapped', []):
+        what = 'title' if w['tag'][0] == 'h' else ('credit' if w['tag'].endswith('credit') else 'list item')
+        tail = '' if what == 'title' else f", the last one {w['last_w']} px wide (first {w['first_w']} px)"
+        warnings.append(f"- WRAPPED #{w['id']}: {what} \"{w['text']}\" on {w['lines']} lines{tail}")
+    for r in analysis.get('rows', []):
+        values = ', '.join(f'{f} {v}' for f, v in zip(r['figures'], r['values']))
+        warnings.append(f"- ROW #{r['id']}: the {r['edge']}s of the figures side by side differ by "
+                        f"{r['spread']} px ({values})")
+    for f in analysis.get('fit', []):
+        warnings.append(f"- {'CROPPED' if f['kind'] == 'cropped' else 'SMALL IN ITS BOX'} #{f['id']}: {f['src']} "
+                        + (f"{round(100 * f['part'])} % cut ({f['sides']})" if f['kind'] == 'cropped'
+                           else f"drawn on {round(100 * f['part'])} % of its box (empty {f['sides']})"))
     dense_text = {'words': 'words of text', 'min_font': 'px: smallest font size'}
     warnings += [f"- {'SMALL FONT' if d['kind'] == 'min_font' else 'DENSE'}: {d['value']} {dense_text[d['kind']]} "
                  f"({'minimum' if d['kind'] == 'min_font' else 'limit'} {d['limit']})"
@@ -632,6 +746,10 @@ def page_markdown(name, source, layout):
                   f"{d['items']} list items, {d['text_lines']} lines of text; smallest font "
                   f"{d['min_font'] if d['min_font'] is not None else '-'} px; text covers "
                   f"{round(100 * d['text_area'])} %, images {round(100 * d['media_area'])} % of the area"]
+        free = analysis.get('free')
+        if free:
+            lines.append(f"Largest free area: x {free['x']}..{free['x'] + free['w']}, y {free['y']}..{free['y'] + free['h']} "
+                         f"({free['w']}×{free['h']} px, {round(100 * free['share'])} % of the area)")
 
     if analysis.get('lint'):
         lines += ['', '## Values written by hand (design lint)', '',
@@ -697,11 +815,17 @@ image names).
 Problems: HIDDEN TEXT (text covered by another block drawn on top of it),
 COLLISION (drawn content of two blocks overlapping), OUT OF AREA (block
 beyond the usable area), CLIPPED (content cut by overflow), UPSCALED IMAGE
-(bitmap displayed larger than its native size: blurry).
+(bitmap displayed larger than its native size: blurry), RESERVED AREA (content
+over the navigation of the theme).
 Warnings: TIGHT (text very close to another block: line boxes overlap, glyphs
 probably do not), NEAR-ALIGNED (edge or center a few px away from that of
 another block, of the area or of a column of the deck: align it exactly or
-move it clearly), DENSE (too many words), SMALL FONT.
+move it clearly), DENSE (too many words), SMALL FONT, WRAPPED (title on
+several lines, or list item with a few words on its second line), ROW (figures
+side by side not aligned), SMALL IN ITS BOX / CROPPED (figure much smaller
+than its box, or cut, by object-fit).
+Renders are reproducible: videos at their first frame, GIFs at their first
+image, animations stopped. `changes.md`: what changed since the previous report.
 Differences with the deck (deviations): page title not at its usual position,
 or of an unusual kind or size, unusual gap below the title, text in a font
 size used nowhere else.
@@ -711,6 +835,50 @@ whole deck at once; badges P (problems), W (warnings), D (deviations).
 An overlap is intentional when one of the blocks has the class `overlay`
 (LHTML: `::(.overlay)[...]`): it is listed in the notes, not as a problem.
 '''
+
+
+def layout_changes(old, new, threshold=4):
+    """What changed between two measures of a page: counts of problems,
+    warnings and lint, blocks moved or resized (matched by signature),
+    blocks added or removed. Returns lines of Markdown (none: no change)."""
+    lines = []
+    a, b = old.get('analysis', {}), new.get('analysis', {})
+    for label, count in (('problems', count_problems), ('warnings', count_warnings),
+                         ('values written by hand', lambda x: len(x.get('lint', [])))):
+        if count(a) != count(b):
+            lines.append(f'- {label}: {count(a)} -> {count(b)}')
+    remaining = {}
+    for block in old.get('blocks', []):
+        remaining.setdefault(block['signature'], []).append(block)
+    for block in new.get('blocks', []):
+        same = remaining.get(block['signature'])
+        if not same:
+            lines.append(f"- new block #{block['id']}: {_md_cell(block['signature'])}")
+            continue
+        before = same.pop(0)
+        r0, r1 = _rect(before), _rect(block)
+        dx, dy = r1[0] - r0[0], r1[1] - r0[1]
+        size0, size1 = (r0[2] - r0[0], r0[3] - r0[1]), (r1[2] - r1[0], r1[3] - r1[1])
+        moved = abs(dx) >= threshold or abs(dy) >= threshold
+        resized = abs(size1[0] - size0[0]) >= threshold or abs(size1[1] - size0[1]) >= threshold
+        if moved or resized:
+            change = [f'moved by ({dx:+d}, {dy:+d}) px'] if moved else []
+            if resized:
+                change.append(f'{size0[0]}×{size0[1]} -> {size1[0]}×{size1[1]} px')
+            lines.append(f"- #{block['id']} {', '.join(change)}: {_md_cell(block['signature'])[:80]}")
+    for blocks in remaining.values():
+        lines += [f"- removed block #{blk['id']}: {_md_cell(blk['signature'])[:80]}" for blk in blocks]
+    return lines
+
+
+def changes_markdown(changes, measured):
+    """changes: [(page name, lines)] of the pages that changed."""
+    out = ['# Changes since the previous report', '',
+           f'{measured} page(s) measured, {len(changes)} changed. Blocks are matched by signature; '
+           'a block whose text or style changed appears as removed and new.', '']
+    for name, lines in changes:
+        out += [f'## {name}', ''] + lines + ['']
+    return '\n'.join(out) + '\n'
 
 
 def summary_markdown(rows, norms=None, design=None):
@@ -870,6 +1038,15 @@ def post_process(meta):
         elif os.path.isfile(html):
             pages.append(page)
 
+    previous_layouts = {}             # the previous measure of the pages measured again, for changes.md
+    for p in pages:
+        path = os.path.join(p['out'], 'layout.json')
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding='utf-8') as fid:
+                    previous_layouts[p['name']] = json.load(fid)
+            except (OSError, ValueError):
+                pass
     if os.path.isdir(output_dir) and not partial:
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -922,6 +1099,11 @@ def post_process(meta):
         reference = os.path.join(meta.get('published_site_directory') or site_dir, 'structure', 'design.md')
         fid.write(summary_markdown(rows, norms, design=os.path.relpath(reference, output_dir)
                                    if meta.get('design') and any(meta['design'].values()) else None))
+    changes = [(p['name'], lines) for p, _, layout in measured if p not in previous
+               and p['name'] in previous_layouts
+               and (lines := layout_changes(previous_layouts[p['name']], layout))]
+    with open(os.path.join(output_dir, 'changes.md'), 'w', encoding='utf-8') as fid:
+        fid.write(changes_markdown(changes, len(pages)))
     with open(os.path.join(output_dir, 'deck.json'), 'w') as fid:
         json.dump(norms, fid, indent=1)
     if options['images'] and measured:
@@ -932,6 +1114,9 @@ def post_process(meta):
                              if partial else None)
 
     n_problems = sum(count_problems(r[2]) for r in rows)
+    if previous_layouts:
+        log.keyvalue('info', f"Layout changes: {len(changes)} page(s) changed -> "
+                             f"{os.path.relpath(os.path.join(output_dir, 'changes.md'))}", indent_level=2)
     log.keyvalue('info', f"Layout report: {len(pages)} measured, {len(rows)} pages, {n_problems} problems -> "
                          f"{os.path.relpath(os.path.join(output_dir, 'summary.md'))}", indent_level=2)
     if len(rows) < len(pages) + len(previous):

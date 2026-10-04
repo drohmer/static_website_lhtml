@@ -261,18 +261,101 @@ function extractBlocks(rootSelector, excludeSelector) {
         return 'div';
     }
 
+    // Rectangle where an image or a video is drawn in its box (object-fit):
+    // smaller than the box with contain (empty bands), larger with cover (cropped).
+    function drawnRect(el, box) {
+        const nw = el.naturalWidth || el.videoWidth, nh = el.naturalHeight || el.videoHeight;
+        const fit = getComputedStyle(el).objectFit;
+        if (!nw || !nh || !box.w || !box.h || !['contain', 'cover', 'scale-down'].includes(fit)) return null;
+        let scale = fit === 'cover' ? Math.max(box.w / nw, box.h / nh) : Math.min(box.w / nw, box.h / nh);
+        if (fit === 'scale-down') scale = Math.min(1, scale);
+        const w = nw * scale, h = nh * scale;
+        return {x: round(box.x + (box.w - w) / 2), y: round(box.y + (box.h - h) / 2), w: round(w), h: round(h), fit};
+    }
+
+    const sourceOf = (el) => el.dataset.layoutSrc || el.getAttribute('src')
+        || (el.querySelector && el.querySelector('source') ? el.querySelector('source').getAttribute('src') : '') || '';
+
     function mediaInfo(el) {
-        const imgs = el.tagName === 'IMG' ? [el] : [...el.querySelectorAll('img')];
-        return imgs.slice(0, 6).map(img => {
+        const items = ['IMG', 'VIDEO'].includes(el.tagName) ? [el] : [...el.querySelectorAll('img, video')];
+        return items.slice(0, 6).map(img => {
             const box = toRect(img.getBoundingClientRect());
-            const src = img.getAttribute('src') || '';
+            const src = sourceOf(img);
             delete box.t;
-            const content = {...imageShape(img).content};
+            const content = img.tagName === 'IMG' ? {...imageShape(img).content} : {...box};
             delete content.t;
-            return {src: basename(src), w: box.w, h: box.h,
-                    natural_w: img.naturalWidth, natural_h: img.naturalHeight,
-                    vector: /\.svgz?(\?|#|$)/i.test(src), box, content};
+            return {src: basename(src), w: box.w, h: box.h, tag: img.tagName.toLowerCase(),
+                    natural_w: img.naturalWidth || img.videoWidth, natural_h: img.naturalHeight || img.videoHeight,
+                    vector: /\.svgz?(\?|#|$)/i.test(src), box, content, drawn: drawnRect(img, box)};
         });
+    }
+
+    // Lines of the own text of an element (not of its nested lists): the
+    // distinct line boxes of its text nodes.
+    function ownLines(el) {
+        const range = document.createRange();
+        const tops = [];
+        let firstW = 0, lastW = 0;
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let node;
+        const rects = [];
+        while ((node = walker.nextNode())) {
+            if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
+            const owner = node.parentElement.closest('li, h1, h2, h3, h4, h5, h6, .credit');
+            if (owner !== el) continue;
+            range.selectNodeContents(node);
+            rects.push(...[...range.getClientRects()].filter(r => r.width > 0));
+        }
+        const lines = [];
+        for (const r of rects.sort((a, b) => a.top - b.top || a.left - b.left)) {
+            const line = lines.find(l => Math.abs(l.mid - (r.top + r.height / 2)) < r.height / 2);
+            if (line) { line.x0 = Math.min(line.x0, r.left); line.x1 = Math.max(line.x1, r.right); }
+            else lines.push({mid: r.top + r.height / 2, x0: r.left, x1: r.right});
+        }
+        return lines.map(l => round(l.x1 - l.x0));
+    }
+
+    // Titles, list items and credits written on several lines.
+    function wrappedItems(el) {
+        const items = el.matches('li, h1, h2, h3, h4, h5, h6, .credit') ? [el] : [];
+        items.push(...el.querySelectorAll('li, h1, h2, h3, h4, h5, h6, .credit'));
+        const found = [];
+        for (const item of items.slice(0, 200)) {
+            const widths = ownLines(item);
+            if (widths.length > 1) {
+                found.push({tag: item.tagName.toLowerCase() + (item.classList.contains('credit') ? '.credit' : ''),
+                            text: excerpt(item.innerText, 50), lines: widths.length,
+                            first_w: widths[0], last_w: widths[widths.length - 1]});
+            }
+        }
+        return found;
+    }
+
+    // Figures side by side in a container (a row): the top and bottom of what
+    // they draw, to check that they are aligned.
+    const figureIds = new Map();
+    function figureRows(el) {
+        const rows = [], seen = new Set();
+        for (const container of [el, ...el.querySelectorAll('*')].slice(0, 2000)) {
+            const figures = [...container.children].map(c =>
+                MEDIA.has(c.tagName) ? c : c.querySelector('img, video, svg, canvas, iframe')).filter(Boolean);
+            if (figures.length < 2) continue;
+            const key = figures.map(f => { if (!figureIds.has(f)) figureIds.set(f, figureIds.size); return figureIds.get(f); }).join(',');
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const rects = figures.map(f => {
+                const box = toRect(f.getBoundingClientRect());
+                return drawnRect(f, box) || box;
+            }).filter(r => r.w > 0 && r.h > 0);
+            if (rects.length < 2) continue;
+            const order = rects.map((r, i) => i).sort((a, b) => rects[a].x - rects[b].x);
+            const sideBySide = order.every((i, k) => k === 0 || (rects[order[k - 1]].x + rects[order[k - 1]].w <= rects[i].x + 2
+                && Math.min(rects[order[k - 1]].y + rects[order[k - 1]].h, rects[i].y + rects[i].h) > Math.max(rects[order[k - 1]].y, rects[i].y)));
+            if (!sideBySide) continue;
+            rows.push({figures: order.map(i => basename(sourceOf(figures[i])) || figures[i].tagName.toLowerCase()),
+                       tops: order.map(i => rects[i].y), bottoms: order.map(i => rects[i].y + rects[i].h)});
+        }
+        return rows;
     }
 
     function describe(el) {
@@ -304,6 +387,8 @@ function extractBlocks(rootSelector, excludeSelector) {
             overflow: cs.overflow,
             scroll: {w: el.scrollWidth, h: el.scrollHeight, client_w: el.clientWidth, client_h: el.clientHeight},
             media,
+            wrapped: wrappedItems(el),
+            rows: figureRows(el),
             text: stats,
             // overlap marked as intentional in the source, e.g. ::(.overlay)[...]
             intentional: el.classList.contains('overlay'),
@@ -337,6 +422,7 @@ function extractBlocks(rootSelector, excludeSelector) {
                        box: visual, visual, ink, position: 'static', margin: [0, 0, 0, 0],
                        text_align: getComputedStyle(root).textAlign,
                        font_size: round(fontSize), overflow: 'visible', scroll: null, media: [],
+                       wrapped: [], rows: [],
                        text: stats, intentional: false};
         blocks.push(block);
         for (const n of nodes) if (n.nodeType === Node.ELEMENT_NODE) blockOf.set(n, block);
@@ -420,8 +506,21 @@ function extractBlocks(rootSelector, excludeSelector) {
         w: round(br.width - px(bcs.borderLeftWidth) - px(bcs.borderRightWidth)),
         h: round(br.height - px(bcs.borderTopWidth) - px(bcs.borderBottomWidth)),
     } : {x: 0, y: 0, w: innerWidth, h: innerHeight};
+    // Areas reserved by the theme (the navigation): the visible parts of the
+    // excluded elements; the content must not cover them.
+    const reserved = [];
+    for (const el of (excludeSelector ? document.querySelectorAll(excludeSelector) : [])) {
+        const parts = [el, ...el.querySelectorAll('*')].filter(e => {
+            const cs = getComputedStyle(e);
+            if (cs.display === 'none' || cs.visibility === 'hidden' || e.closest('.hidden')) return false;
+            const r = e.getBoundingClientRect();
+            return r.width > 0 && r.height > 0 && (e.children.length === 0 || paints(cs));
+        }).map(e => toRect(e.getBoundingClientRect(), 'reserved'));
+        const u = unionRects(parts);
+        if (u) reserved.push({...u, name: el.id ? '#' + el.id : el.tagName.toLowerCase()});
+    }
     return {root: document.querySelector(rootSelector) ? rootSelector : 'body', title: document.title,
-            viewport: {w: innerWidth, h: innerHeight}, area, blocks,
+            viewport: {w: innerWidth, h: innerHeight}, area, blocks, reserved,
             scrolling: !framed && document.documentElement.scrollHeight > innerHeight + 1};
 }
 
@@ -462,6 +561,47 @@ function drawOverlay(blocks, palette, filled) {
 }
 
 
+// Reproducible renders: CSS animations at their start, videos at their first
+// frame, animated GIFs replaced by their first frame (WebCodecs ImageDecoder).
+async function freezeMedia(page) {
+    await page.evaluate(async () => {
+        for (const a of document.getAnimations()) { try { a.pause(); a.currentTime = 0; } catch (e) { /* ignore */ } }
+        await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
+            v.autoplay = false;
+            v.pause();
+            const timer = setTimeout(resolve, 3000);
+            const done = () => { clearTimeout(timer); resolve(); };
+            if (v.readyState >= 2 && v.currentTime === 0) return done();
+            v.addEventListener('seeked', done, {once: true});
+            v.addEventListener('error', done, {once: true});
+            if (v.readyState >= 1) v.currentTime = 0;
+            else v.addEventListener('loadedmetadata', () => { v.currentTime = 0; }, {once: true});
+        })));
+        if (!('ImageDecoder' in window)) return;
+        const load = (url) => new Promise((resolve, reject) => {      // fetch() does not read file://
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', url);
+            xhr.responseType = 'arraybuffer';
+            xhr.onload = () => resolve(xhr.response);
+            xhr.onerror = reject;
+            xhr.send();
+        });
+        for (const img of [...document.images].filter(i => /\.gif(\?|#|$)/i.test(i.currentSrc || i.src))) {
+            try {
+                const decoder = new ImageDecoder({data: await load(img.currentSrc || img.src), type: 'image/gif'});
+                const {image} = await decoder.decode({frameIndex: 0});
+                const canvas = document.createElement('canvas');
+                canvas.width = image.displayWidth; canvas.height = image.displayHeight;
+                canvas.getContext('2d').drawImage(image, 0, 0);
+                image.close();
+                img.dataset.layoutSrc = img.getAttribute('src');
+                await new Promise(resolve => { img.onload = img.onerror = resolve; img.src = canvas.toDataURL(); });
+            } catch (e) { /* the GIF as it is */ }
+        }
+    });
+}
+
+
 async function waitForContent(page) {
     await page.evaluate(async () => {
         await document.fonts.ready;
@@ -488,6 +628,7 @@ async function waitForContent(page) {
             await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 60000});
             await page.waitForNetworkIdle({idleTime: 500, timeout: 5000}).catch(() => {});
             await waitForContent(page);
+            await freezeMedia(page);
             const layout = await page.evaluate(extractBlocks, rootSelector, excludeSelector);
             fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
             if (withImages) {
