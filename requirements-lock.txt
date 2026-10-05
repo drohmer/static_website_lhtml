@@ -3,7 +3,7 @@ iniconfig==2.3.0
 jinja-markdown==1.210911
 Jinja2==3.1.6
 lark==1.3.1
-lhtml-markup==2.5.0
+lhtml-markup==2.5.1
 Markdown==3.11
 markdown-it-py==4.2.0
 MarkupSafe==3.0.4
