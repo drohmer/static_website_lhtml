@@ -70,7 +70,7 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
                          + chunk(b'IDAT', zlib.compress(row * h)) + chunk(b'IEND', b''))
 
     source = tmp_path / 'src'
-    for name in ('math', 'svg', 'auto'):
+    for name in ('math', 'svg', 'auto', 'wrap'):
         (source / name / 'assets').mkdir(parents=True)
     (source / 'math/index.html.j2').write_text(
         '= Formulas\n\n* Translation: linear blend, \\(t=\\sum_j \\alpha_j\\,t_j\\)\n'
@@ -91,6 +91,9 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
         (source / 'math/index.html.j2').read_text() +
         '\n<ul style="font-size:36px;line-height:1.4"><li>A preceding line</li>'
         '<li>\\(R=\\begin{pmatrix}a&b&c\\\\d&e&f\\\\g&h&j\\end{pmatrix}\\)</li></ul>')
+    (source / 'wrap/index.html.j2').write_text(
+        "= Wrap\n\n<div style=\"width:420px\">\n\n* A short sentence that wraps in this narrow column\n\n"
+        "<p>A short paragraph that wraps in this narrow column</p>\n\n</div>\n")
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
                                       'plugin': ['plugins/auto_wrap.py', 'plugins/menu.py'],
@@ -104,6 +107,9 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
     assert any(b['role'] == 'formula' for b in math_layout['subblocks'])
     assert not math_layout['analysis']['internal_collisions']
     assert 'WRAPPED' not in report('math')                    # a formula is one box, not lines
+    wrap = report('wrap')
+    assert 'SHORT WRAPPED' in wrap and 'list item "A short sentence' in wrap and 'paragraph "A short paragraph' in wrap
+    assert 'SHORT WRAPPED' not in report('svg') + report('auto')
     svg = report('svg')
     assert 'SVG OVERFLOW' in svg and 'px left' in svg
     assert 'SVG LABEL' in svg and '"over the line" is drawn across a line' in svg and '"halo"' not in svg

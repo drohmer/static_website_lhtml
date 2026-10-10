@@ -283,6 +283,24 @@ def test_no_density_warnings_on_scrolling_pages():
     assert analysis['dense'] == [] and analysis['density']['words'] == 900
 
 
+def test_short_wrapped_fits_on_one_line_of_the_slide():
+    area = {'x': 100, 'y': 0, 'w': 1700, 'h': 900}
+    item = lambda text, natural, x=150, **w: dict({'tag': 'li', 'text': text, 'lines': 2, 'first_w': 400,
+                                                  'last_w': 300, 'natural_w': natural, 'avail_w': 420, 'x': x}, **w)
+    b = block(1, 0, 0, 500, 100, wrapped=[
+        item('Fits on the slide', 710),                      # 710 px <= 1800 - 150
+        item('Too long for the slide', 1700),                 # wraps anyway
+        item('Starts far right', 710, x=1200),                # 710 px > 1800 - 1200
+        item('Orphan word', 470, last_w=60),                  # already a WRAPPED item
+        item('Broken in the source', 400),                    # <br>: no width missing
+        {'tag': 'h2', 'text': 'Title', 'lines': 2, 'first_w': 400, 'last_w': 300,
+         'natural_w': 710, 'avail_w': 420, 'x': 150},         # titles: WRAPPED
+        {'tag': 'li', 'text': 'Old report', 'lines': 2, 'first_w': 400, 'last_w': 300}])
+    found = layout_report.find_short_wrapped([b], area)
+    assert [(w['text'], w['missing']) for w in found] == [('Fits on the slide', 290)]
+    assert layout_report._line_item('p') == 'paragraph' and layout_report._line_item('div.ref') == 'reference'
+
+
 def test_content_over_the_navigation():
     blocks = [block(1, 900, 450, 80, 40), block(2, 0, 0, 100, 100)]
     found = layout_report.find_reserved_overlaps(blocks, [{'x': 880, 'y': 440, 'w': 120, 'h': 60, 'name': 'nav'}])

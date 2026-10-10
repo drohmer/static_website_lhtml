@@ -163,6 +163,8 @@ reported.
 - `SMALL FONT`: text too small.
 - `WRAPPED`: a title on several lines, or an item with a few words on its
   second line: shorten it, or give it more width.
+- `SHORT WRAPPED`: text on several lines that would fit on one line of the
+  slide; the report gives the missing width: widen its column, or shorten it.
 - `ROW`: figures side by side not aligned.
 - `SMALL IN ITS BOX` / `CROPPED`: a figure much smaller than its area
   (`media::(.fill)`, or another arrangement), or cut.

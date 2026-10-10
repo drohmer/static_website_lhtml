@@ -271,14 +271,42 @@ def find_reserved_overlaps(blocks, reserved, threshold=4):
 
 
 def find_wrapped(blocks, short=0.3):
-    """Titles written on several lines, and list items or credits whose last
-    line holds only a few words (shorter than `short` × the first line)."""
+    """Titles written on several lines, and list items, paragraphs, credits or
+    references whose last line holds only a few words (shorter than `short` ×
+    the first line)."""
     found = []
     for b in blocks:
         for w in b.get('wrapped', []):
-            title = w['tag'][0] == 'h'
-            if title or (w['lines'] == 2 and w['last_w'] < short * w['first_w']):
+            if _orphan(w, short):
                 found.append({'id': b['id'], **w})
+    return found
+
+
+def _orphan(w, short=0.3):
+    return w['tag'][0] == 'h' or (w['lines'] == 2 and w['last_w'] < short * w['first_w'])
+
+
+def _line_item(tag):
+    if tag[0] == 'h':
+        return 'title'
+    return {'credit': 'credit', 'ref': 'reference'}.get(tag.split('.')[-1], 'paragraph' if tag == 'p' else 'list item')
+
+
+def find_short_wrapped(blocks, area, short=0.3, tolerance=4):
+    """Text written on several lines that would fit on one line of the slide:
+    its width on one line is at most the width from its left edge to the right
+    of the area. Titles and the items already reported by find_wrapped are left
+    out, and so are lines broken in the source (<br>: no width is missing);
+    `missing` is the width the element lacks to hold it on one line."""
+    found = []
+    right = area['x'] + area['w']
+    for b in blocks:
+        for w in b.get('wrapped', []):
+            if 'natural_w' not in w or _orphan(w, short):
+                continue
+            missing = w['natural_w'] - w['avail_w']
+            if missing > tolerance and w['natural_w'] <= right - w['x']:
+                found.append({'id': b['id'], **w, 'missing': missing})
     return found
 
 
@@ -742,6 +770,7 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
         'near_aligned': find_near_alignments(blocks, area, norms.get('columns', ())),
         'density': density(blocks, area),
         'wrapped': find_wrapped(blocks),
+        'short_wrapped': find_short_wrapped(blocks, area),
         'rows': find_row_misalignments(blocks),
         'fit': find_fit(blocks),
         'free': _free_rect(grid, area),
@@ -776,7 +805,7 @@ PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled
                 'collapsed', 'svg_overflow', 'internal_collisions', 'internal_overflow', 'internal_clipped', 'interactive_errors')
 
 
-WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit', 'svg_labels', 'internal_tight', 'role_design', 'canvas_overlaps')
+WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'short_wrapped', 'rows', 'fit', 'svg_labels', 'internal_tight', 'role_design', 'canvas_overlaps')
 
 
 def count_problems(analysis):
@@ -868,9 +897,13 @@ def page_markdown(name, source, layout):
                  f"{abs(n['delta'])} px {_direction(n)} the {n['ref_label']} ({n['axis']} {n['ref']})"
                  for n in analysis.get('near_aligned', [])]
     for w in analysis.get('wrapped', []):
-        what = 'title' if w['tag'][0] == 'h' else ('credit' if w['tag'].endswith('credit') else 'list item')
+        what = _line_item(w['tag'])
         tail = '' if what == 'title' else f", the last one {w['last_w']} px wide (first {w['first_w']} px)"
         warnings.append(f"- WRAPPED #{w['id']}: {what} \"{w['text']}\" on {w['lines']} lines{tail}")
+    for w in analysis.get('short_wrapped', []):
+        warnings.append(f"- SHORT WRAPPED #{w['id']}: {_line_item(w['tag'])} \"{w['text']}\" on {w['lines']} lines, "
+                        f"{w['natural_w']} px on one line for {w['avail_w']} px available (+{w['missing']} px); "
+                        f"it would fit on one line of the slide")
     for r in analysis.get('rows', []):
         values = ', '.join(f'{f} {v}' for f, v in zip(r['figures'], r['values']))
         warnings.append(f"- ROW #{r['id']}: the {r['edge']}s of the figures side by side differ by "
@@ -1030,7 +1063,9 @@ move it clearly), DENSE (too many words), DESIGN (text too small for its
 role, title not larger than the body, caption far from its figure...; SMALL
 FONT when these checks are disabled), CANVAS OVERLAP (text over a canvas:
 look at the render), INTERNAL TIGHT, WRAPPED (title on
-several lines, or list item with a few words on its second line), ROW (figures
+several lines, or list item with a few words on its second line), SHORT
+WRAPPED (text on several lines that would fit on one line of the slide: give
+it the missing width, or shorten it), ROW (figures
 side by side not aligned), SMALL IN ITS BOX / CROPPED (figure much smaller
 than its box, or cut, by object-fit), SVG LABEL (text of an SVG figure across
 one of its lines).

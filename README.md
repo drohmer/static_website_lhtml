@@ -702,8 +702,13 @@ Warnings:
 - `DENSE` (more than `max_words` words of text) and `SMALL FONT` (text
   smaller than `min_font` px, only when `design_rules.enabled` is false), on
   slides only.
-- `WRAPPED`: a title on several lines, or a list item (or credit) whose
-  second line holds only a few words.
+- `WRAPPED`: a title on several lines, or a list item (paragraph, credit or
+  reference) whose second line holds only a few words.
+- `SHORT WRAPPED`: a list item (paragraph, credit or reference) on several
+  lines that would fit on one line of the slide: its width on one line is at
+  most the width from its left edge to the right of the usable area. The
+  report gives that width, the width available and the difference: give the
+  element that width (another layout, a wider column) or shorten the text.
 - `ROW`: figures side by side whose tops (or bottoms) differ by 3 to 40 px.
 - `SMALL IN ITS BOX` / `CROPPED`: a figure drawn on less than 75 % of its
   box, or cut, by `object-fit` (e.g. in `media::`: use `media::(.fill)` or
@@ -722,7 +727,7 @@ Warnings:
   canvas does not say which pixels are drawn: look at the render.
 - `INTERNAL TIGHT`: `TIGHT` between inner blocks.
 
-A formula is one box for `WRAPPED`: its sums, indices and fractions are not
+A formula is one box for `WRAPPED` and `SHORT WRAPPED`: its sums, indices and fractions are not
 lines of text.
 
 Each page report also gives its density: words (math and code excluded),

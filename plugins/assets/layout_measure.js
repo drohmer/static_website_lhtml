@@ -329,6 +329,9 @@ function extractBlocks(rootSelector, excludeSelector) {
         });
     }
 
+    // Elements whose own text is measured line by line (WRAPPED, SHORT WRAPPED)
+    const LINE_ITEMS = 'li, h1, h2, h3, h4, h5, h6, p, .credit, .ref';
+
     // Lines of the own text of an element (not of its nested lists): the
     // distinct line boxes of its text nodes.
     function ownLines(el) {
@@ -341,7 +344,7 @@ function extractBlocks(rootSelector, excludeSelector) {
         const formulas = new Set();
         while ((node = walker.nextNode())) {
             if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
-            const owner = node.parentElement.closest('li, h1, h2, h3, h4, h5, h6, .credit');
+            const owner = node.parentElement.closest(LINE_ITEMS);
             if (owner !== el) continue;
             // a formula is one box (its sums, indices and fractions are not lines)
             const formula = node.parentElement.closest('.katex');
@@ -365,17 +368,35 @@ function extractBlocks(rootSelector, excludeSelector) {
         return lines.map(l => round(l.x1 - l.x0));
     }
 
-    // Titles, list items and credits written on several lines.
+    // The text of an element as read on the slide: a KaTeX formula once, without
+    // its hidden MathML copy.
+    function visibleText(el) {
+        const copy = el.cloneNode(true);
+        copy.querySelectorAll('.katex-mathml').forEach(m => m.remove());
+        return copy.textContent;
+    }
+
+    // Titles, list items, paragraphs, credits and references written on
+    // several lines: the width of each line, the width the text would take on
+    // one line (the sum of its lines and of the spaces between them), the
+    // width available in the element and where that width starts.
     function wrappedItems(el) {
-        const items = el.matches('li, h1, h2, h3, h4, h5, h6, .credit') ? [el] : [];
-        items.push(...el.querySelectorAll('li, h1, h2, h3, h4, h5, h6, .credit'));
+        const items = el.matches(LINE_ITEMS) ? [el] : [];
+        items.push(...el.querySelectorAll(LINE_ITEMS));
         const found = [];
         for (const item of items.slice(0, 200)) {
             const widths = ownLines(item);
             if (widths.length > 1) {
-                found.push({tag: item.tagName.toLowerCase() + (item.classList.contains('credit') ? '.credit' : ''),
-                            text: excerpt(item.innerText, 50), lines: widths.length,
-                            first_w: widths[0], last_w: widths[widths.length - 1]});
+                const cs = getComputedStyle(item);
+                const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+                const r = item.getBoundingClientRect();
+                const space = 0.25 * (parseFloat(cs.fontSize) || 16);
+                const tag = item.tagName.toLowerCase() + (item.classList.contains('credit') ? '.credit'
+                    : item.classList.contains('ref') ? '.ref' : '');
+                found.push({tag, text: excerpt(visibleText(item), 50), lines: widths.length,
+                            first_w: widths[0], last_w: widths[widths.length - 1],
+                            natural_w: round(widths.reduce((a, b) => a + b, 0) + space * (widths.length - 1)),
+                            avail_w: round(r.width - padL - padR), x: round(r.left + padL)});
             }
         }
         return found;

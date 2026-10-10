@@ -5,7 +5,7 @@ from pathlib import Path
 
 ERROR_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images',
               'reserved', 'collapsed', 'svg_overflow', 'internal_collisions', 'internal_overflow', 'internal_clipped', 'interactive_errors')
-WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit', 'svg_labels', 'deviations', 'lint', 'internal_tight', 'role_design', 'canvas_overlaps')
+WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'short_wrapped', 'rows', 'fit', 'svg_labels', 'deviations', 'lint', 'internal_tight', 'role_design', 'canvas_overlaps')
 
 
 def diagnostics(layout):
