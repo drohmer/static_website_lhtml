@@ -56,18 +56,39 @@ def _sitemap_priority(page):
 
 
 RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
-TITLE_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']
+TITLE_SET_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}']
+TITLE_HEADING_REGEX = [r'^=+ (.*?)$']
+
+
+def string_literal(s):
+    """The value of a Jinja string literal ('...' or "..."), or s stripped
+    when it is not one."""
+    s = s.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in '\'"':
+        quote, inner = s[0], s[1:-1]
+        return re.sub(r'\\(.)', lambda m: {'n': '\n', 't': '\t'}.get(m.group(1), m.group(1)), inner) \
+            if '\\' in inner else inner
+    return s
+
+
+def extract_title(source):
+    """Title of a page: its tocTitle or pageTitle (a Jinja string), or its
+    first heading `= Title`, as written (apostrophes, parentheses and slashes
+    kept); None without any."""
+    title = extract_data(source, TITLE_SET_REGEX)
+    if title is not None:
+        return string_literal(RAW_MARKERS.sub('', title))
+    title = extract_data(source, TITLE_HEADING_REGEX)
+    return RAW_MARKERS.sub('', title).strip() if title is not None else None
 
 
 def extract_titles(pages):
     """Title of each page (page.title, read in its source) and the sitemap {id: page}."""
     sitemap = {}
     for page in sorted(pages, key=_sitemap_priority):
-        title = extract_data(page.scan, TITLE_REGEX)
-        if title is not None:
-            title = RAW_MARKERS.sub('', title)
+        title = extract_title(page.scan)
         title_id = generate_unique_id(extract_title_id(page.scan, title), sitemap)
-        page.title = clean_string(title)
+        page.title = title if title is not None else 'unknown'
         sitemap[title_id] = page
     return sitemap
 

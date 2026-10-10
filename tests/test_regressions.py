@@ -99,6 +99,23 @@ class GeneratorRegressions(unittest.TestCase):
             self.build('--only', 'a')
             self.assertTrue((self.site / 'a/index.html').is_file())
 
+    def test_titles_keep_apostrophes_and_parentheses(self):
+        (self.source / 'a').mkdir()
+        (self.source / 'a/index.html.j2').write_text("= Angles d'Euler (x/y/z)\n\nText\n")
+        (self.source / 'b').mkdir()
+        (self.source / 'b/index.html.j2').write_text(
+            "{% set pageTitle = 'L\\'informatique \"graphique\"' %}\n<h1>B</h1>")
+        config = yaml.safe_load(self.config.read_text())
+        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        self.config.write_text(yaml.safe_dump(config))
+        self.build()
+        script = self.site / 'theme/js/menu.js'
+        menu = json.loads(script.read_text().split('const toc = ', 1)[1].split(';', 1)[0])
+        self.assertEqual([entry['title'] for entry in menu],
+                         ["Angles d'Euler (x/y/z)", 'L\'informatique "graphique"'])
+        page = (self.site / 'a/index.html').read_text()
+        self.assertRegex(page, r"<title>\s*Angles d(&#39;|')Euler \(x/y/z\)\s*</title>")
+
     def test_menu_escapes_metadata_and_retains_flags(self):
         self.page('a/index.html.j2', 'First')
         title = 'Le mode "debug"\nC:\\docs'
