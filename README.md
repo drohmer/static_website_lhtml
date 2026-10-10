@@ -38,7 +38,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--verify] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -52,6 +52,8 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--l
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
   --layout             Write a layout report of each page in .layout/ (see below)
+  --verify             --layout with the structured verification of the agent extension
+                       (agent/README.md)
   --render FILE        Render a file as PNG as the slides draw it (an SVG or image at its size,
                        at most the slide; an HTML page at the size of the slide) in
                        .layout/render/ (files outside the project: _outside/); no build
@@ -195,10 +197,14 @@ static_website_lhtml/
     feedback.py, feedback.js  # Comments on the render (--serve)
     source_scan.py         # Reading of the sources as LHTML reads them (code, comments, Jinja, URLs)
     source_map.py          # data-lhtml-src="file:line" on the blocks (builds for development)
+    tracking.py            # Templates and includes read by each page
+    dependencies.py        # Files each page depends on: --only, validity of the reports
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
     lint.py                # Design lint: values written by hand in the pages
+    design_checks.py       # Checks of the layout report by role (title, body, caption, figure)
+    report_lock.py         # One build at a time writes the layout report
     credits.py             # Credits, origin of the slides, planned figures (structure/credits.md, todo.md)
     figures.py             # Figures made from code (*.svg.py, *.svg.tex)
     filesystem.py          # File/directory utilities
@@ -225,6 +231,7 @@ static_website_lhtml/
     slides/                # Presentation slides theme
     slides-pdf/            # PDF export slides theme
   docs/agents.md           # Procedure for AI agents writing slides (copied into structure/)
+  agent/                   # Agent extension: --verify (agent/README.md)
   example/                 # Example source content
 ```
 
@@ -650,6 +657,8 @@ Files:
 - `pages/<relative HTML path>/render.png`: the real render
 - `pages/<relative HTML path>/overlay.png`: the real render with the outlined ink of each block and its number
 - `pages/<relative HTML path>/blocks.png`: the ink of each block as solid rectangles, content hidden
+- `pages/<relative HTML path>/internal-overlay.png`: the render with the inner blocks outlined
+  (columns, paragraphs, list items, figures, captions, formulas)
 
 Coordinates are CSS pixels, origin at the top-left corner of the page
 (1920×1080 for slides); the usable area is the inside of the slide frame.
@@ -673,6 +682,10 @@ Detected problems:
   its pixels drawn outside the viewBox are measured on a copy of its file (an
   SVG without viewBox needs its width and height in px); for an inline SVG,
   the boxes of its elements beyond its own box (unless its overflow is visible).
+- `INTERNAL COLLISION`, `INTERNAL CLIPPED`: the same checks between the inner
+  blocks of a block (two items of a list, a formula and its text...); at most
+  400 inner blocks per page.
+- `COLUMN OVERFLOW`: content wider than its column (`.col`, `.column`).
 
 Warnings:
 
@@ -687,7 +700,8 @@ Warnings:
   backgrounds/borders, the aligned side of text (left, right or center,
   from `text-align`); tops and bottoms only between blocks side by side.
 - `DENSE` (more than `max_words` words of text) and `SMALL FONT` (text
-  smaller than `min_font` px), on slides only.
+  smaller than `min_font` px, only when `design_rules.enabled` is false), on
+  slides only.
 - `WRAPPED`: a title on several lines, or a list item (or credit) whose
   second line holds only a few words.
 - `ROW`: figures side by side whose tops (or bottoms) differ by 3 to 40 px.
@@ -697,6 +711,16 @@ Warnings:
 - `SVG LABEL`: a text of an SVG figure drawn across one of its lines (a line,
   path, circle... with a stroke), without a halo that keeps it readable
   (`paint-order="stroke" stroke="white"`).
+- `DESIGN`: checks by role. Text smaller than the minimum of its role (body,
+  caption, reference, code), title not larger than the body or on more than 2
+  lines, caption larger than the body or far from its figure, tiny figure. The
+  role comes from the element: `.credit`, `.legende`, `figcaption` are
+  captions, `.source`, `.reference` references; `data-lhtml-role` sets it
+  (`decorative` exempts an ornament). These checks replace `SMALL FONT`
+  unless `design_rules.enabled` is false.
+- `CANVAS OVERLAP`: text over a canvas or an animated demo. The box of a
+  canvas does not say which pixels are drawn: look at the render.
+- `INTERNAL TIGHT`: `TIGHT` between inner blocks.
 
 A formula is one box for `WRAPPED`: its sums, indices and fractions are not
 lines of text.
@@ -757,6 +781,31 @@ in HTML or by a macro (`{{ box() }}`) gets its own line. Without the
 attributes, the HTML is the same as in a normal build (also with
 `line-breaks`).
 
+**Validity of the reports.** Each build records the files that each page
+depends on (template, includes, configuration, design, theme, plugins, its
+assets, the files its scripts request) with their SHA-256, in
+`.verification/builds.json`. `--only` then also rebuilds and measures the pages
+whose dependencies changed. A change of what all pages share (theme,
+configuration, design, plugins, the generator itself) rebuilds and measures
+all of them, once. A report kept from a previous build gives its validity in
+`layout.md` (`current`, `stale` or `unknown` for a remote file). One build at a
+time writes the report: a second one waits for the first (at most 10 min).
+
+**Pages that load asynchronously.** The measure waits for the load of the
+page and of its local frames, for the fonts and the images, then for a short
+network idle and a settling delay. A page or a demo that prepares itself
+asynchronously can say when it is ready: the measure then waits for its
+promises (a rejected promise, or more than 15 s, fails the measure of the
+page), and skips the delays when every frame of the page does so and none
+plays a video or a sound. The slides theme loads
+`themes/slides/js/readiness.js`; a demo in an iframe loads it too, from
+`theme/js/readiness.js` of the site:
+
+```js
+window.__lhtmlReady.optIn();
+window.__lhtmlReady.waitUntil(loadAndPrepareTheDemo());   // a promise
+```
+
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources
 (positions, widths, font sizes), run `python generate.py --only <slide> --layout` and
@@ -771,14 +820,27 @@ plugin_arg:
     exclude: 'nav, footer'      # children of the root that are not content
     width: 1920                 # viewport size
     height: 1080
-    images: true                # write render.png / overlay.png / blocks.png and contact sheets
+    images: true                # write overlay.png / blocks.png / internal-overlay.png and contact sheets
     threshold: 4                # minimal overlap / overflow reported (px)
     output: '.layout/'
     max_words: 80               # DENSE above this number of words per slide
-    min_font: 20                # SMALL FONT below this font size (px)
+    min_font: 20                # SMALL FONT below this font size (px), when design_rules is disabled
     contact_columns: 4          # thumbnails per row and rows per contact sheet
     contact_rows: 4
+    design_rules:               # DESIGN checks (defaults at 1920 px, scaled with the width)
+      enabled: true
+      roles:
+        body: {min_font: 20}
+        caption: {min_font: 12, max_body_ratio: 1.05, max_figure_gap: 64}
+        title: {min_font: 32, min_body_ratio: 1.25, max_lines: 2}
+        figure: {min_extent: 32}
+      layouts:                  # per layout (exact name, e.g. side-s)
+        section:
+          title: {min_body_ratio: 1.5}
 ```
+
+A check set to `null` is disabled; an unknown key or an invalid limit is an
+error of the configuration.
 
 ## Style Profile (writing slides in the style of an author)
 
@@ -845,6 +907,9 @@ The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and
 ```bash
 LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_integration.py tests/test_development.py -q
 ```
+
+The tests of the agent extension are in `agent/tests` (see `agent/README.md`);
+the workflow runs them too (`python -m pytest tests agent/tests -q`).
 
 The browser and HTTP tests are opt-in locally because they launch Chrome and bind a localhost port. When updating dependencies, update `requirements-lock.txt`, install into a fresh environment, and run both the unit suite and smoke tests before committing. Optional PDF/SASS system tools are not part of the Python lock.
 

@@ -208,3 +208,12 @@ A slide is done when:
   crowded.
 
 Report what was changed and any value kept by hand, with the reason.
+
+## Structured verification (optional)
+
+If the generator has its agent extension (directory `agent/` of
+static_website_lhtml), `--verify` replaces `--layout`: the same report, plus a
+`verification.json` per page with a status (`pass`, `issues`, `incomplete`,
+`failed`), crops of each problem, the interactive states of the demos and a
+queue of the problems grouped by source line. Its procedure is in
+`agent/README.md`. A `pass` never replaces looking at `render.png`.
