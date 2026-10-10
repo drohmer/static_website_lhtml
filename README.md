@@ -38,7 +38,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -52,6 +52,9 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--l
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
   --layout             Write a layout report of each page in .layout/ (see below)
+  --render FILE        Render a file as PNG as the slides draw it (an SVG or image at its size,
+                       at most the slide; an HTML page at the size of the slide) in
+                       .layout/render/ (files outside the project: _outside/); no build
   --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
                        (relative to the current directory, else to the configuration file)
   --scaffold           Create the source of the deck slides that do not exist yet
@@ -63,7 +66,7 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--l
 python generate.py --serve --watch
 ```
 
-The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
+The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild (the server asks the browser to check every file again, `Cache-Control: no-cache`: a page rebuilt after an edit of the deck never runs with the previous menu, which gives the previous and next pages). `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
 
 **Comments on the render.** With `--serve`, the pages have a button 💬 (or
 the key `c`): click a block, write a comment, save. The comments are kept next
@@ -96,7 +99,10 @@ other pages are those of the previous build. Their numbering, their links
 fails keeps its previous version (put back at the end of the build, as it
 was), and the build reports the failure. When there is no previous build, or when
 the pages of the site changed (deck, new, renamed or removed page), a full
-build is done instead. Edits of the theme or of files outside the page
+build is done instead; with `--layout`, it still measures only the pages
+named (and those without a report, or whose report was made from another
+source), the other pages keep their report (also when only their deck entry
+changed: `layout`, `params`; `--layout` measures all of them). Edits of the theme or of files outside the page
 directories (shared images, sources included from elsewhere are read from the
 sources) need a full build.
 
@@ -256,6 +262,7 @@ projects, and a slide can appear several times:
 ```yaml
 # deck.yaml (configure.yaml: deck: 'deck.yaml')
 title: Talk, short version
+duration: 60                          # length of the talk (minutes): a warning beyond
 sources:                              # other projects (relative to the deck file)
   inf585: ~/teaching/inf585/lecture/inf585_lecture_slides/src
 slides:
@@ -293,7 +300,9 @@ slides:
 - `!pattern` excludes the matching pages from the whole deck
   (`!inf585:*/00_title` for another project).
 - A slide may be a mapping with `path` and metadata. `title` replaces the
-  title in the menu; `duration` (minutes) is summed in the build log;
+  title in the menu; `duration` (minutes) is summed in the build log (the
+  `duration` of the deck itself is the length of the talk: the log gives the
+  total against it, and warns beyond);
   `params` (see below); every other key (`message`, `notes`, ...) is exported
   in `structure.yaml`, like the page `config.yaml` (`structure.yaml` also gives
   the template of each page in the site, `template`, and its origin: `src`,
@@ -443,6 +452,26 @@ layout (→ `media::`), and unknown layouts or layouts without `media::`:
 src/03_squelette/04_ik/index.html.j2:9: spacer: div::[height:25px;]::
     -> gap::
 ```
+
+**Rules of the project.** The `lint` section of the design adds the rules of
+a deck (an author's habits that the design cannot express):
+
+```yaml
+design:
+  lint:
+    small_text: true          # small::/tiny:: on list items: keep the text at its size
+    rules:                    # a pattern of the text (code, math and comments are not read)
+      part-number:
+        pattern: '\bPart \d'
+        advice: 'name the topic: the audience does not remember part numbers'
+```
+
+`small_text` reports a `small::` or `tiny::` around list items, or opening
+a list item; captions, credits and notes may stay small (a list of references
+in `tiny::` is reported too: justify it, or write it without a list). The
+patterns are searched in the text only: not in code, math, comments, Jinja,
+HTML tags nor URLs. They are listed in
+`structure/design.md` and reported as the other values written by hand.
 
 Each build gives their number (the style debt of the deck), and the layout
 report lists them per page (column `lint` of `summary.md`). What LHTML does
@@ -637,6 +666,13 @@ Detected problems:
   hence blurry (vector images such as SVG are ignored)
 - `RESERVED AREA`: content over an area of the theme (the navigation: the
   elements of `exclude`)
+- `COLLAPSED FIGURE`: an image or a video drawn (almost) without width or
+  height, e.g. in a flex box without a height: invisible
+- `SVG OVERFLOW`: an SVG figure draws beyond its viewBox (by more than the
+  threshold, at its displayed size): what is beyond is cut. For an SVG image,
+  its pixels drawn outside the viewBox are measured on a copy of its file (an
+  SVG without viewBox needs its width and height in px); for an inline SVG,
+  the boxes of its elements beyond its own box (unless its overflow is visible).
 
 Warnings:
 
@@ -658,6 +694,12 @@ Warnings:
 - `SMALL IN ITS BOX` / `CROPPED`: a figure drawn on less than 75 % of its
   box, or cut, by `object-fit` (e.g. in `media::`: use `media::(.fill)` or
   another arrangement).
+- `SVG LABEL`: a text of an SVG figure drawn across one of its lines (a line,
+  path, circle... with a stroke), without a halo that keeps it readable
+  (`paint-order="stroke" stroke="white"`).
+
+A formula is one box for `WRAPPED`: its sums, indices and fractions are not
+lines of text.
 
 Each page report also gives its density: words (math and code excluded),
 formulas, lines of code, list items, lines of text, smallest font size, the

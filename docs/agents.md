@@ -33,9 +33,11 @@ Run them from the directory of `configure.yaml`, with
 | `generate.py --lint` | List the values written by hand, with their replacement (no build) |
 | `generate.py --scaffold` | Create the planned slides of the deck (entries with a `title` and no source yet) |
 | `generate.py --check-config` | Check the configuration, deck and design without building |
+| `generate.py --render assets/fig.svg` | Render a figure (or an HTML demo) alone, as the slides draw it: `.layout/render/` |
 
 `--only` falls back to a full build when the list of pages changed (deck
-edited, slide added or removed).
+edited, slide added or removed); `--layout` then still measures only the
+slides named.
 
 ## Procedure
 
@@ -98,6 +100,8 @@ credit:: Image: Wikimedia Commons ::
 - `(.fill)`: enlarge small figures.
 - `(.top)`, `(.middle)`, `(.bottom)`: vertical position.
 - `(.auto)` in `stack`: take only the height of the figures.
+- `(.s)`, `(.m)`, `(.l)`: figures at most 300, 450 or 600 px high (also in a
+  row: `media::(.row .m)`), instead of a height written by hand.
 - `(.here)` in `side`: in the right column, facing the text that follows it
   (write it just before that text). Several figures can face several parts,
   but a figure never goes above the bottom of the previous one: when a figure
@@ -149,6 +153,8 @@ reported.
 - `CLIPPED`: content cut by `overflow`.
 - `UPSCALED IMAGE`: a bitmap or video enlarged above 1.25×, so it looks blurry.
 - `RESERVED AREA`: content over the navigation of the theme.
+- `COLLAPSED FIGURE`: an image or video drawn without width or height (invisible).
+- `SVG OVERFLOW`: an SVG figure draws beyond its viewBox, so it is cut.
 
 **Warnings** should be checked:
 - `TIGHT`: lines too close to another block.
@@ -160,6 +166,11 @@ reported.
 - `ROW`: figures side by side not aligned.
 - `SMALL IN ITS BOX` / `CROPPED`: a figure much smaller than its area
   (`media::(.fill)`, or another arrangement), or cut.
+- `SVG LABEL`: a label of an SVG figure drawn across one of its lines: move
+  it, or give it a halo (`paint-order="stroke" stroke="white"`).
+
+A figure you made (an SVG): check it alone with `--render` before placing it;
+the report sees its overflow and its labels, not whether it reads well.
 
 **Differences with the deck** (title position, text sizes used nowhere
 else) are breaks of consistency, not errors.
@@ -191,7 +202,8 @@ anything else.
 A slide is done when:
 - its report has no problem;
 - its warnings are understood;
-- `--lint` reports nothing unjustified;
+- `--lint` reports nothing unjustified (including the rules of the project:
+  the `lint` section of the design, listed in `design.md`);
 - its render reads well: figures large enough, no large empty area, text not
   crowded.
 

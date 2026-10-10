@@ -3,6 +3,7 @@
 Without a deck, the pages are generated in the order of the files. A deck
 (`deck: deck.yaml` in the configuration, or `--deck`) lists pointers instead:
 
+    duration: 60                          # length of the talk (minutes): a warning beyond
     sources:                              # other projects (paths relative to the deck)
       course: ../course_slides/src        # their pages are generated under course/
     slides:
@@ -77,6 +78,7 @@ class Entry:
 class Deck:
     entries: list
     sources: dict = field(default_factory=dict)   # name -> absolute directory (trailing /)
+    duration: float | None = None                 # length of the talk (minutes)
 
 
 @dataclass
@@ -96,7 +98,13 @@ class DeckResult:
                 timed += 1
         return sum(durations.values()), timed
 
-    def summary(self):
+    def over_time(self, target):
+        """The minutes beyond the length of the talk `target` (None: no target or within it)."""
+        minutes, timed = self.duration()
+        extra = round(minutes - target, 6) if target and timed else 0      # sums of decimals: no residue
+        return extra if extra > 0 else None
+
+    def summary(self, target=None):
         text = f'{len(self.pages)} pages'
         external = sum(1 for p in self.pages if p.source.name)
         repeated = sum(1 for p in self.pages if p.occurrence > 1)
@@ -106,7 +114,8 @@ class DeckResult:
             text += f', {repeated} repeated'
         minutes, timed = self.duration()
         if timed:
-            text += f', {minutes:g} min' + (f' ({timed} pages timed)' if timed < len(self.pages) else '')
+            text += f', {minutes:g} min' + (f' of {target:g}' if target else '') \
+                + (f' ({timed} pages timed)' if timed < len(self.pages) else '')
         return text
 
 
@@ -187,18 +196,21 @@ def load_deck(source, base_directory='.'):
                 source = yaml.safe_load(stream)
         except (OSError, yaml.YAMLError) as exc:
             raise DeckError(f"cannot read '{origin}': {exc}") from exc
-    sources = {}
+    sources, target = {}, None
     if isinstance(source, dict):
-        unknown = set(source) - {'slides', 'title', 'sources'}
+        unknown = set(source) - {'slides', 'title', 'sources', 'duration'}
         if unknown:
             raise DeckError(f"{origin}: unknown key(s) {', '.join(sorted(unknown))} "
-                            f"(expected title, sources, slides)")
+                            f"(expected title, duration, sources, slides)")
         sources = _load_sources(source.get('sources'), base_directory, origin)
+        target = source.get('duration')
+        if target is not None and (isinstance(target, bool) or not isinstance(target, (int, float)) or target <= 0):
+            raise DeckError(f"{origin}: 'duration' (length of the talk) must be a positive number of minutes")
         source = source.get('slides')
     if not isinstance(source, list):
         raise DeckError(f"{origin}: expected a list of slides (key 'slides')")
     return Deck([_load_entry(item, sources, f'{origin}, slide {k}') for k, item in enumerate(source, 1)],
-                sources)
+                sources, target)
 
 
 def check_sources(deck, source_directory, site_directory=None):

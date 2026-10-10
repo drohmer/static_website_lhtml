@@ -55,6 +55,10 @@ tokens:
     gap: 60px          # between the text and media::
   placeholder:
     height: 300px      # planned figure
+  figure:              # media::(.s), (.m), (.l): maximal height of its figures
+    s: 300px
+    m: 450px
+    l: 600px
 
 macros:
 
@@ -180,6 +184,9 @@ macros:
       Its children are stacked (a figure, then its credit::, centered); `media::(.row)` puts
       them side by side (a row of figures of the same height; `(.row .even)`: equal widths; a
       figure and its caption in a `col::`). A `media::` or `cols::` inside it shares its space.
+      `media::(.s)`, `(.m)`, `(.l)`: figures at most 300, 450 or 600 px high (the tokens
+      figure-s/m/l), also in a row: `media::(.row .m)`. Replaces `img::...[height:400px;]`.
+      This height is kept even when the area is smaller (the report shows the overflow).
       `media::(.top)`, `(.middle)`, `(.bottom)`: vertical position in its area. In layout side,
       `media::(.here)` is placed in the right column at its place in the text (facing the
       text that follows it), instead of filling the column; it never goes above the bottom
@@ -209,6 +216,21 @@ macros:
                               height: 100%; min-height: 0; gap: var(--space-s); }
       .media .credit { text-align: center; }
       .media > .center { min-height: 0; }
+      /* media::(.auto): the height of its figures, not of its area (a row of columns
+         sized by its figures, not by a height of 0) */
+      .media.auto:not(.fill) > .col > img, .media.auto:not(.fill) > .col > video { flex: 0 1 auto; }
+      .media.row.auto > img, .media.row.auto > video, .media.row.auto > .col { height: auto; }
+      /* media::(.s), (.m), (.l): maximal height of the figures */
+      .media.s { --figure-max: var(--figure-s); }
+      .media.m { --figure-max: var(--figure-m); }
+      .media.l { --figure-max: var(--figure-l); }
+      .media:is(.s, .m, .l) :is(img, video, svg, iframe, .demo) { max-height: var(--figure-max); }
+      .media:is(.s, .m, .l) > :is(iframe, .demo) { flex: none; height: var(--figure-max); }
+      .media:is(.s, .m, .l) > :is(img, video),
+      .media:is(.s, .m, .l) > .col > :is(img, video) { flex: 0 1 auto; height: auto; width: auto; max-width: 100%; }
+      .media:is(.s, .m, .l) > img[src$=".svg"], .media:is(.s, .m, .l) > .col > img[src$=".svg"] {
+          height: var(--figure-max); }
+      .media.row:is(.s, .m, .l) > .col { height: auto; }
 
   large:
     class: large

@@ -56,3 +56,31 @@ def test_serve_watch_rebuild_and_recover(tmp_path):
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
+
+
+def test_preview_files_are_not_cached(tmp_path):
+    """The preview asks the browser to check every file again (no-cache); the
+    answers of /__feedback/ keep their own no-store."""
+    import threading
+    from http.server import ThreadingHTTPServer
+    from lib.development import PreviewHandler
+    (tmp_path / 'menu.js').write_text('const toc = [];')
+    server = ThreadingHTTPServer(('127.0.0.1', 0), lambda *a, **k: PreviewHandler(*a, directory=str(tmp_path), **k))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_port
+        with urlopen(f'http://127.0.0.1:{port}/menu.js', timeout=2) as response:
+            assert response.headers.get_all('Cache-Control') == ['no-cache']
+        from urllib.request import Request
+        for method in ('GET', 'HEAD'):      # never 304: the dates of the files are rounded to the second
+            request = Request(f'http://127.0.0.1:{port}/menu.js', method=method,
+                              headers={'If-Modified-Since': 'Fri, 01 Jan 2100 00:00:00 GMT'})
+            with urlopen(request, timeout=2) as response:
+                assert response.status == 200
+        PreviewHandler.feedback_directory = tmp_path / '.feedback'
+        with urlopen(f'http://127.0.0.1:{port}/__feedback/comments', timeout=2) as response:
+            assert response.headers.get_all('Cache-Control') == ['no-store']
+    finally:
+        server.shutdown()
+        server.server_close()

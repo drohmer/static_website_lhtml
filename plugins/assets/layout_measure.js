@@ -292,8 +292,10 @@ function extractBlocks(rootSelector, excludeSelector) {
         || (el.querySelector && el.querySelector('source') ? el.querySelector('source').getAttribute('src') : '') || '';
 
     function mediaInfo(el, skip = []) {
+        // the figures shown: not those hidden on purpose ((.hidden), a closed <details>)
+        const shown = (m) => !m.checkVisibility || m.checkVisibility({checkVisibilityCSS: true});
         const items = (['IMG', 'VIDEO'].includes(el.tagName) ? [el] : [...el.querySelectorAll('img, video')])
-            .filter(m => !inside(m, skip));
+            .filter(m => !inside(m, skip) && shown(m));
         return items.slice(0, 6).map(img => {
             const box = toRect(img.getBoundingClientRect());
             const src = sourceOf(img);
@@ -315,18 +317,29 @@ function extractBlocks(rootSelector, excludeSelector) {
         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
         let node;
         const rects = [];
+        const formulas = new Set();
         while ((node = walker.nextNode())) {
             if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
             const owner = node.parentElement.closest('li, h1, h2, h3, h4, h5, h6, .credit');
             if (owner !== el) continue;
+            // a formula is one box (its sums, indices and fractions are not lines)
+            const formula = node.parentElement.closest('.katex');
+            if (formula) {
+                if (!formulas.has(formula)) {
+                    formulas.add(formula);
+                    rects.push(...[...formula.getClientRects()].filter(r => r.width > 0));
+                }
+                continue;
+            }
             range.selectNodeContents(node);
             rects.push(...[...range.getClientRects()].filter(r => r.width > 0));
         }
         const lines = [];
         for (const r of rects.sort((a, b) => a.top - b.top || a.left - b.left)) {
-            const line = lines.find(l => Math.abs(l.mid - (r.top + r.height / 2)) < r.height / 2);
+            const mid = r.top + r.height / 2;
+            const line = lines.find(l => Math.abs(l.mid - mid) < Math.max(r.height, l.h) / 2);
             if (line) { line.x0 = Math.min(line.x0, r.left); line.x1 = Math.max(line.x1, r.right); }
-            else lines.push({mid: r.top + r.height / 2, x0: r.left, x1: r.right});
+            else lines.push({mid, h: r.height, x0: r.left, x1: r.right});
         }
         return lines.map(l => round(l.x1 - l.x0));
     }
@@ -374,6 +387,155 @@ function extractBlocks(rootSelector, excludeSelector) {
         return rows;
     }
 
+    // SVG figures: what they draw beyond their viewBox (cut when shown), and
+    // their labels drawn across a line of the figure. An SVG image is analysed
+    // in a copy of its file (window.__layoutSvg, read before), drawn out of
+    // the page at 1 px per unit of its viewBox.
+    const DRAWN = 'path, line, polyline, polygon, rect, circle, ellipse, text, image, use';
+    const NOT_DRAWN = 'defs, marker, clipPath, mask, pattern, symbol, title, desc, metadata';
+    // the viewBox of an svg: its viewBox attribute, else its width and height
+    // when they are in px (10cm or 100% are not units of its content)
+    function viewBoxOf(svg) {
+        const vb = svg.viewBox && svg.viewBox.baseVal;
+        if (vb && vb.width > 0 && vb.height > 0) return {x: vb.x, y: vb.y, w: vb.width, h: vb.height};
+        const plain = (v) => /^\s*[\d.]+(px)?\s*$/.test(v || '') ? parseFloat(v) : NaN;
+        const w = plain(svg.getAttribute('width')), h = plain(svg.getAttribute('height'));
+        return w > 0 && h > 0 ? {x: 0, y: 0, w, h} : null;
+    }
+    function hasHalo(text) {
+        for (let e = text; e && e.tagName && e.tagName.toLowerCase() !== 'svg'; e = e.parentNode) {
+            const cs = getComputedStyle(e);
+            if (cs.paintOrder && cs.paintOrder.startsWith('stroke') && cs.stroke !== 'none'
+                && parseFloat(cs.strokeWidth) > 0) return true;
+        }
+        return false;
+    }
+    const drawnElements = (svg) => [...svg.querySelectorAll(DRAWN)].filter(e => !e.closest(NOT_DRAWN)
+        && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden');
+    const meets = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+
+    // Labels (text without a halo) drawn across a stroked element: points of the
+    // glyphs' band (without the space of the ascenders and descenders), close
+    // enough to meet a thin line; only the elements whose box meets the label,
+    // and a bounded number of tests (large plots stay fast).
+    function svgLabels(drawn) {
+        const strokes = [];
+        for (const e of drawn) {
+            if (e.tagName.toLowerCase() === 'text' || !e.isPointInStroke) continue;
+            const cs = getComputedStyle(e);
+            if (cs.stroke === 'none' || !(parseFloat(cs.strokeWidth) > 0)
+                || parseFloat(cs.strokeOpacity) === 0) continue;
+            const m = e.getScreenCTM();
+            if (m) strokes.push({e, rect: e.getBoundingClientRect(), inverse: m.inverse(),
+                                 pad: parseFloat(cs.strokeWidth) * Math.abs(m.a || 1)});
+        }
+        const labels = [];
+        let budget = 20000;             // isPointInStroke calls for the figure
+        for (const text of drawn.filter(e => e.tagName.toLowerCase() === 'text').slice(0, 300)) {
+            if (budget <= 0) break;
+            if (hasHalo(text)) continue;
+            const r = text.getBoundingClientRect();
+            if (r.width <= 0 || r.height <= 0) continue;
+            for (const s of strokes) {
+                const box = {left: s.rect.left - s.pad, right: s.rect.right + s.pad,
+                             top: s.rect.top - s.pad, bottom: s.rect.bottom + s.pad};
+                if (!meets(r, box) || budget <= 0) continue;
+                const nx = Math.min(40, Math.max(4, Math.ceil(r.width / 3)));
+                const ny = Math.min(12, Math.max(3, Math.ceil(0.6 * r.height / 1.5)));
+                let hits = 0;
+                for (let i = 0; i < nx && hits < 2; i++) {
+                    for (let j = 0; j < ny && hits < 2; j++) {
+                        const x = r.left + r.width * (i + 0.5) / nx;
+                        const y = r.top + r.height * (0.3 + 0.55 * (j + 0.5) / ny);
+                        if (x < box.left || x > box.right || y < box.top || y > box.bottom) continue;
+                        budget--;
+                        if (s.e.isPointInStroke(new DOMPoint(x, y).matrixTransform(s.inverse))) hits++;
+                    }
+                }
+                if (hits >= 2) { labels.push({text: excerpt(text.textContent, 40), over: s.e.tagName.toLowerCase()}); break; }
+            }
+        }
+        return labels;
+    }
+
+    // An SVG image: analysed in a copy of its file (window.__layoutSvg, read
+    // before), drawn out of the page at 1 px per unit of its viewBox; what it
+    // draws beyond its viewBox is measured on its pixels (window.__layoutSvgInk).
+    // Once per file and size.
+    const svgImageCache = new Map();
+    function svgImageChecks(img, drawn) {
+        const url = img.currentSrc || img.src;
+        const key = `${url} ${drawn.w}x${drawn.h}`;
+        if (svgImageCache.has(key)) return svgImageCache.get(key);
+        let result = null;
+        const text = (window.__layoutSvg || {})[url];
+        const source = text && new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+        if (source && source.tagName.toLowerCase() === 'svg') {
+            const svg = document.importNode(source, true);
+            const holder = document.createElement('div');
+            // out of the page and transparent (not hidden: its elements are measured as drawn)
+            Object.assign(holder.style, {position: 'absolute', left: '-20000px', top: '0', opacity: '0',
+                                         pointerEvents: 'none'});
+            holder.appendChild(svg);
+            document.body.appendChild(holder);
+            try {
+                const vb = viewBoxOf(svg);
+                if (vb) {
+                    svg.setAttribute('width', vb.w); svg.setAttribute('height', vb.h);
+                    const ink = (window.__layoutSvgInk || {})[url];
+                    const sx = drawn.w / vb.w, sy = drawn.h / vb.h;
+                    result = {overflow: ink ? {left: round(ink.left * sx), top: round(ink.top * sy),
+                                               right: round(ink.right * sx), bottom: round(ink.bottom * sy)} : null,
+                              labels: svgLabels(drawnElements(svg))};
+                }
+            } finally {
+                holder.remove();
+            }
+        }
+        svgImageCache.set(key, result);
+        return result;
+    }
+
+    // An inline svg: cut at its box (unless its overflow is visible); what
+    // its elements draw beyond the box.
+    function inlineSvgChecks(svg) {
+        const frame = svg.getBoundingClientRect();
+        if (frame.width <= 0 || frame.height <= 0) return null;
+        const drawn = drawnElements(svg);
+        let overflow = null;
+        if (getComputedStyle(svg).overflow !== 'visible') {
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (const e of drawn) {
+                const r = e.getBoundingClientRect();
+                if (r.width <= 0 && r.height <= 0) continue;
+                x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top);
+                x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+            }
+            if (x0 !== Infinity) overflow = {left: round(Math.max(0, frame.left - x0)), top: round(Math.max(0, frame.top - y0)),
+                                             right: round(Math.max(0, x1 - frame.right)), bottom: round(Math.max(0, y1 - frame.bottom))};
+        }
+        return {overflow, labels: svgLabels(drawn)};
+    }
+
+    function svgFigures(el, skip = []) {
+        const found = [];
+        const images = (el.matches('img') ? [el] : [...el.querySelectorAll('img')])
+            .filter(i => !inside(i, skip) && /\.svg(\?|#|$)/i.test(i.currentSrc || i.src));
+        for (const img of images.slice(0, 6)) {
+            const box = toRect(img.getBoundingClientRect());
+            const drawn = drawnRect(img, box) || box;
+            const checks = drawn.w > 0 && drawn.h > 0 ? svgImageChecks(img, drawn) : null;
+            if (checks) found.push({src: basename(sourceOf(img)), ...checks});
+        }
+        const inline = (el.matches('svg') ? [el] : [...el.querySelectorAll('svg')])
+            .filter(v => !inside(v, skip) && !v.closest('.katex') && !(v.parentElement && v.parentElement.closest('svg')));
+        for (const svg of inline.slice(0, 6)) {
+            const checks = inlineSvgChecks(svg);
+            if (checks) found.push({src: svg.id ? '#' + svg.id : 'svg', ...checks});
+        }
+        return found;
+    }
+
     function describe(el, skip = []) {
         const cs = getComputedStyle(el);
         const box = toRect(el.getBoundingClientRect());
@@ -410,6 +572,7 @@ function extractBlocks(rootSelector, excludeSelector) {
             media,
             wrapped: wrappedItems(el),
             rows: figureRows(el),
+            svg: svgFigures(el, skip),
             text: stats,
             // overlap marked as intentional in the source, e.g. ::(.overlay)[...]
             intentional: el.classList.contains('overlay'),
@@ -443,7 +606,7 @@ function extractBlocks(rootSelector, excludeSelector) {
                        box: visual, visual, ink, position: 'static', margin: [0, 0, 0, 0],
                        text_align: getComputedStyle(root).textAlign,
                        font_size: round(fontSize), overflow: 'visible', scroll: null, media: [],
-                       wrapped: [], rows: [],
+                       wrapped: [], rows: [], svg: [],
                        text: stats, intentional: false};
         blocks.push(block);
         for (const n of nodes) if (n.nodeType === Node.ELEMENT_NODE) blockOf.set(n, block);
@@ -631,6 +794,107 @@ async function freezeMedia(page) {
 }
 
 
+// The SVG images, for their analysis in the page: their text
+// (window.__layoutSvg), and what each one draws beyond its viewBox, in units of
+// the viewBox (window.__layoutSvgInk): the image is drawn on a canvas covering
+// its viewBox and all its elements, and its pixels outside the viewBox are what
+// is cut when it is shown (the ink: not the boxes of the glyphs).
+async function loadSvgImages(page) {
+    await page.evaluate(async () => {
+        window.__layoutSvg = {};
+        window.__layoutSvgInk = {};
+        const read = (url) => new Promise(resolve => {
+            const xhr = new XMLHttpRequest();         // fetch() does not read file://
+            xhr.open('GET', url);
+            xhr.onload = () => resolve(xhr.responseText || null);
+            xhr.onerror = () => resolve(null);
+            xhr.send();
+        });
+        const plain = (v) => /^\s*[\d.]+(px)?\s*$/.test(v || '') ? parseFloat(v) : NaN;
+        async function inkBeyond(root) {
+            const vbAttr = root.viewBox && root.viewBox.baseVal && root.viewBox.baseVal.width > 0 ? root.viewBox.baseVal : null;
+            const vb = vbAttr ? {x: vbAttr.x, y: vbAttr.y, w: vbAttr.width, h: vbAttr.height}
+                : {x: 0, y: 0, w: plain(root.getAttribute('width')), h: plain(root.getAttribute('height'))};
+            if (!(vb.w > 0 && vb.h > 0)) return null;
+            // extent of the elements (in units), with the copy laid out out of the page
+            const svg = document.importNode(root, true);
+            svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+            svg.setAttribute('width', vb.w); svg.setAttribute('height', vb.h);
+            svg.setAttribute('preserveAspectRatio', 'none');
+            const holder = document.createElement('div');
+            Object.assign(holder.style, {position: 'absolute', left: '-20000px', top: '0', opacity: '0', pointerEvents: 'none'});
+            holder.appendChild(svg);
+            document.body.appendChild(holder);
+            let ex = {x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h};
+            try {
+                const frame = svg.getBoundingClientRect();
+                const u = frame.width / vb.w || 1;
+                for (const e of svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse, text, image, use')) {
+                    if (e.closest('defs, marker, clipPath, mask, pattern, symbol')) continue;
+                    const r = e.getBoundingClientRect();
+                    if (r.width <= 0 && r.height <= 0) continue;
+                    const pad = (parseFloat(getComputedStyle(e).strokeWidth) || 0) + 1;
+                    ex.x0 = Math.min(ex.x0, vb.x + (r.left - frame.left) / u - pad);
+                    ex.y0 = Math.min(ex.y0, vb.y + (r.top - frame.top) / u - pad);
+                    ex.x1 = Math.max(ex.x1, vb.x + (r.right - frame.left) / u + pad);
+                    ex.y1 = Math.max(ex.y1, vb.y + (r.bottom - frame.top) / u + pad);
+                }
+            } finally {
+                holder.remove();
+            }
+            const m = 0.05 * Math.max(vb.w, vb.h);
+            ex = {x0: ex.x0 - m, y0: ex.y0 - m, x1: ex.x1 + m, y1: ex.y1 + m};
+            const W = ex.x1 - ex.x0, H = ex.y1 - ex.y0;
+            const scale = 1600 / Math.max(W, H);              // px per unit
+            const cw = Math.max(1, Math.round(W * scale)), ch = Math.max(1, Math.round(H * scale));
+            const copy = document.importNode(root, true);
+            copy.setAttribute('viewBox', `${ex.x0} ${ex.y0} ${W} ${H}`);
+            copy.setAttribute('width', cw); copy.setAttribute('height', ch);
+            copy.setAttribute('preserveAspectRatio', 'none');
+            copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], {type: 'image/svg+xml'}));
+            try {
+                const img = new Image();
+                await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+                const canvas = document.createElement('canvas');
+                canvas.width = cw; canvas.height = ch;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, cw, ch);
+                const data = ctx.getImageData(0, 0, cw, ch).data;
+                // the viewBox on the canvas (px)
+                const vx0 = (vb.x - ex.x0) * scale, vy0 = (vb.y - ex.y0) * scale;
+                const vx1 = vx0 + vb.w * scale, vy1 = vy0 + vb.h * scale;
+                const out = {left: 0, top: 0, right: 0, bottom: 0};
+                for (let j = 0; j < ch; j++) {
+                    for (let i = 0; i < cw; i++) {
+                        if (data[4 * (j * cw + i) + 3] <= 32) continue;
+                        if (i < vx0) out.left = Math.max(out.left, vx0 - i);
+                        if (i + 1 > vx1) out.right = Math.max(out.right, i + 1 - vx1);
+                        if (j < vy0) out.top = Math.max(out.top, vy0 - j);
+                        if (j + 1 > vy1) out.bottom = Math.max(out.bottom, j + 1 - vy1);
+                    }
+                }
+                for (const side in out) out[side] /= scale;   // units
+                return out;
+            } catch (e) {
+                return null;
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+        }
+        const urls = [...new Set([...document.images].map(i => i.currentSrc || i.src)
+            .filter(u => /\.svg(\?|#|$)/i.test(u)))];
+        for (const url of urls.slice(0, 40)) {
+            const text = await read(url);
+            if (!text) continue;
+            window.__layoutSvg[url] = text;
+            const root = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+            if (root && root.tagName.toLowerCase() === 'svg') window.__layoutSvgInk[url] = await inkBeyond(root);
+        }
+    });
+}
+
+
 async function waitForContent(page) {
     await page.evaluate(async () => {
         await document.fonts.ready;
@@ -658,6 +922,7 @@ async function waitForContent(page) {
             await page.waitForNetworkIdle({idleTime: 500, timeout: 5000}).catch(() => {});
             await waitForContent(page);
             await freezeMedia(page);
+            await loadSvgImages(page);
             const layout = await page.evaluate(extractBlocks, rootSelector, excludeSelector);
             fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
             if (withImages) {

@@ -341,3 +341,33 @@ def test_changes_of_problems_that_repeat():
     old = {'blocks': [image(1), image(2)], 'analysis': {'upscaled_images': [upscaled(1), upscaled(2)], 'lint': []}}
     new = {'blocks': [image(1), image(2)], 'analysis': {'upscaled_images': [upscaled(1)], 'lint': []}}
     assert layout_report.layout_changes(old, new) == ['- solved: UPSCALED IMAGE #2: a.png displayed at ×2 (blurry)']
+
+
+def test_collapsed_figure():
+    media = [{'src': 'a.png', 'w': 0, 'h': 0, 'natural_w': 200, 'natural_h': 100},
+             {'src': 'b.png', 'w': 300, 'h': 3, 'natural_w': 200, 'natural_h': 100},
+             {'src': 'c.png', 'w': 200, 'h': 100, 'natural_w': 200, 'natural_h': 100},
+             {'src': 'd.mp4', 'w': 0, 'h': 0, 'natural_w': 0, 'natural_h': 0},      # not loaded: no size
+             {'src': 'e.png', 'w': 900, 'h': 4, 'natural_w': 1000, 'natural_h': 4}]   # a thin rule, as it is
+    found = layout_report.find_collapsed([block(1, 0, 0, 400, 200, media=media)])
+    assert [f['src'] for f in found] == ['a.png', 'b.png']
+    assert 'COLLAPSED FIGURE #1: a.png drawn at 0 × 0 px' in '\n'.join(layout_report.problem_lines({'collapsed': found}))
+
+
+def test_svg_overflow_and_labels():
+    svg = [{'src': 'fig.svg', 'overflow': {'left': 92, 'top': 0, 'right': 2, 'bottom': 0},
+            'labels': [{'text': 'translation', 'over': 'line'}]},
+           {'src': 'ok.svg', 'overflow': {'left': 0, 'top': 0, 'right': 3, 'bottom': 0}, 'labels': []}]
+    blocks = [block(1, 0, 0, 400, 200, svg=svg)]
+    overflow = layout_report.find_svg_overflow(blocks)
+    assert overflow == [{'id': 1, 'src': 'fig.svg', 'left': 92, 'top': 0, 'right': 2, 'bottom': 0}]
+    assert '(92 px left, 2 px right): cut when shown' in layout_report.problem_lines({'svg_overflow': overflow})[0]
+    assert layout_report.find_svg_labels(blocks) == [{'id': 1, 'src': 'fig.svg', 'texts': ['translation'],
+                                                      'count': 1, 'over': 'line'}]
+    many = [block(1, 0, 0, 400, 200, svg=[{'src': 'plot.svg', 'overflow': None,
+                                          'labels': [{'text': f'l{k}', 'over': 'line'} for k in range(40)]}])]
+    lines = layout_report.page_markdown('p', 's', {'area': AREA, 'blocks': [], 'analysis': {
+        'occupancy': 0, 'free_bottom': 0, 'gaps': [], 'svg_labels': layout_report.find_svg_labels(many)}})
+    assert lines.count('SVG LABEL') == 1 and '"l0", "l1", "l2" and 37 more are drawn across a line' in lines
+    analysis = {'svg_overflow': overflow, 'svg_labels': layout_report.find_svg_labels(blocks)}
+    assert layout_report.count_problems(analysis) == 1 and layout_report.count_warnings(analysis) == 1

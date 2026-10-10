@@ -11,6 +11,7 @@ import yaml
 import json
 import os
 import shutil
+import tempfile
 import argparse
 import sys
 import importlib.util
@@ -59,6 +60,9 @@ def parse_arguments():
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
                              'of each page in .layout/ (plugin layout_report.py, requires npm install).')
+    parser.add_argument('--render', metavar='FILE', action='append',
+                        help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
+                             'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
     parser.add_argument('--deck', metavar='FILE',
                         help='Deck file (order of the slides) replacing the deck of the configuration.')
     parser.add_argument('--scaffold', action='store_true',
@@ -75,6 +79,9 @@ def parse_arguments():
         parser.error('--only cannot be combined with --clean or --check-config')
     if args.lint and (args.clean or args.check_config or args.serve or args.watch):
         parser.error('--lint cannot be combined with --clean, --check-config, --serve or --watch')
+    if args.render and (args.clean or args.check_config or args.serve or args.watch or args.lint or args.only
+                        or args.layout or args.deck or args.scaffold):
+        parser.error('--render is used alone (no build)')
     return args
 
 
@@ -205,7 +212,10 @@ def select_pages(meta, log, scaffold=False):
     for entry in result.missing:
         log.warning(f"Deck: '{entry.pointer}' ({entry.meta['title']}) has no source yet "
                     f"(--scaffold creates it)")
-    log.keyvalue('info', f'Deck: {result.summary()}', indent_level=1)
+    log.keyvalue('info', f'Deck: {result.summary(loaded_deck.duration)}', indent_level=1)
+    if (extra := result.over_time(loaded_deck.duration)) is not None:
+        log.warning(f'Deck: {extra:g} min over the length of the talk ({loaded_deck.duration:g} min, '
+                    f"key 'duration' of the deck)")
     if result.unlisted:
         names = ', '.join(p.label for p in result.unlisted[:5])
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
@@ -547,6 +557,53 @@ def clean_directories(meta):
 
 
 # ---------------------------------------------------------------------------
+# Render of files (--render)
+# ---------------------------------------------------------------------------
+
+def render_files(meta, files, log):
+    """PNG of each file as the slides draw it, in <layout output>/render/
+    (under its path relative to the configuration directory, or, for a file
+    outside it, under _outside/<its directory>/), at the size of the slides
+    of the layout report."""
+    from pathlib import Path
+    from plugins.layout_report import _options, _run_node
+    try:
+        output = layout_output_directory(meta) / 'render'
+    except ConfigError as exc:
+        log.error(str(exc))
+        sys.exit(1)
+    base = Path(meta['config_directory']).resolve()
+    entries, targets = [], {}
+    for name in files:
+        path = Path(name).resolve()
+        if not path.is_file():
+            log.error(f'--render: no file {name}')
+            sys.exit(1)
+        relative = path.relative_to(base) if path.is_relative_to(base) \
+            else Path('_outside', *[part.strip('/\\:') or '_' for part in path.parts])
+        png = output / (str(relative) + '.png')
+        if png in targets and targets[png] != path:
+            log.error(f'--render: {name} and {targets[png]} would be written to the same {png}')
+            sys.exit(1)
+        targets[png] = path
+        entries.append({'file': str(path), 'png': str(png)})
+    options = _options(meta)
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
+        json.dump(entries, fid)
+        listing = fid.name
+    try:
+        _run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
+                                     f"--height={options['height']}"])
+    except RuntimeError as exc:
+        log.error(str(exc))
+        sys.exit(1)
+    finally:
+        os.remove(listing)
+    for entry in entries:
+        log.keyvalue('info', f"{os.path.relpath(entry['file'])} -> {os.path.relpath(entry['png'])}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -585,6 +642,9 @@ def build_once(args):
         except ConfigError as exc:
             log.error(str(exc))
             sys.exit(1)
+    if args.render:
+        render_files(meta, args.render, log)
+        return
     if args.check_config:
         # The deck and the design are read (not the pages): errors before any build
         try:
@@ -633,6 +693,10 @@ def build_once(args):
         selected = select_pages(meta, log, scaffold=args.scaffold)
         built = only_pages(meta, selected, log) if args.only else None
         meta['only'] = built is not None
+        if args.only and built is None:
+            # a full build (the pages of the site changed), but the layout report
+            # measures only the pages named (and those without a report)
+            meta['measure'] = [p.site_html for p in deck.named_pages(selected, args.only, other_sources(selected))]
         if meta['only']:
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated

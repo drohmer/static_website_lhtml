@@ -38,7 +38,7 @@ class DesignTests(unittest.TestCase):
         loaded = design.load_design(theme, str(override))
         self.assertEqual(loaded['tokens'], {'space': {'m': '30px'}})
         self.assertEqual(loaded['macros'], {'box': {'class': 'box'}})
-        self.assertEqual(design.load_design(self.root / 'none'), {'tokens': {}, 'macros': {}, 'layouts': {}})
+        self.assertEqual(design.load_design(self.root / 'none'), {'tokens': {}, 'macros': {}, 'layouts': {}, 'lint': {}})
 
     def test_invalid_design(self):
         with self.assertRaises(design.DesignError):
@@ -126,7 +126,7 @@ class DesignRegressionTests(unittest.TestCase):
     def test_empty_design_still_writes_css(self):
         with tempfile.TemporaryDirectory() as root:
             d = design.load_design(REPO / 'themes/slides', {'tokens': None, 'macros': None, 'layouts': None})
-            self.assertEqual(d, {'tokens': {}, 'macros': {}, 'layouts': {}})
+            self.assertEqual(d, {'tokens': {}, 'macros': {}, 'layouts': {}, 'lint': {}})
             path = design.write_design({'site_directory': root}, d)
             self.assertIn(':root {', path.read_text())
 

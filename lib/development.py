@@ -40,6 +40,23 @@ class PreviewHandler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):        # quiet: the build log is enough
         pass
 
+    def send_response(self, code, message=None):
+        self._cache_control = False
+        super().send_response(code, message)
+
+    def send_header(self, keyword, value):
+        if keyword.lower() == 'cache-control':
+            self._cache_control = True
+        super().send_header(keyword, value)
+
+    def end_headers(self):
+        # Every file is checked again at each load: a page rebuilt after an edit of
+        # the deck must not run with the previous menu.js (wrong previous/next pages)
+        if not getattr(self, '_cache_control', False):
+            super().send_header('Cache-Control', 'no-cache')
+        self._cache_control = False
+        super().end_headers()
+
     def _send(self, status, body, content_type='application/json; charset=utf-8'):
         data = body.encode('utf-8') if isinstance(body, str) else body
         self.send_response(status)
@@ -59,7 +76,14 @@ class PreviewHandler(SimpleHTTPRequestHandler):
         return ((self.headers.get('Host') or '').lower() in allowed
                 and (not origin or urlsplit(origin).netloc.lower() in allowed))
 
+    def do_HEAD(self):
+        del self.headers['If-Modified-Since']       # as do_GET
+        super().do_HEAD()
+
     def do_GET(self):
+        # always the file itself: the date of a file has a precision of one second,
+        # two builds in the same second would get a 304 Not Modified for the old one
+        del self.headers['If-Modified-Since']
         url = urlsplit(self.path)
         if url.path.startswith(feedback.URL) and not self._local_host():
             return self._send(403, '{"error": "forbidden"}')

@@ -459,3 +459,24 @@ class DeckWarningTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TalkLengthTests(unittest.TestCase):
+    def test_duration_of_the_talk(self):
+        loaded = deck.load_deck({'duration': 10, 'slides': [{'path': 'a', 'duration': 8}, {'path': 'b', 'duration': 4}]})
+        self.assertEqual(loaded.duration, 10)
+        result = deck.apply_deck(loaded, SLIDES)
+        self.assertEqual(result.over_time(loaded.duration), 2)
+        self.assertIn('12 min of 10', result.summary(loaded.duration))
+        self.assertIsNone(result.over_time(20))
+        self.assertIsNone(result.over_time(None))
+        for bad in (0, -5, 'one hour', True):
+            with self.assertRaises(deck.DeckError):
+                deck.load_deck({'duration': bad, 'slides': ['a']})
+
+    def test_sum_of_decimals_is_not_over_time(self):
+        loaded = deck.load_deck({'duration': 7, 'slides': [{'path': p, 'duration': 0.7} for p in
+                                                            ('a/00_section', 'a/01_x', 'a/02_y', 'a/03_todo_z',
+                                                             'b/00_section', 'b/01_w')]})
+        self.assertIsNone(deck.apply_deck(loaded, SLIDES).over_time(4.2))
+

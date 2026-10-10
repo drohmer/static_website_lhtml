@@ -210,6 +210,43 @@ def find_upscaled_images(blocks, tolerance=1.25):
     return result
 
 
+def find_collapsed(blocks, minimum=8):
+    """Images and videos that have a size of their own but are drawn
+    (almost) without width or height, e.g. in a flex box without a height:
+    {id, src, w, h}."""
+    return [{'id': b['id'], 'src': m['src'], 'w': m['w'], 'h': m['h']}
+            for b in blocks for m in b.get('media', [])
+            if m.get('natural_w', 0) >= minimum and m.get('natural_h', 0) >= minimum
+            and (m['w'] < minimum or m['h'] < minimum)]
+
+
+def find_svg_overflow(blocks, threshold=4):
+    """SVG figures drawing beyond their viewBox: what is beyond is cut when
+    the figure is shown as an image. {id, src, left, top, right, bottom} (px
+    as displayed)."""
+    found = []
+    for b in blocks:
+        for f in b.get('svg', []):
+            o = f.get('overflow') or {}
+            if any(v > threshold for v in o.values()):
+                found.append({'id': b['id'], 'src': f['src'], **o})
+    return found
+
+
+def find_svg_labels(blocks):
+    """Labels (text) of SVG figures drawn across a line of the figure, without
+    a halo (paint-order: stroke) that would keep them readable: one entry per
+    figure, {id, src, texts (the first ones), count, over}."""
+    found = []
+    for b in blocks:
+        for f in b.get('svg', []):
+            labels = f.get('labels', [])
+            if labels:
+                found.append({'id': b['id'], 'src': f['src'], 'texts': [l['text'] for l in labels[:3]],
+                              'count': len(labels), 'over': labels[0]['over']})
+    return found
+
+
 def find_reserved_overlaps(blocks, reserved, threshold=4):
     """Blocks whose ink covers an area reserved by the theme (the
     navigation): {id, name, x0, y0, x1, y1}."""
@@ -636,6 +673,9 @@ def analyse(layout, threshold=4, norms=None, limits=None):
         'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False)),
         'clipped': find_clipped(blocks, threshold),
         'upscaled_images': find_upscaled_images(blocks),
+        'collapsed': find_collapsed(blocks),
+        'svg_overflow': find_svg_overflow(blocks, threshold),
+        'svg_labels': find_svg_labels(blocks),
         'tight': tight,
         'intentional': intentional,
         'background_overlaps': find_background_overlaps(blocks, collisions + intentional, threshold),
@@ -656,10 +696,11 @@ def analyse(layout, threshold=4, norms=None, limits=None):
     return layout['analysis']
 
 
-PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images', 'reserved')
+PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images', 'reserved',
+                'collapsed', 'svg_overflow')
 
 
-WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit')
+WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit', 'svg_labels')
 
 
 def count_problems(analysis):
@@ -700,6 +741,11 @@ def problem_lines(analysis):
     for r in analysis.get('reserved', []):
         problems.append(f"- RESERVED AREA #{r['id']}: covers the {r['name']} of the theme "
                         f"(x {r['x0']}..{r['x1']}, y {r['y0']}..{r['y1']})")
+    for c in analysis.get('collapsed', []):
+        problems.append(f"- COLLAPSED FIGURE #{c['id']}: {c['src']} drawn at {c['w']} × {c['h']} px (invisible)")
+    for o in analysis.get('svg_overflow', []):
+        sides = ', '.join(f'{o[k]} px {k}' for k in ('left', 'top', 'right', 'bottom') if o.get(k, 0) > 0)
+        problems.append(f"- SVG OVERFLOW #{o['id']}: {o['src']} draws beyond its viewBox ({sides}): cut when shown")
     return problems
 
 
@@ -747,6 +793,12 @@ def page_markdown(name, source, layout):
         warnings.append(f"- {'CROPPED' if f['kind'] == 'cropped' else 'SMALL IN ITS BOX'} #{f['id']}: {f['src']} "
                         + (f"{round(100 * f['part'])} % cut ({f['sides']})" if f['kind'] == 'cropped'
                            else f"drawn on {round(100 * f['part'])} % of its box (empty {f['sides']})"))
+    for f in analysis.get('svg_labels', []):
+        texts = ', '.join(f'"{t}"' for t in f['texts']) + (f" and {f['count'] - len(f['texts'])} more"
+                                                          if f['count'] > len(f['texts']) else '')
+        what = 'is' if f['count'] == 1 else 'are'
+        warnings.append(f"- SVG LABEL #{f['id']}: in {f['src']}, {texts} {what} drawn across a {f['over']} "
+                        f"(move it, or give it a halo: paint-order=\"stroke\" stroke=\"white\")")
     dense_text = {'words': 'words of text', 'min_font': 'px: smallest font size'}
     warnings += [f"- {'SMALL FONT' if d['kind'] == 'min_font' else 'DENSE'}: {d['value']} {dense_text[d['kind']]} "
                  f"({'minimum' if d['kind'] == 'min_font' else 'limit'} {d['limit']})"
@@ -843,14 +895,17 @@ Problems: HIDDEN TEXT (text covered by another block drawn on top of it),
 COLLISION (drawn content of two blocks overlapping), OUT OF AREA (block
 beyond the usable area), CLIPPED (content cut by overflow), UPSCALED IMAGE
 (bitmap displayed larger than its native size: blurry), RESERVED AREA (content
-over the navigation of the theme).
+over the navigation of the theme), COLLAPSED FIGURE (image or video drawn
+without width or height), SVG OVERFLOW (SVG figure drawing beyond its viewBox:
+cut).
 Warnings: TIGHT (text very close to another block: line boxes overlap, glyphs
 probably do not), NEAR-ALIGNED (edge or center a few px away from that of
 another block, of the area or of a column of the deck: align it exactly or
 move it clearly), DENSE (too many words), SMALL FONT, WRAPPED (title on
 several lines, or list item with a few words on its second line), ROW (figures
 side by side not aligned), SMALL IN ITS BOX / CROPPED (figure much smaller
-than its box, or cut, by object-fit).
+than its box, or cut, by object-fit), SVG LABEL (text of an SVG figure across
+one of its lines).
 Renders are reproducible: videos at their first frame, GIFs at their first
 image, animations stopped. `changes.md`: what changed since the previous report.
 Differences with the deck (deviations): page title not at its usual position,
@@ -1070,13 +1125,27 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         os.remove(sheets_json)
 
 
+def _same_source(report, page, meta):
+    """Whether the report of a page (layout.json) was made from its source: the
+    pages of a deck that changed may now have the path of another one."""
+    try:
+        with open(report, encoding='utf-8') as fid:
+            source = json.load(fid).get('source')
+    except (OSError, ValueError):
+        return False
+    return source == os.path.relpath(page['source'], meta.get('config_directory') or '.')
+
+
 def post_process(meta):
     options = _options(meta)
     log = meta['log']
     site_dir = meta['site_directory']
     output_dir = str(layout_output_directory(meta))
-    built = {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
-    partial = len(built) < len(structure(meta))     # --only: the others keep their report
+    # --only: the pages built (or, when the pages of the site changed, the full
+    # build measures only the pages named); the others keep their report
+    requested = meta.get('measure')
+    built = set(requested) if requested else {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
+    partial = len(built) < len(structure(meta))
 
     pages, previous = [], []
     for entry in structure(meta):
@@ -1088,15 +1157,20 @@ def post_process(meta):
                 'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
                 'name': relative, 'source': entry['src'], 'layout': entry.get('layout')}
         if relative not in built:
-            if partial and os.path.isfile(os.path.join(page['out'], 'layout.json')):
+            report = os.path.join(page['out'], 'layout.json')
+            if partial and os.path.isfile(report) and (not requested or _same_source(report, page, meta)):
                 previous.append(page)
+            elif requested and os.path.isfile(html):       # its report is missing or of another page
+                pages.append(page)
         elif os.path.isfile(html):
             pages.append(page)
 
     previous_layouts = {}             # the previous measure of the pages measured again, for changes.md
     for p in pages:
         path = os.path.join(p['out'], 'layout.json')
-        if os.path.isfile(path):
+        if os.path.isfile(path) and requested and not _same_source(path, p, meta):
+            os.remove(path)             # the report of another page (the deck changed): no changes
+        elif os.path.isfile(path):
             try:
                 with open(path, encoding='utf-8') as fid:
                     previous_layouts[p['name']] = json.load(fid)
@@ -1107,6 +1181,9 @@ def post_process(meta):
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
+    if requested:
+        log.keyvalue('info', f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
+                             f'the others keep their report (--layout for all)', indent_level=2)
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
         json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages], fid)
@@ -1171,7 +1248,7 @@ def post_process(meta):
                                           for p, _, layout in measured],
                              measured[0][2]['viewport'], options, log,
                              changed={k for k, (p, _, _) in enumerate(measured) if p['name'] in remeasured}
-                             if partial else None)
+                             if partial and not requested else None)      # deck changed: all the sheets
 
     n_problems = sum(count_problems(r[2]) for r in rows)
     if previous_layouts:
