@@ -30,6 +30,8 @@ const height = parseInt(args.height || 1080);
 // images: 1 = render, overlay and blocks; render = render only; 0 = none
 const images = String(args.images === undefined ? '1' : args.images);
 const withImages = images !== '0';
+// number of pages measured at the same time (tabs of one browser)
+const jobs = Math.max(1, parseInt(args.jobs || 1) || 1);
 
 const PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4',
                  '#f032e6', '#bfef45', '#469990', '#9a6324', '#800000', '#808000',
@@ -888,16 +890,23 @@ function drawOverlay(blocks, palette, filled) {
 async function freezeMedia(page) {
     await page.evaluate(async () => {
         for (const a of document.getAnimations()) { try { a.pause(); a.currentTime = 0; } catch (e) { /* ignore */ } }
+        // wait for the size of each video (its box depends on it), then for its
+        // first frame; a video already at 0 sends no 'seeked'
         await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
             v.autoplay = false;
             v.pause();
-            const timer = setTimeout(resolve, 3000);
+            const timer = setTimeout(resolve, 10000);
             const done = () => { clearTimeout(timer); resolve(); };
-            if (v.readyState >= 2 && v.currentTime === 0) return done();
-            v.addEventListener('seeked', done, {once: true});
             v.addEventListener('error', done, {once: true});
-            if (v.readyState >= 1) v.currentTime = 0;
-            else v.addEventListener('loadedmetadata', () => { v.currentTime = 0; }, {once: true});
+            const first = () => {
+                if (v.currentTime !== 0) {
+                    v.addEventListener('seeked', done, {once: true});
+                    v.currentTime = 0;
+                } else if (v.readyState >= 2) done();
+                else v.addEventListener('loadeddata', done, {once: true});
+            };
+            if (v.readyState >= 1) first();
+            else v.addEventListener('loadedmetadata', first, {once: true});
         })));
         const gifs = [...document.images].filter(i => /\.gif(\?|#|$)/i.test(i.currentSrc || i.src));
         for (const img of gifs) img.dataset.layoutGifUrl = img.currentSrc || img.src;
@@ -1046,10 +1055,20 @@ async function waitForContent(page) {
 
 
 (async () => {
-    const browser = await puppeteer.launch({headless: true, args: ['--allow-file-access-from-files']});
+    // pages are independent: `jobs` tabs of one browser measure them in parallel;
+    // background tabs are not throttled (timers, rendering)
+    const browser = await puppeteer.launch({headless: true, args: ['--allow-file-access-from-files',
+        '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows']});
+    let failures = 0, next = 0, done = 0;
+    await Promise.all(Array.from({length: Math.min(jobs, pages.length) || 1}, () => worker()));
+    console.log(`progress ${pages.length} ${pages.length} done`);
+    await browser.close();
+    process.exit(0);
+
+  async function worker() {
     const page = await browser.newPage();
     await page.setViewport({width, height});
-    let failures = 0;
     let events = [];
     let resources = new Set();
     page.on('request', request => resources.add(request.url()));
@@ -1118,9 +1137,10 @@ async function waitForContent(page) {
         }
         return layout;
     }
-    for (const [index, entry] of pages.entries()) {
+    while (next < pages.length) {
+        const entry = pages[next++];
         // progress on stdout, read by layout_report.py: "progress <done> <total> <page>"
-        console.log(`progress ${index} ${pages.length} ${entry.name || entry.html}`);
+        console.log(`progress ${done} ${pages.length} ${entry.name || entry.html}`);
         events = [];
         resources = new Set();
         try {
@@ -1183,8 +1203,8 @@ async function waitForContent(page) {
             failures += 1;
             console.error(`layout_measure: ${entry.html}: ${e.message}`);
         }
+        done += 1;
     }
-    console.log(`progress ${pages.length} ${pages.length} done`);
-    await browser.close();
-    process.exit(0);
+    await page.close();
+  }
 })();

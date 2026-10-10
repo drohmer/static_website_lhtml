@@ -5,6 +5,8 @@ import importlib.util
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, ROOT)
 spec = importlib.util.spec_from_file_location('layout_report', os.path.join(ROOT, 'plugins', 'layout_report.py'))
@@ -401,3 +403,11 @@ def test_canvas_bounds_are_candidates_not_proof_of_occluded_text():
     assert result['canvas_overlaps'][0]['kind'] == 'hidden_text'
     assert layout_report.count_problems(result) == 0
     assert layout_report.count_warnings(result) >= 1
+
+
+def test_jobs_option():
+    assert layout_report._jobs({'jobs': 3}) == 3
+    assert 1 <= layout_report._jobs({'jobs': 'auto'}) <= 6 and layout_report._jobs({}) >= 1
+    for bad in (0, -2, 'four', True, 1.5):
+        with pytest.raises(ValueError):
+            layout_report._jobs({'jobs': bad})

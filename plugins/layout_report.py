@@ -59,7 +59,7 @@ from lib.configuration import layout_output_directory
 
 DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
             'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
-            'contact_columns': 4, 'contact_rows': 4}
+            'contact_columns': 4, 'contact_rows': 4, 'jobs': 'auto'}
 
 FLOW_POSITIONS = ('static', 'relative', 'sticky')
 
@@ -1231,6 +1231,17 @@ span {{ margin-left: 6px; padding: 0 6px; border-radius: 4px; font-weight: bold;
 # Plugin
 # ---------------------------------------------------------------------------
 
+def _jobs(options):
+    """Pages measured at the same time: `jobs` of the configuration, or 'auto'
+    (half of the processors, at most 6)."""
+    jobs = options.get('jobs', 'auto')
+    if jobs in (None, 'auto'):
+        return max(1, min(6, (os.cpu_count() or 2) // 2))
+    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
+        raise ValueError(f"layout_report: jobs must be 'auto' or a positive integer, not {jobs!r}")
+    return jobs
+
+
 def _options(meta):
     options = dict(DEFAULTS)
     options.update((meta.get('plugin_arg') or {}).get('layout_report') or {})
@@ -1385,7 +1396,8 @@ def _post_process(meta):
         stderr = _run_node('layout_measure.js', [
             f'--input={pages_json}', f"--root={options['root']}", f"--exclude={options['exclude']}",
             f"--width={options['width']}", f"--height={options['height']}",
-            f"--images={1 if options['images'] else 0}"], label='Measure layout') if pages else ''
+            f"--images={1 if options['images'] else 0}", f"--jobs={_jobs(options)}"],
+            label='Measure layout') if pages else ''
         for line in stderr.splitlines():
             if line.startswith('layout_measure:'):
                 log.error(line)

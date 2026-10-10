@@ -832,6 +832,7 @@ plugin_arg:
     min_font: 20                # SMALL FONT below this font size (px), when design_rules is disabled
     contact_columns: 4          # thumbnails per row and rows per contact sheet
     contact_rows: 4
+    jobs: auto                  # pages measured at the same time (tabs of one browser); auto: half of the processors, at most 6
     design_rules:               # DESIGN checks (defaults at 1920 px, scaled with the width)
       enabled: true
       roles:
