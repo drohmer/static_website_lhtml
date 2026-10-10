@@ -74,7 +74,7 @@ def build_figures(directories, cache_directory):
     made, cached, errors = 0, 0, []
     for directory in directories:
         for script, figure in figure_sources(directory):
-            key = hashlib.sha256(script.read_bytes()).hexdigest()[:16]
+            key = figure_key(script, figure)
             kept = cache / f'{key}{figure.suffix}'
             if kept.is_file():
                 shutil.copy2(kept, figure)
@@ -91,3 +91,24 @@ def build_figures(directories, cache_directory):
             shutil.copy2(figure, kept)
             made += 1
     return made, cached, errors
+
+
+def figure_key(script, figure):
+    """Conservative cache key: scripts and adjacent data, including additions.
+
+    Generated targets are excluded to avoid self-invalidating the cache. Files
+    read outside this directory require an explicit rebuild (not inferred).
+    """
+    digest = hashlib.sha256()
+    outputs = {output.resolve() for _, output in figure_sources(script.parent)}
+    from lib.dependencies import scope_files
+    for path in scope_files(script.parent, 'engine'):
+        if path.resolve() in outputs or path.suffix == '.pyc':
+            continue
+        digest.update(path.relative_to(script.parent).as_posix().encode())
+        digest.update(b'\0')
+        with path.open('rb') as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(chunk)
+        digest.update(b'\0')
+    return digest.hexdigest()[:16]

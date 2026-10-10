@@ -26,7 +26,9 @@ from lib import figures
 from lib import filesystem
 from lib import generator_tool
 from lib import lint
+from lib import dependencies
 from lib import source_map
+from lib.tracking import TrackingLoader, lhtml_includes
 from lib import source_scan
 from lib import logger
 from lib import pages
@@ -60,6 +62,9 @@ def parse_arguments():
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
                              'of each page in .layout/ (plugin layout_report.py, requires npm install).')
+    parser.add_argument('--verify', action='store_true',
+                        help='--layout with the structured verification of the agent extension '
+                             '(verification.json, issue crops, interactive states, triage; see agent/README.md).')
     parser.add_argument('--render', metavar='FILE', action='append',
                         help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
                              'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
@@ -71,6 +76,12 @@ def parse_arguments():
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
     args = parser.parse_args()
+    if args.verify:
+        if not os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'agent', '__init__.py')):
+            parser.error('--verify requires the agent extension (directory agent/)')
+        if args.clean or args.check_config or args.lint:
+            parser.error('--verify cannot be combined with --clean, --check-config or --lint')
+        args.layout = True
     if not 0 <= args.port <= 65535:
         parser.error('--port must be between 0 and 65535')
     if (args.serve or args.watch) and (args.clean or args.check_config):
@@ -80,7 +91,7 @@ def parse_arguments():
     if args.lint and (args.clean or args.check_config or args.serve or args.watch):
         parser.error('--lint cannot be combined with --clean, --check-config, --serve or --watch')
     if args.render and (args.clean or args.check_config or args.serve or args.watch or args.lint or args.only
-                        or args.layout or args.deck or args.scaffold):
+                        or args.layout or args.verify or args.deck or args.scaffold):
         parser.error('--render is used alone (no build)')
     return args
 
@@ -274,10 +285,19 @@ def prepare_data(meta, selected, built, log):
                 with open(dir_site + page.site_html, 'rb') as fid:
                     meta['previous_pages'][page.site_html] = fid.read()
     transform = None
+    source_transform = None
     if meta.get('source_map'):
         tags = source_scan.value_tags(meta['macros'])
-        transform = lambda text: source_map.add_markers(text, tags)
-    warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
+        if meta.get('verify'):          # persistent anchors of the agent extension
+            from agent.provenance import SourceRegistry
+            meta['source_registry'] = SourceRegistry(meta['config_directory'], tags)
+            source_transform = meta['source_registry'].instrument
+        else:
+            transform = lambda text: source_map.add_markers(text, tags)
+    warnings += pages.place(built, dir_site, project_assets=only, transform=transform,
+                            source_transform=source_transform)
+    if only and meta.get('dependency_store'):
+        meta['dependency_store'].refresh_assets(meta, built)
     for warning in warnings:
         log.warning(warning)
     directories = sorted({dir_site + page.site_directory for page in built}) if only else [dir_site]
@@ -388,7 +408,8 @@ def jinja_environment(meta, selected, built):
     roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
-    return Environment(loader=loader, extensions=['jinja_markdown.MarkdownExtension'])
+    loader = TrackingLoader(loader, meta.get('source_registry'), roots)
+    return Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
 
 
 def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=None):
@@ -423,6 +444,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
 
         log.debug(f'- {page.site_template}')
         try:
+            env.loader.used.clear()
             template = env.get_template(page.site_template)
             output_html = template.render({**meta['keywords'], **links, 'params': page.params,
                                            'page': entries[page],
@@ -435,6 +457,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
             discard_page(meta, page)
             continue
 
+        meta.setdefault('template_dependencies', {})[page.site_html] = sorted(env.loader.used | {str(page.src)})
         filesystem.write_file(dir_site + page.site_html, output_html)
 
     return failed
@@ -484,10 +507,16 @@ def render_lhtml(meta, selected, log, failed_before=()):
         try:
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
-                output_html = lhtml.run(input_html, options)
+                included = set()
+                with lhtml_includes(meta.get('source_registry'), included):
+                    output_html = lhtml.run(input_html, options)
+                meta.setdefault('include_dependencies', {})[page.site_html] = sorted(included)
             for warning in caught:          # with the page they come from
                 log.warning(f'{page.label}: {warning.message}')
-            if meta.get('source_map'):
+            if meta.get('source_registry'):
+                from agent.provenance import apply_provenance
+                output_html = apply_provenance(output_html, meta['source_registry'])
+            elif meta.get('source_map'):
                 output_html = source_map.apply(output_html, os.path.relpath(page.src, meta['config_directory']))
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
@@ -625,6 +654,7 @@ def build_once(args):
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
     # data-lhtml-src="file:line" on the blocks (lib/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
+    meta['verify'] = bool(args.verify)
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
     if args.layout:
         add_layout_plugin(meta)
@@ -691,12 +721,17 @@ def build_once(args):
     built = None
     try:
         selected = select_pages(meta, log, scaffold=args.scaffold)
+        meta['dependency_contexts'] = {p.site_html: dependencies.page_context(p) for p in selected}
+        meta['source_roots'] = other_sources(selected)
+        meta['dependency_store'] = dependencies.BuildStore(meta)
         built = only_pages(meta, selected, log) if args.only else None
+        if built is not None:
+            built = meta['dependency_store'].expand(meta, selected, built)
         meta['only'] = built is not None
         if args.only and built is None:
             # a full build (the pages of the site changed), but the layout report
             # measures only the pages named (and those without a report)
-            meta['measure'] = [p.site_html for p in deck.named_pages(selected, args.only, other_sources(selected))]
+            meta['measure'] = meta.get('dependency_measure') or [p.site_html for p in deck.named_pages(selected, args.only, other_sources(selected))]
         if meta['only']:
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated
@@ -746,6 +781,10 @@ def generate_site(meta, selected, built):
     log.keyvalue('info', f"Source: {meta['source_directory']}", indent_level=1)
     log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
 
+    meta['page_contexts'] = {p.site_html: {'page': p.site_html,
+        'source': os.path.relpath(p.src, meta['config_directory']),
+        'occurrence': p.occurrence, 'params': p.params, 'deck_line': p.deck_line} for p in selected}
+
     # Data preparation
     log.title('Data preparation', pre='\n')
     log.tic()
@@ -784,8 +823,14 @@ def generate_site(meta, selected, built):
     failed += render_lhtml(meta, built, log, failed_before=failed)
     log.ok_elapsed()
 
+    if meta.get('source_registry'):
+        meta['source_registry'].save()
+
     # SASS compilation
     compile_sass(meta, log)
+
+    if meta['only']:
+        dependencies.refresh_runtime_files(meta, built)
 
     # Post-process plugins
     log.title('Post-process', pre='\n')
@@ -802,6 +847,8 @@ def generate_site(meta, selected, built):
         log.error(f'{plugin_failures} plugin error(s) (see errors above, use -d for details)')
     if failed or plugin_failures:
         raise RuntimeError('Page or plugin errors (see above)')
+    if meta.get('dependency_store'):
+        meta['dependency_store'].save(meta)
 
 
 def main():

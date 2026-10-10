@@ -87,14 +87,22 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
     (source / 'auto/index.html.j2').write_text(
         "{% set layout = 'stack' %}\n= Auto\n\n* Above\n\nmedia::(.row .auto .s)\ncol::\nimg::assets/a.png\n"
         "credit:: A ::\n::\ncol::\nimg::assets/b.png\ncredit:: B ::\n::\n::\n\n* Below\n")
+    (source / 'math/index.html.j2').write_text(
+        (source / 'math/index.html.j2').read_text() +
+        '\n<ul style="font-size:36px;line-height:1.4"><li>A preceding line</li>'
+        '<li>\\(R=\\begin{pmatrix}a&b&c\\\\d&e&f\\\\g&h&j\\end{pmatrix}\\)</li></ul>')
     config = tmp_path / 'configure.yaml'
-    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': ['plugins/auto_wrap.py'],
+    config.write_text(yaml.safe_dump({'source_directory': 'src',
+                                      'plugin': ['plugins/auto_wrap.py', 'plugins/menu.py'],
                                       'theme': str(REPO / 'themes/slides')}))
     run = lambda *extra: subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), *extra],
                                         capture_output=True, text=True, timeout=120)
     result = run('--layout')
     assert result.returncode == 0, result.stdout + result.stderr
     report = lambda name: (tmp_path / '.layout/pages' / name / 'index.html/layout.md').read_text()
+    math_layout = json.loads((tmp_path / '.layout/pages/math/index.html/layout.json').read_text())
+    assert any(b['role'] == 'formula' for b in math_layout['subblocks'])
+    assert not math_layout['analysis']['internal_collisions']
     assert 'WRAPPED' not in report('math')                    # a formula is one box, not lines
     svg = report('svg')
     assert 'SVG OVERFLOW' in svg and 'px left' in svg
@@ -144,7 +152,8 @@ def test_svg_checks_edge_cases(tmp_path):
     (source / 'inline/assets').mkdir()
     (source / 'inline/assets/a.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="100" height="100"><rect width="10" height="10"/></svg>')
     config = tmp_path / 'configure.yaml'
-    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': ['plugins/auto_wrap.py'],
+    config.write_text(yaml.safe_dump({'source_directory': 'src',
+                                      'plugin': ['plugins/auto_wrap.py', 'plugins/menu.py'],
                                       'theme': str(REPO / 'themes/slides')}))
     start = time.monotonic()
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
@@ -176,3 +185,28 @@ def test_render_files_outside_the_project(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     pngs = sorted((project / '.layout/render/_outside').rglob('f.svg.png'))
     assert len(pngs) == 2 and pngs[0].read_bytes() != pngs[1].read_bytes()
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path):
+    source = tmp_path / 'src'
+    source.mkdir()
+    (source / 'async.html.j2').write_text(
+        '= Async\n<script>window.__lhtmlReady.optIn(); window.__lhtmlReady.waitUntil(new Promise(resolve => '
+        'setTimeout(() => { const el = document.createElement("p"); el.textContent = "Finished async setup"; '
+        'document.body.append(el); resolve(); }, 300)));</script>')
+    (source / 'legacy.html.j2').write_text(
+        '= Legacy\n<script>setTimeout(() => { const el = document.createElement("p"); '
+        'el.textContent = "Legacy delayed setup"; document.body.append(el); }, 300);</script>')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': ['plugins/auto_wrap.py'],
+                                      'theme': str(REPO / 'themes/slides')}))
+    result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                            cwd=REPO, capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stdout + result.stderr
+    for page, text in [('async', 'Finished async setup'), ('legacy', 'Legacy delayed setup')]:
+        layout = json.loads((tmp_path / f'.layout/pages/{page}.html/layout.json').read_text())
+        assert text in json.dumps(layout)
+    # the base never loads the agent extension, and writes none of its outputs
+    assert not (tmp_path / '.layout/verification.json').exists()
+    assert not (tmp_path / '.source-map').exists()

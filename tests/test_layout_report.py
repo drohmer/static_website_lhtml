@@ -371,3 +371,15 @@ def test_svg_overflow_and_labels():
     assert lines.count('SVG LABEL') == 1 and '"l0", "l1", "l2" and 37 more are drawn across a line' in lines
     analysis = {'svg_overflow': overflow, 'svg_labels': layout_report.find_svg_labels(blocks)}
     assert layout_report.count_problems(analysis) == 1 and layout_report.count_warnings(analysis) == 1
+
+
+def test_canvas_bounds_are_candidates_not_proof_of_occluded_text():
+    canvas = block(1, 0, 0, 800, 400, kind='image', unverified_canvas=True,
+                   ink=[{'x': 0, 'y': 0, 'w': 800, 'h': 400, 't': 'media'}])
+    label = block(2, 20, 20, 100, 30, ink=[{'x': 20, 'y': 20, 'w': 100, 'h': 30, 't': 'text'}],
+                  hidden_text=[{'by': 1, 'x': 20, 'y': 20, 'w': 100, 'h': 30, 'samples': 10, 'total': 10}])
+    result = layout_report.analyse({'blocks': [canvas, label], 'area': AREA})
+    assert not result['hidden_text'] and not result['collisions']
+    assert result['canvas_overlaps'][0]['kind'] == 'hidden_text'
+    assert layout_report.count_problems(result) == 0
+    assert layout_report.count_warnings(result) >= 1

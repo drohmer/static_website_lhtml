@@ -10,11 +10,14 @@ written to <config_dir>/.layout/pages/<relative HTML path>/:
     render.png   real render
     overlay.png  real render with numbered block outlines
     blocks.png   one solid rectangle per block (content hidden)
+    internal-overlay.png  real render with the inner blocks outlined
 
 <config_dir>/.layout/summary.md lists all pages sorted by number of problems,
 with the usual values of the deck (title position, columns, body font size,
 ...: also in deck.json), and contact_NN.png shows thumbnails of all pages. Coordinates are in CSS pixels, origin at the top-left corner of
-the page (1920x1080 for slides).
+the page (1920x1080 for slides). One build at a time writes the report
+(lib/report_lock.py); --verify adds the outputs of the agent extension
+(agent/report.py).
 
 Options (configure.yaml):
     plugin_arg:
@@ -28,9 +31,11 @@ Options (configure.yaml):
         threshold: 4         # minimal overlap / overflow (px) reported
         output: '.layout/'   # output directory, relative to the config directory
         max_words: 80        # DENSE above this number of words per slide
-        min_font: 20         # SMALL FONT below this font size (px), slides only
+        min_font: 20         # SMALL FONT below this font size (px), slides only,
+                             # when design_rules is disabled
         contact_columns: 4   # thumbnails per row / rows per contact sheet
         contact_rows: 4
+        design_rules: {...}  # DESIGN checks by role (lib/design_checks.py)
 """
 
 import json
@@ -44,7 +49,10 @@ import threading
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Column
 
+from lib import dependencies
+from lib.design_checks import analyse_design, validate as validate_design_rules
 from lib.lint import Linter
+from lib.report_lock import report_lock
 from lib.structure import built_pages, structure
 from lib.configuration import layout_output_directory
 
@@ -651,7 +659,56 @@ def find_deviations(blocks, norms, tolerance=4):
     return result
 
 
-def analyse(layout, threshold=4, norms=None, limits=None):
+def find_internal(layout, threshold=4):
+    nodes = layout.get('subblocks', [])
+    by_id = {b['id']: b for b in nodes}
+    def ancestors(b):
+        result = set()
+        while b.get('parent') in by_id:
+            b = by_id[b['parent']]
+            result.add(b['id'])
+        return result
+    parents = {b['id']: ancestors(b) for b in nodes}
+    collisions, tight, intentional = [], [], []
+    visible = [b for b in nodes if b.get('ink')]
+    for i, a in enumerate(visible):
+        for b in visible[i + 1:]:
+            if a['owner'] != b['owner'] or a['legacy_block'] != b['legacy_block']:
+                continue  # already covered by aggregate block analysis
+            aa, bb = dict(a), dict(b)
+            if a['id'] in parents[b['id']]:
+                aa['ink'] = [r for r in a['ink'] if r.get('t') != 'paint']
+            if b['id'] in parents[a['id']]:
+                bb['ink'] = [r for r in b['ink'] if r.get('t') != 'paint']
+            if not aa['ink'] or not bb['ink']:
+                continue
+            hard, soft, intended = find_overlaps([aa, bb], threshold)
+            collisions.extend(hard); tight.extend(soft); intentional.extend(intended)
+    overflow = []
+    for b in visible:
+        if b.get('intentional') or b.get('position') in ('absolute', 'fixed'):
+            continue
+        # Explicit column boundaries are meaningful even when CSS overflow is visible.
+        parent = by_id.get(b.get('parent'))
+        while parent and parent.get('role') != 'column':
+            parent = by_id.get(parent.get('parent'))
+        if not parent:
+            continue
+        if parent.get('overflow', 'visible') != 'visible':
+            continue  # report the clipping once instead
+        f = parent['frame']
+        x0, y0, x1, y1 = _rect(b)
+        sides = {'left': f['x'] - x0, 'right': x1 - f['x'] - f['w']}
+        sides = {k: round(v, 2) for k, v in sides.items() if v > threshold}
+        if sides:
+            overflow.append({'id': b['id'], 'parent': parent['id'], **sides})
+    nested = [b for b in nodes if b.get('parent')]
+    return {'internal_collisions': collisions, 'internal_tight': tight,
+            'internal_intentional': intentional, 'internal_overflow': overflow,
+            'internal_clipped': find_clipped(nested, threshold)}
+
+
+def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
     """Add an 'analysis' entry to a measured layout and return it. norms:
     usual values of the deck (deck_norms), for the consistency checks;
     limits: max_words, min_font of find_density_warnings."""
@@ -690,25 +747,44 @@ def analyse(layout, threshold=4, norms=None, limits=None):
         'free': _free_rect(grid, area),
         'deviations': find_deviations(blocks, norms) if norms else [],
     }
+    layout['analysis'].update(find_internal(layout, threshold))
+    # A canvas box is not a paint mask. Its overlap cannot prove hidden text,
+    # notably for pointer-events:none labels and controls layered over a scene.
+    canvas = {b['id'] for b in layout['blocks'] + layout.get('subblocks', []) if b.get('unverified_canvas')}
+    uncertain = []
+    for key in ('collisions', 'hidden_text', 'internal_collisions'):
+        confirmed = []
+        for finding in layout['analysis'].get(key, []):
+            ids = {finding.get(k) for k in ('id', 'a', 'b', 'by')}
+            if ids & canvas:
+                uncertain.append(dict(finding, kind=key, reason='Canvas bounds do not establish painted or occluded pixels; inspect the render.'))
+            else:
+                confirmed.append(finding)
+        layout['analysis'][key] = confirmed
+    layout['analysis']['canvas_overlaps'] = uncertain
+
     # the limits are meant for slides, not for scrolling web pages
     layout['analysis']['dense'] = [] if layout.get('scrolling') else \
         find_density_warnings(layout['analysis']['density'], **(limits or {}))
+    layout['analysis']['role_design'], layout['design_checks'] = analyse_design(layout, design_rules)
+    if layout.get('design_measurement') and layout['design_checks']['enabled']:
+        layout['analysis']['dense'] = [d for d in layout['analysis']['dense'] if d['kind'] != 'min_font']
     return layout['analysis']
 
 
 PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images', 'reserved',
-                'collapsed', 'svg_overflow')
+                'collapsed', 'svg_overflow', 'internal_collisions', 'internal_overflow', 'internal_clipped', 'interactive_errors')
 
 
-WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit', 'svg_labels')
+WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'rows', 'fit', 'svg_labels', 'internal_tight', 'role_design', 'canvas_overlaps')
 
 
 def count_problems(analysis):
-    return sum(len(analysis.get(k, [])) for k in PROBLEM_KEYS)
+    return sum(len(analysis.get(k, [])) for k in PROBLEM_KEYS) + analysis.get('nested_problems', 0)
 
 
 def count_warnings(analysis):
-    return sum(len(analysis.get(k, [])) for k in WARNING_KEYS)
+    return sum(len(analysis.get(k, [])) for k in WARNING_KEYS) + analysis.get('nested_warnings', 0)
 
 
 # ---------------------------------------------------------------------------
@@ -746,6 +822,14 @@ def problem_lines(analysis):
     for o in analysis.get('svg_overflow', []):
         sides = ', '.join(f'{o[k]} px {k}' for k in ('left', 'top', 'right', 'bottom') if o.get(k, 0) > 0)
         problems.append(f"- SVG OVERFLOW #{o['id']}: {o['src']} draws beyond its viewBox ({sides}): cut when shown")
+    for c in analysis.get('internal_collisions', []):
+        problems.append(f"- INTERNAL COLLISION #{c['a']} × #{c['b']}: {_zone(c)}")
+    for c in analysis.get('internal_clipped', []):
+        problems.append(f"- INTERNAL CLIPPED #{c['id']}: {c['w']} px width / {c['h']} px height")
+    for c in analysis.get('internal_overflow', []):
+        problems.append(f"- COLUMN OVERFLOW #{c['id']} outside #{c['parent']}: " +
+                        ', '.join(f"{c[k]} px {k}" for k in ('left', 'right') if k in c))
+    problems += [f"- INTERACTIVE STATE {e['kind']}: {e['message']}" for e in analysis.get('interactive_errors', [])]
     return problems
 
 
@@ -778,6 +862,8 @@ def page_markdown(name, source, layout):
     warnings = [f"- TIGHT #{t['a']} × #{t['b']}: line box of text overlapping by {t['y1'] - t['y0']} px "
                 f"({_zone(t)}); the glyphs probably do not touch, but the spacing is tight"
                 for t in analysis.get('tight', [])]
+    warnings += [f"- INTERNAL TIGHT #{t['a']} × #{t['b']}: {_zone(t)}; inspect text spacing"
+                 for t in analysis.get('internal_tight', [])]
     warnings += [f"- NEAR-ALIGNED #{n['id']}: {n['edge']} at {n['axis']} {n['value']}, "
                  f"{abs(n['delta'])} px {_direction(n)} the {n['ref_label']} ({n['axis']} {n['ref']})"
                  for n in analysis.get('near_aligned', [])]
@@ -803,6 +889,9 @@ def page_markdown(name, source, layout):
     warnings += [f"- {'SMALL FONT' if d['kind'] == 'min_font' else 'DENSE'}: {d['value']} {dense_text[d['kind']]} "
                  f"({'minimum' if d['kind'] == 'min_font' else 'limit'} {d['limit']})"
                  for d in analysis.get('dense', [])]
+    warnings += [f"- DESIGN {d['kind']} #{d['id']} ({d['role']}): {d['value']} vs {d['limit']}; {d['advice']}"
+                 for d in analysis.get('role_design', [])]
+    warnings += [f"- CANVAS OVERLAP {_zone(d)}: {d['reason']}" for d in analysis.get('canvas_overlaps', [])]
     if warnings:
         lines += ['', '## Warnings', ''] + warnings
 
@@ -838,6 +927,40 @@ def page_markdown(name, source, layout):
     if analysis['gaps']:
         lines += ['', '## Vertical gaps between in-flow blocks', '',
                   ', '.join(f'#{a}→#{b}: {g} px' for a, b, g in analysis['gaps'])]
+    if layout.get('freshness'):
+        lines += ['', '## Report validity', '', 'Freshness: **' + layout['freshness']['status'] + '**.']
+        for change in layout['freshness'].get('changes', []):
+            lines.append(f"- {change['kind']}: {change.get('path') or 'page parameters or metadata'}")
+    if not layout.get('verification_mode'):     # the sections below: --verify (agent extension)
+        return '\n'.join(lines) + '\n'
+    if any(b.get('provenance') for b in layout['blocks']):
+        lines += ['', '## Source provenance', '', 'Ranges cover observed content; closing-only lines are not included.']
+        for b in layout['blocks']:
+            if b.get('provenance'):
+                origins = ', '.join(f"`{r['file']}:{r['line']}-{r['end_line']}`"
+                                    for r in b['provenance']['ranges'])
+                lines.append(f"- #{b['id']}: {origins}; anchor `{b.get('stable_id')}`; matching: {b['provenance']['matching']}")
+    if layout.get('interactive'):
+        info = layout['interactive']
+        lines += ['', '## Interactive verification', '',
+                  'Each state reloads the initial slide. Samples do not cover every possible interaction.', '']
+        if info.get('truncated'):
+            lines.append('**Incomplete: state budget exhausted.**')
+        for state in info['states']:
+            lines.append(f"- `{state['id']}`: {state['status']}; [report](states/{state['id']}/verification.json)")
+            if state.get('error'):
+                lines.append('  ' + state['error']['message'])
+        lines.append('Controlled: CSS timelines, video seeking and requestAnimationFrame. Native timers and randomness remain uncontrolled.')
+    for frame in layout.get('frame_layouts', []):
+        lines += ['', f"Frame `{frame['id']}` ({frame['layout'].get('source')}): "
+                  f"[report](frames/{frame['id']}/verification.json). Canvas semantics are not verified."]
+    if layout.get('subblocks'):
+        lines += ['', '## Internal hierarchy', '',
+                  'Owned ink excludes child content. Source precision is direct or inherited.', '',
+                  '| ID | Parent | Role / design role | Source | Precision |', '|---|---|---|---|---|']
+        for b in layout['subblocks']:
+            lines.append(f"| {b['id']} | {b.get('parent') or '—'} | {b['role']} / {b.get('design_role', '—')} | {_md_cell(b.get('source'))} | {b['source_precision']} |")
+        lines += ['', 'Overlay: `internal-overlay.png`.']
     return '\n'.join(lines) + '\n'
 
 
@@ -897,11 +1020,16 @@ beyond the usable area), CLIPPED (content cut by overflow), UPSCALED IMAGE
 (bitmap displayed larger than its native size: blurry), RESERVED AREA (content
 over the navigation of the theme), COLLAPSED FIGURE (image or video drawn
 without width or height), SVG OVERFLOW (SVG figure drawing beyond its viewBox:
-cut).
+cut), INTERNAL COLLISION / INTERNAL CLIPPED (the same between the inner blocks
+of a block: items, formulas, captions; see internal-overlay.png), COLUMN
+OVERFLOW (content wider than its column).
 Warnings: TIGHT (text very close to another block: line boxes overlap, glyphs
 probably do not), NEAR-ALIGNED (edge or center a few px away from that of
 another block, of the area or of a column of the deck: align it exactly or
-move it clearly), DENSE (too many words), SMALL FONT, WRAPPED (title on
+move it clearly), DENSE (too many words), DESIGN (text too small for its
+role, title not larger than the body, caption far from its figure...; SMALL
+FONT when these checks are disabled), CANVAS OVERLAP (text over a canvas:
+look at the render), INTERNAL TIGHT, WRAPPED (title on
 several lines, or list item with a few words on its second line), ROW (figures
 side by side not aligned), SMALL IN ITS BOX / CROPPED (figure much smaller
 than its box, or cut, by object-fit), SVG LABEL (text of an SVG figure across
@@ -950,7 +1078,7 @@ def layout_changes(old, new, threshold=4):
     pairs = []
     # pairs of blocks: same signature, then (text or style changed) same line of
     # the source, or same tag and kind, in order
-    for key in (lambda b: b['signature'],
+    for key in (lambda b: b.get('stable_id'), lambda b: b['signature'],
                 lambda b: ('line', b['line']) if b.get('line') else None,
                 lambda b: (b['kind'], b['signature'].split('[')[0].split(' ')[0], b.get('inside') is not None)):
         for block in list(new_blocks):
@@ -984,7 +1112,7 @@ def layout_changes(old, new, threshold=4):
 def changes_markdown(changes, measured):
     """changes: [(page name, lines)] of the pages that changed."""
     out = ['# Changes since the previous report', '',
-           f'{measured} page(s) measured, {len(changes)} changed. Blocks are matched by signature, '
+           f'{measured} page(s) measured, {len(changes)} changed. Blocks are matched by persistent identity, then signature, '
            'then by line of the source, then by tag and kind.', '']
     for name, lines in changes:
         out += [f'## {name}', ''] + lines + ['']
@@ -1006,6 +1134,16 @@ def summary_markdown(rows, norms=None, design=None):
         lines.append(f"Values written by hand (design lint, column `lint`): {debt} in "
                      f"{sum(1 for r in rows if r[2].get('lint'))} of {len(rows)} pages; each page report "
                      f"gives the layout or macro that replaces them.\n")
+    design_findings = [d for _, _, a in rows for d in a.get('role_design', [])]
+    if design_findings:
+        counts = {}
+        for finding in design_findings:
+            key = finding['kind']
+            counts[key] = counts.get(key, 0) + 1
+        lines.append(f"Design by role: {len(design_findings)} warnings in "
+                     f"{sum(bool(a.get('role_design')) for _, _, a in rows)} pages; "
+                     + ', '.join(f"{key}: {value}" for key, value in sorted(counts.items()))
+                     + '. These are configurable heuristics requiring render inspection.\n')
     lines += ['| n | page | problems | hidden text | collisions | out of area | clipped | upscaled | warnings '
               '| deviations | lint | words | min font | occupancy | report |',
               '|---|------|----------|-------------|------------|-------------|---------|----------|----------'
@@ -1061,13 +1199,14 @@ span {{ margin-left: 6px; padding: 0 6px; border-radius: 4px; font-weight: bold;
 def _options(meta):
     options = dict(DEFAULTS)
     options.update((meta.get('plugin_arg') or {}).get('layout_report') or {})
+    validate_design_rules(options.get('design_rules', {}))
     return options
 
 
 def _run_node(script, arguments, label=None):
     """Run a Node script of assets/; its lines 'progress <done> <total> <item>'
     on stdout are shown as a progress bar (`label`). Returns its stderr."""
-    cmd = ['node', path_current_file + 'assets/' + script] + arguments
+    cmd = ['node', script if os.path.isabs(script) else path_current_file + 'assets/' + script] + arguments
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError:
@@ -1137,7 +1276,18 @@ def _same_source(report, page, meta):
 
 
 def post_process(meta):
+    # one build at a time writes the reports (another build waits for it)
+    with report_lock(layout_output_directory(meta), meta['log']):
+        return _post_process(meta)
+
+
+def _post_process(meta):
     options = _options(meta)
+    verification = None
+    if meta.get('verify'):                      # agent extension (agent/README.md)
+        from agent import report as agent_report
+        options = agent_report.options(options)
+    meta.setdefault('dependency_contexts', {})
     log = meta['log']
     site_dir = meta['site_directory']
     output_dir = str(layout_output_directory(meta))
@@ -1146,12 +1296,14 @@ def post_process(meta):
     requested = meta.get('measure')
     built = set(requested) if requested else {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
     partial = len(built) < len(structure(meta))
+    entries = {}
 
     pages, previous = [], []
     for entry in structure(meta):
         relative = entry['dir'] + entry['filename']
         if os.path.isabs(relative) or '..' in relative.replace('\\', '/').split('/'):
             raise ValueError(f'Invalid page path in layout structure: {relative}')
+        entries[relative] = entry
         html = site_dir + relative
         page = {'html': os.path.abspath(html),
                 'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
@@ -1180,22 +1332,32 @@ def post_process(meta):
     if os.path.isdir(output_dir) and not partial:
         shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
+    if not meta.get('verify'):              # aggregates of a previous --verify: no longer valid
+        for name in ('verification.json', 'triage.json', 'triage.md'):
+            if os.path.isfile(os.path.join(output_dir, name)):
+                os.remove(os.path.join(output_dir, name))
 
     if requested:
         log.keyvalue('info', f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
                              f'the others keep their report (--layout for all)', indent_level=2)
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
-        json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages], fid)
+        json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name'],
+                    **(agent_report.page_entry(options, p['name']) if meta.get('verify') else {})}
+                   for p in pages], fid)
         pages_json = fid.name
     try:
         stderr = _run_node('layout_measure.js', [
             f'--input={pages_json}', f"--root={options['root']}", f"--exclude={options['exclude']}",
             f"--width={options['width']}", f"--height={options['height']}",
-            f"--images={1 if options['images'] else 0}"], label='Measure layout')
+            f"--images={1 if options['images'] else 0}"], label='Measure layout') if pages else ''
         for line in stderr.splitlines():
             if line.startswith('layout_measure:'):
                 log.error(line)
+    except RuntimeError as exc:
+        if meta.get('verify'):
+            agent_report.measurement_failed(pages, previous_layouts, output_dir, exc)
+        raise
     finally:
         os.remove(pages_json)
 
@@ -1208,6 +1370,9 @@ def post_process(meta):
                 measured.append((p, layout_path, json.load(fid)))
     norms = deck_norms([layout for _, _, layout in measured])
     limits = {k: options[k] for k in ('max_words', 'min_font')}
+    if meta.get('verify'):
+        verification = agent_report.Verification(meta, options, output_dir, analyse, page_markdown,
+                                                 count_problems, count_warnings, _run_node)
 
     rows = []
     loaded_design = meta.get('loaded_design')
@@ -1215,22 +1380,38 @@ def post_process(meta):
     order = {entry['dir'] + entry['filename']: k for k, entry in enumerate(structure(meta))}
     measured.sort(key=lambda m: order[m[0]['name']])
     for p, layout_path, layout in measured:
-        if p['name'] not in remeasured:         # analysed by its build
+        entry = entries[p['name']]
+        if p['name'] not in remeasured:         # retained measure: its validity is refreshed, not its geometry
+            layout['freshness'] = dependencies.freshness(layout.get('dependencies'), meta, entry)
+            with open(layout_path, 'w') as fid:
+                json.dump(layout, fid, indent=1)
+            with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
+                fid.write(page_markdown(p['name'], layout['source'], layout))
+            if verification:
+                verification.retained(p, layout)
             rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
                          layout['analysis']))
             continue
-        analyse(layout, options['threshold'], norms, limits)
+        analyse(layout, options['threshold'], norms, limits, options.get('design_rules'))
         if p['source'] in (meta.get('lint_findings') or {}):       # lint of the build
             layout['analysis']['lint'] = meta['lint_findings'][p['source']]
         elif linter is not None and os.path.isfile(p['source']):
             layout['analysis']['lint'] = [f.as_dict() for f in linter.lint_file(p['source'], p['layout'])]
         layout['source'] = os.path.relpath(p['source'], meta.get('config_directory') or '.')
+        # the files the page depends on, to know whether a retained report is still valid
+        meta.setdefault('runtime_resources', {})[p['name']] = layout.get('resources', [])
+        layout['dependencies'] = dependencies.make_manifest(meta, entry, layout.get('resources', []))
+        layout['freshness'] = dependencies.freshness(layout['dependencies'], meta, entry)
+        if verification:
+            verification.prepare(p, layout, previous_layouts.get(p['name']), limits)
         with open(layout_path, 'w') as fid:
             json.dump(layout, fid, indent=1)
         with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
             fid.write(page_markdown(p['name'], layout['source'], layout))
         rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
                      layout['analysis']))
+        if verification:
+            verification.measured(p, layout, previous_layouts.get(p['name']))
 
     with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace') as fid:
         reference = os.path.join(meta.get('published_site_directory') or site_dir, 'structure', 'design.md')
@@ -1249,6 +1430,8 @@ def post_process(meta):
                              measured[0][2]['viewport'], options, log,
                              changed={k for k, (p, _, _) in enumerate(measured) if p['name'] in remeasured}
                              if partial and not requested else None)      # deck changed: all the sheets
+    if verification:
+        verification.finish(pages, previous, stderr)
 
     n_problems = sum(count_problems(r[2]) for r in rows)
     if previous_layouts:

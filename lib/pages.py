@@ -195,7 +195,7 @@ def copy_assets(source_dir, target_dir):
     return copy_tree(source_dir, target_dir, ignore)
 
 
-def place(pages, site_directory, project_assets=False, transform=None):
+def place(pages, site_directory, project_assets=False, transform=None, source_transform=None):
     """Copy the templates of the pages into the site, with the assets of their
     directory for the pages of other projects (those of the project are copied
     with its whole directory), and of the project too with `project_assets`
@@ -213,9 +213,9 @@ def place(pages, site_directory, project_assets=False, transform=None):
         if (page.source.name or project_assets) and page.site_directory not in copied:
             warnings += copy_assets(str(page.src.parent), target_dir)
             copied.add(page.site_directory)
-        if transform is None:
+        if transform is None and source_transform is None:
             shutil.copy2(page.src, site + page.site_template)
         else:
             with open(site + page.site_template, 'w', encoding='utf-8') as fid:
-                fid.write(transform(page.text))
+                fid.write(source_transform(page.text, page.src) if source_transform else transform(page.text))
     return warnings
