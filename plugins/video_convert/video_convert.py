@@ -2,8 +2,17 @@
 
 import os
 import argparse
+import subprocess
+import tempfile
 
 default_threads = 8
+
+
+def run(command):
+    """Run ffmpeg with its arguments as a list: a path with a space or a quote
+    is passed as it is, without a shell to escape it for."""
+    print(' '.join(command))
+    subprocess.run(command)
 
 def convert_video_webm_av1(f_in, f_out, args):
     assert os.path.isfile(f_in)
@@ -19,10 +28,11 @@ def convert_video_webm_av1(f_in, f_out, args):
     if 'threads' in args:
         threads = args['threads']
 
-    cmd = f'{executable} -i {f_in} -row-mt 1 -threads {threads} -c:v {codec_video} -b:v 0  -crf {quality_video} -strict experimental -c:a {codec_audio} -b:a {quality_audio} -y {f_out}'
+    cmd = [executable, '-i', f_in, '-row-mt', '1', '-threads', str(threads), '-c:v', codec_video,
+           '-b:v', '0', '-crf', quality_video, '-strict', 'experimental',
+           '-c:a', codec_audio, '-b:a', quality_audio, '-y', f_out]
 
-    print(cmd)
-    os.system(cmd)
+    run(cmd)
 
     assert os.path.isfile(f_out)
 
@@ -31,7 +41,7 @@ def convert_video_webm_vp9(f_in, f_out, args):
 
     codec_video = 'libvpx-vp9'
     quality_video = '30' #0 (lossless) - 51 (worst); 17 - invisible loss 
-    quality_preset = '-deadline good' #good or best
+    quality_preset = ['-deadline', 'good'] #good or best
 
     codec_audio = 'libopus'
     quality_audio = '128k'
@@ -42,13 +52,16 @@ def convert_video_webm_vp9(f_in, f_out, args):
     if 'threads' in args:
         threads = args['threads']
 
-    pass_1 = f'{executable} -i {f_in} -threads {threads} -c:v {codec_video} -b:v 0 {quality_preset} -crf {quality_video} -pass 1 -an -f null /dev/null'
-    pass_2 = f'{executable} -i {f_in} -row-mt 1 -threads {threads} -c:v {codec_video} -b:v 0 {quality_preset} -crf {quality_video} -pass 2 -c:a {codec_audio} -b:a {quality_audio} -y {f_out}'
-
-    print(pass_1)
-    os.system(pass_1)
-    print(pass_2)
-    os.system(pass_2)
+    # Each conversion keeps the statistics of its two passes in its own
+    # directory: without -passlogfile, ffmpeg writes 'ffmpeg2pass-0.log' in the
+    # current directory, which conversions running at the same time overwrite.
+    with tempfile.TemporaryDirectory(prefix='ffmpeg2pass-') as log_directory:
+        pass_log = os.path.join(log_directory, 'pass')
+        common = [executable, '-i', f_in, '-threads', str(threads), '-c:v', codec_video,
+                  '-b:v', '0', *quality_preset, '-crf', quality_video, '-passlogfile', pass_log]
+        run(common + ['-pass', '1', '-an', '-f', 'null', os.devnull])
+        run(common + ['-row-mt', '1', '-pass', '2',
+                      '-c:a', codec_audio, '-b:a', quality_audio, '-y', f_out])
 
     assert os.path.isfile(f_out)
 
@@ -57,7 +70,7 @@ def convert_video_mp4_h264(f_in, f_out, args):
 
     codec_video = 'libx264'
     quality_video = '20' #0 (lossless) - 51 (worst); 17 - invisible loss 
-    quality_preset = '-preset medium' # faster fast medium slow slower
+    quality_preset = ['-preset', 'medium'] # faster fast medium slow slower
 
     codec_audio = 'libvorbis'
     quality_audio = '128k'
@@ -68,9 +81,9 @@ def convert_video_mp4_h264(f_in, f_out, args):
     if 'threads' in args:
         threads = args['threads']
 
-    cmd = f'{executable} -i {f_in} -threads {threads} -c:v {codec_video} {quality_preset} -crf {quality_video} -c:a {codec_audio} -b:a {quality_audio} -y {f_out}'
-    print(cmd)
-    os.system(cmd)
+    cmd = [executable, '-i', f_in, '-threads', str(threads), '-c:v', codec_video, *quality_preset,
+           '-crf', quality_video, '-c:a', codec_audio, '-b:a', quality_audio, '-y', f_out]
+    run(cmd)
     assert os.path.isfile(f_out)
 
 
@@ -79,7 +92,7 @@ def convert_video_mp4_h265(f_in, f_out, args):
 
     codec_video = 'libx265'
     quality_video = '30' #0 (lossless) - 51 (worst); 17 - invisible loss 
-    quality_preset = '-preset medium'
+    quality_preset = ['-preset', 'medium']
 
     codec_audio = 'libvorbis'
     quality_audio = '128k'
@@ -90,10 +103,10 @@ def convert_video_mp4_h265(f_in, f_out, args):
     if 'threads' in args:
         threads = args['threads']
 
-    cmd = f'{executable} -i {f_in} -threads {threads} -c:v {codec_video} {quality_preset} -crf {quality_video} -c:a {codec_audio} -b:a {quality_audio} -y {f_out}'
+    cmd = [executable, '-i', f_in, '-threads', str(threads), '-c:v', codec_video, *quality_preset,
+           '-crf', quality_video, '-c:a', codec_audio, '-b:a', quality_audio, '-y', f_out]
 
-    print(cmd)
-    os.system(cmd)
+    run(cmd)
     assert os.path.isfile(f_out)
 
 
@@ -101,8 +114,7 @@ def convert_video_mp4_h265(f_in, f_out, args):
 def check_file(f):
     assert os.path.isfile(f)
 
-    cmd = f'ffmpeg -v error -i {f} -f null - '
-    os.system(cmd)
+    run(['ffmpeg', '-v', 'error', '-i', f, '-f', 'null', '-'])
 
 if __name__ == '__main__':
 

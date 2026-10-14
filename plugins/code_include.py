@@ -1,10 +1,6 @@
-import sys
 import os
 import re
 import subprocess
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../lib')
-import filesystem
 
 from lhtml.element_extract import extract_bracket_elements
 from lib.structure import built_pages

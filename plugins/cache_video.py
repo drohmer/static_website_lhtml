@@ -74,9 +74,6 @@ def generate_cache_videos(meta, cache_video_directory, structure):
     for proc in procs:
         proc.join()
 
-    if os.path.isfile('ffmpeg2pass-0.log'):
-        os.remove('ffmpeg2pass-0.log')
-
 
 def pre_process(meta):
     if 'cache_video_directory' not in meta:
