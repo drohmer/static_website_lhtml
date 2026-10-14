@@ -275,8 +275,15 @@ def prepare_data(meta, selected, built, log):
     warnings = []
     if not only:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        warnings += filesystem.copy_directories(dir_source, dir_site, skip=pages.is_build_input,
-                                                exclude=[meta.get('published_site_directory')])
+        # The site, and the files of the project that are not content: a link
+        # inside the sources would otherwise publish the configuration, the
+        # deck (which holds the notes of the author) or the documents written
+        # next to them.
+        warnings += filesystem.copy_directories(
+            dir_source, dir_site, skip=pages.is_build_input,
+            exclude=[meta.get('published_site_directory'), meta.get('config_file'),
+                     meta['deck'] if isinstance(meta.get('deck'), str) else None,
+                     str(documents_directory(meta))])
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         warnings += filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
     if only:        # a page that fails keeps its previous version

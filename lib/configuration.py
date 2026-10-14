@@ -9,6 +9,8 @@ import difflib
 import os
 import yaml
 
+from lib.structure import PRIVATE_KEYS
+
 GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
 RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}
 
@@ -203,6 +205,9 @@ def load_config(filename, debug_override=None):
     for key in ('plugin', 'include_head', 'public_page_keys'):
         if not isinstance(values[key], list) or any(not isinstance(v, str) or not v.strip() for v in values[key]):
             raise ConfigError(f"'{key}' must be a list of non-empty strings")
+    for name in sorted(set(values['public_page_keys']) & set(PRIVATE_KEYS)):
+        raise ConfigError(f"'public_page_keys': '{name}' is never written into the site "
+                          f"(it is the path of the source on this machine)")
 
     _chrome_executable(values, path.parent)
 

@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -132,3 +133,36 @@ def test_a_layout_report_that_cannot_run_leaves_the_build_alone(tmp_path):
     assert 'Layout report not produced' in result.stdout
     assert (tmp_path / '.site/index.html').is_file()
     assert 'Original' in (tmp_path / '.site/index.html').read_text()
+
+
+def test_nothing_private_of_the_project_reaches_the_site(tmp_path):
+    """Three ways a file of the author used to be published: a hidden file in
+    a sub-directory of the sources, a link to the project inside them, and
+    `src` named in public_page_keys."""
+    source = tmp_path / 'src/a'
+    source.mkdir(parents=True)
+    (source / 'index.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
+    (source / '.notes.md').write_text('PRIVATE_NOTE')
+    (source / '.private').mkdir()
+    (source / '.private/x.txt').write_text('PRIVATE_DIRECTORY')
+    (tmp_path / 'deck.yaml').write_text(yaml.safe_dump(
+        {'slides': ['a'], 'title': 'T'}))
+    os.symlink(tmp_path, source / 'project_link')           # the project, from the sources
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'deck': 'deck.yaml'}))
+
+    assert build(config).returncode == 0
+    site = tmp_path / '.site'
+    published = [p for p in site.rglob('*') if p.is_file()]
+    assert published, 'the site is empty'
+    for path in published:
+        assert not any(part.startswith('.') for part in path.relative_to(site).parts), path
+    text = '\n'.join(p.read_text(encoding='utf-8', errors='replace') for p in published)
+    assert 'PRIVATE_NOTE' not in text and 'PRIVATE_DIRECTORY' not in text
+    assert not (site / 'a/project_link/configure.yaml').exists()
+    assert not (site / 'a/project_link/deck.yaml').exists()
+    assert 'src' not in json.loads((site / 'structure/structure.json').read_text())[0]
+
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'public_page_keys': ['src']}))
+    failed = build(config)
+    assert failed.returncode == 1 and 'public_page_keys' in failed.stdout

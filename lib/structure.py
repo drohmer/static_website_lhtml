@@ -32,10 +32,15 @@ DISPLAY_KEYS = ('title', 'level', 'level-toc', 'hide-toc', 'nourl-toc', 'direct-
 
 PUBLIC_KEYS = DISPLAY_KEYS + ('dir', 'filename', 'template', 'source', 'occurrence')
 
+# Never written into the site, whatever a configuration asks for: `src` is
+# the path of the source on the machine of the author.
+PRIVATE_KEYS = ('src',)
+
 
 def public_entry(entry, extra=()):
     """The part of a page entry that may be written into the site."""
-    keys = tuple(PUBLIC_KEYS) + tuple(extra)
+    keys = set(PUBLIC_KEYS) | set(extra)
+    keys -= set(PRIVATE_KEYS)
     return {key: value for key, value in entry.items() if key in keys}
 
 
