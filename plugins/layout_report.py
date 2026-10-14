@@ -45,6 +45,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import traceback
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Column
@@ -54,7 +55,7 @@ from lib.design_checks import analyse_design, validate as validate_design_rules
 from lib.lint import Linter
 from lib.report_lock import report_lock
 from lib.structure import built_pages, structure
-from lib.configuration import layout_output_directory
+from lib.configuration import ConfigError, layout_output_directory
 
 
 DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
@@ -1347,9 +1348,22 @@ def _same_source(report, page, meta):
 
 
 def post_process(meta):
-    # one build at a time writes the reports (another build waits for it)
-    with report_lock(layout_output_directory(meta), meta['log']):
-        return _post_process(meta)
+    # An analysis reports, or reports that it could not run: it never takes
+    # the build down with it. A missing browser used to throw away a site
+    # that had rendered correctly.
+    # An unsafe output directory is a configuration error, not a failure of
+    # the analysis: it still stops the build, before anything is written.
+    output = layout_output_directory(meta)
+    try:
+        # one build at a time writes the reports (another build waits for it)
+        with report_lock(output, meta['log']):
+            return _post_process(meta)
+    except ConfigError:
+        raise
+    except Exception as error:
+        meta['log'].error(f'Layout report not produced ({type(error).__name__}: {error}). '
+                          f'The site is built; run --layout again once the cause is fixed.')
+        meta['log'].debug(traceback.format_exc())
 
 
 def _post_process(meta):

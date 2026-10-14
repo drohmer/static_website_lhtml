@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -117,3 +118,17 @@ def test_watcher_detects_add_edit_delete(tmp_path):
     assert snapshot([folder]) != added
     page.unlink()
     assert snapshot([folder]) == original
+
+
+def test_a_layout_report_that_cannot_run_leaves_the_build_alone(tmp_path):
+    """An analysis reports, or reports that it could not run. A missing
+    browser (or here, a missing node) used to raise through the plugin and
+    throw away a site that had rendered correctly."""
+    config, _ = project(tmp_path)
+    without_node = dict(os.environ, PATH='/usr/bin:/bin')
+    result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                            capture_output=True, text=True, env=without_node)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'Layout report not produced' in result.stdout
+    assert (tmp_path / '.site/index.html').is_file()
+    assert 'Original' in (tmp_path / '.site/index.html').read_text()

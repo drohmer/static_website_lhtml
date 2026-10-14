@@ -14,7 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
-const {launchOptions} = require('./chrome');
+const {launchBrowser} = require('./chrome');
 const {localFrames} = require('./frames');
 // interactive states: agent extension, loaded only for the pages that enable them
 let interactiveModule = null;
@@ -1062,10 +1062,10 @@ async function waitForContent(page) {
 (async () => {
     // pages are independent: `jobs` tabs of one browser measure them in parallel;
     // background tabs are not throttled (timers, rendering)
-    const browser = await puppeteer.launch(launchOptions(args, {headless: true,
+    const browser = await launchBrowser(puppeteer, args, {headless: true,
         args: ['--allow-file-access-from-files',
                '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-               '--disable-backgrounding-occluded-windows']}));
+               '--disable-backgrounding-occluded-windows']});
     let failures = 0, next = 0, done = 0;
     await Promise.all(Array.from({length: Math.min(jobs, pages.length) || 1}, () => worker()));
     console.log(`progress ${pages.length} ${pages.length} done`);

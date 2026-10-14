@@ -243,3 +243,20 @@ def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path)
     # the base never loads the agent extension, and writes none of its outputs
     assert not (tmp_path / '.layout/verification.json').exists()
     assert not (tmp_path / '.source-map').exists()
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_the_chrome_asked_for_wins_and_an_installed_one_is_the_last_resort():
+    """plugins/assets/chrome.js decides which Chrome the scripts run."""
+    script = ("const c = require('" + str(REPO / 'plugins/assets/chrome.js') + "');"
+              "console.log(JSON.stringify({asked: c.executablePath({chrome: '/bin/given'}),"
+              " env: c.executablePath({}), installed: c.installedChrome(),"
+              " options: c.launchOptions({chrome: '/bin/given'}, {headless: true})}));")
+    result = subprocess.run(['node', '-e', script], capture_output=True, text=True,
+                            env={k: v for k, v in os.environ.items() if k != 'PUPPETEER_EXECUTABLE_PATH'})
+    assert result.returncode == 0, result.stderr
+    chosen = json.loads(result.stdout)
+    assert chosen['asked'] == '/bin/given'
+    assert chosen['options']['executablePath'] == '/bin/given'
+    assert chosen['env'] == ''                      # nothing asked for: puppeteer decides
+    assert chosen['installed'] == '' or os.path.isfile(chosen['installed'])
