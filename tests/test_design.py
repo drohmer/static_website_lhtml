@@ -149,5 +149,7 @@ class DesignExtendsTests(unittest.TestCase):
 
     def test_reference_written_by_generator(self):
         with tempfile.TemporaryDirectory() as root:
-            design.write_design({'site_directory': root}, design.load_design(REPO / 'themes/slides'))
-            self.assertIn('### `gap::`', (Path(root) / 'structure/design.md').read_text())
+            design.write_design({'site_directory': root + '/site', 'config_directory': root},
+                                design.load_design(REPO / 'themes/slides'))
+            self.assertIn('### `gap::`', (Path(root) / '.structure/design.md').read_text())
+            self.assertTrue((Path(root) / 'site/theme/css/design.css').is_file())

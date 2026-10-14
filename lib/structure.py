@@ -14,7 +14,13 @@ PUBLIC_KEYS: structure/ is served with the site, so what a reader must not
 see does not go there.
 """
 
+from pathlib import Path
 import json
+
+# The documents written for the author and their agent (agents.md,
+# design.md, credits.md, todo.md) go next to the configuration, not into
+# the site: the site is published, and they are working documents.
+DOCUMENTS = '.structure/'
 
 # What may be written into the site for each page: what places it (dir,
 # filename, template, level, occurrence), what names it (title, source), and
@@ -31,6 +37,13 @@ def public_entry(entry, extra=()):
     """The part of a page entry that may be written into the site."""
     keys = tuple(PUBLIC_KEYS) + tuple(extra)
     return {key: value for key, value in entry.items() if key in keys}
+
+
+def documents_directory(meta):
+    """Where the documents of the project are written, created if needed."""
+    path = Path(meta.get('config_directory') or '.') / DOCUMENTS
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def load_structure(site_directory):

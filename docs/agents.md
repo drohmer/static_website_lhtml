@@ -2,7 +2,8 @@
 
 This guide is for an agent (LLM) that writes or edits the slides of a
 project built with static_website_lhtml. It is copied into every built site
-as `structure/agents.md`. The README of the generator is the full reference;
+as `.structure/agents.md`, next to the configuration. The README of the
+generator is the full reference;
 this page is the procedure.
 
 ## The project
@@ -16,7 +17,7 @@ this page is the procedure.
   given as pointers to their directories. It can include slides of other
   projects (`name:path`) and repeated slides with `params`. Without a deck,
   the slides follow the order of the files.
-- After a build, `<site>/structure/design.md` is the reference of the design:
+- After a build, `.structure/design.md` is the reference of the design:
   macros, layouts and tokens. **Read it before writing a slide.**
 
 ## Commands
@@ -128,10 +129,10 @@ stands for a figure that does not exist yet.
   changes go in the `design` key of `configure.yaml` (tokens, new macros).
 - An image you did not make needs a credit: `credits:` in the `config.yaml`
   of its slide (author, source, license, url), and its caption
-  `credit:: {{ credit('assets/file.jpg') }} ::`. `structure/credits.md` lists
+  `credit:: {{ credit('assets/file.jpg') }} ::`. `.structure/credits.md` lists
   the images without credit. A slide copied from another one gets `origin:`.
 - A figure that does not exist yet: `placeholder:: what it shows ::`
-  (listed in `structure/todo.md`). A figure that can be computed (a plot, a
+  (listed in `.structure/todo.md`). A figure that can be computed (a plot, a
   diagram) is better written as code: `assets/plot.svg.py` (writes the file
   given as argument) or `assets/diagram.svg.tex` (TikZ), made at the build.
 - A repeated slide reads its parameters as `params.name`

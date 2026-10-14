@@ -34,6 +34,7 @@ from lib import logger
 from lib import pages
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
 from lib.build_output import staged_site
+from lib.structure import documents_directory
 
 import lhtml
 
@@ -259,7 +260,7 @@ def only_pages(meta, selected, log):
     return built
 
 
-# Guide of the procedure for AI agents, copied into each site (structure/agents.md)
+# Guide of the procedure for AI agents, copied into each project (.structure/agents.md)
 AGENTS_GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs', 'agents.md')
 
 
@@ -312,36 +313,37 @@ def prepare_data(meta, selected, built, log):
     generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
     meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/',
                                                        meta.get('public_page_keys') or ())
-    shutil.copy2(AGENTS_GUIDE, dir_site + 'structure/agents.md')
+    shutil.copy2(AGENTS_GUIDE, documents_directory(meta) / 'agents.md')
     built_set = set(built)
     meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if page in built_set]
     return sitemap, write_credits_and_todo(meta, selected, log)
 
 
 def write_credits_and_todo(meta, selected, log):
-    """structure/credits.md (origin of the pages, credits of the images) and
-    structure/todo.md (planned figures and slides). Returns the credits of
-    each page (lib/credits.py) and the errors of the pages whose credits are
-    invalid ({page: message}: these pages fail)."""
+    """.structure/credits.md (origin of the pages, credits of the images)
+    and .structure/todo.md (planned figures and slides), next to the
+    configuration. Returns the credits of each page (lib/credits.py) and the
+    errors of the pages whose credits are invalid ({page: message}: these
+    pages fail)."""
     credits_of, errors = {}, {}
     for page in selected:
         try:
             credits_of[page] = credits.page_credits(page)
         except credits.CreditsError as exc:
             credits_of[page], errors[page] = {}, str(exc)
-    structure_dir = meta['site_directory'] + 'structure/'
+    documents = documents_directory(meta)
     text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'],
                                                        meta['macros'])
-    with open(structure_dir + 'credits.md', 'w', encoding='utf-8') as fid:
+    with open(documents / 'credits.md', 'w', encoding='utf-8') as fid:
         fid.write(text)
     planned_figures = credits.placeholders(selected)
     planned_slides = meta.get('planned_slides') or []
-    with open(structure_dir + 'todo.md', 'w', encoding='utf-8') as fid:
+    with open(documents / 'todo.md', 'w', encoding='utf-8') as fid:
         fid.write(credits.todo_markdown(planned_figures, planned_slides, meta['config_directory']))
-    log.debug(f'Credits: {credited} credited, {missing} image(s) without credit (structure/credits.md)')
+    log.debug(f'Credits: {credited} credited, {missing} image(s) without credit ({documents}/credits.md)')
     if planned_figures or planned_slides:
         log.keyvalue('info', f'To do: {len(planned_figures)} planned figure(s), {len(planned_slides)} planned '
-                             f'slide(s) (structure/todo.md)', indent_level=1)
+                             f'slide(s) ({documents}/todo.md)', indent_level=1)
     return credits_of, errors
 
 
@@ -470,7 +472,7 @@ def load_project_design(meta):
 
 
 def prepare_design(meta, log):
-    """Write theme/css/design.css and structure/design.md of the design
+    """Write theme/css/design.css of the site and .structure/design.md
     (meta['loaded_design'], loaded at the start of the build)."""
     # Always written (even empty): the theme may link it, and --only must not
     # keep the design.css of a previous design.

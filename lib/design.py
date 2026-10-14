@@ -24,8 +24,9 @@ A design file may start from another one: `extends: ../slides/design.yaml`
 (relative to the file), then override it key by key.
 
 The generator writes `theme/css/design.css` (the tokens as CSS variables on
-:root, then the `css` of each macro) and `structure/design.md` (reference of
-the macros and tokens, for authors and LLMs), and passes the macros to LHTML
+:root, then the `css` of each macro) and `.structure/design.md` next to the
+configuration (reference of the macros and tokens, for authors and LLMs:
+the site is published, those documents are not), and passes the macros to LHTML
 without their `css` (lhtml_macros).
 """
 from __future__ import annotations
@@ -39,7 +40,7 @@ import yaml
 
 DESIGN_FILE = 'design.yaml'
 CSS_PATH = 'theme/css/design.css'
-REFERENCE_PATH = 'structure/design.md'
+REFERENCE_NAME = 'design.md'
 SECTIONS = ('tokens', 'macros', 'layouts', 'lint')
 LINT_FIELDS = {'small_text', 'rules'}
 LAYOUT_FIELDS = {'css', 'doc'}
@@ -281,9 +282,12 @@ def design_markdown(design):
 
 
 def write_design(meta, design):
-    """Write theme/css/design.css and structure/design.md in the site directory."""
+    """Write theme/css/design.css in the site, and the reference of the design
+    in .structure/design.md, next to the configuration: it is written for the
+    author and their agent, and the site is published."""
+    from lib.structure import documents_directory
     site = Path(meta['site_directory'])
-    for relative, text in ((CSS_PATH, design_css(design)), (REFERENCE_PATH, design_markdown(design))):
-        (site / relative).parent.mkdir(parents=True, exist_ok=True)
-        (site / relative).write_text(text, encoding='utf-8')
+    (site / CSS_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (site / CSS_PATH).write_text(design_css(design), encoding='utf-8')
+    (documents_directory(meta) / REFERENCE_NAME).write_text(design_markdown(design), encoding='utf-8')
     return site / CSS_PATH

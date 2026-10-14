@@ -78,10 +78,12 @@ class AssetsBuildTests(unittest.TestCase):
         site = self.root / 'site'
         self.assertIn('E. Muybridge, public domain', (site / 'a/index.html').read_text())
         self.assertIn('assets/x.jpg: E. Muybridge, public domain', (site / 'b/index.html').read_text())
-        report = (site / 'structure/credits.md').read_text()
+        documents = self.root / '.structure'      # next to the configuration, not in the site
+        self.assertFalse((site / 'structure/credits.md').exists())
+        report = (documents / 'credits.md').read_text()
         self.assertIn('| 1 | a/index.html | A | `src/a/index.html.j2` | course/a |', report)
         self.assertIn('- a/index.html: `assets/y.png`', report)                 # without credit
-        self.assertIn('src/a/index.html.j2:5` (a/index.html): a walk cycle', (site / 'structure/todo.md').read_text())
+        self.assertIn('src/a/index.html.j2:5` (a/index.html): a walk cycle', (documents / 'todo.md').read_text())
         self.assertIn('To do: 1 planned figure(s)', output)
         self.assertTrue((site / 'a/assets/s.svg').is_file())
         self.assertFalse((self.root / 'src/a/assets/s.svg').exists())          # never in the sources

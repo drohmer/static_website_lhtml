@@ -979,7 +979,7 @@ def page_markdown(name, source, layout):
 
     if analysis.get('lint'):
         lines += ['', '## Values written by hand (design lint)', '',
-                  'Replace them with the layout or macro given (see structure/design.md of the site):', '']
+                  'Replace them with the layout or macro given (see .structure/design.md):', '']
         lines += [f"- line {f['line']}, {f['kind']}: `{f['text']}` -> {f['advice']}" for f in analysis['lint']]
 
     if analysis['gaps']:
@@ -1525,7 +1525,7 @@ def _post_process(meta):
             verification.measured(p, layout, previous_layouts.get(p['name']))
 
     with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace') as fid:
-        reference = os.path.join(meta.get('published_site_directory') or site_dir, 'structure', 'design.md')
+        reference = os.path.join(meta['config_directory'], '.structure', 'design.md')
         fid.write(summary_markdown(rows, norms, design=os.path.relpath(reference, output_dir)
                                    if loaded_design and any(loaded_design.values()) else None))
     changes = [(p['name'], lines) for p, _, layout in measured if p['name'] in remeasured

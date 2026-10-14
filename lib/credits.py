@@ -15,9 +15,9 @@ In a page, `{{ credit('assets/euler.jpg') }}` gives the text of a credit
 (`credit:: {{ credit('assets/euler.jpg') }} ::`), and `credits` lists those
 of all the pages (a credits slide). The text is shown as written: its HTML and
 LHTML characters are escaped (`__init__` is not made italic). Each build writes:
-- structure/credits.md: the origin of each page (`origin`, or its project),
+- .structure/credits.md: the origin of each page (`origin`, or its project),
   the credits of the images, and the images of the pages without credit;
-- structure/todo.md: the planned figures (placeholder::) and slides (deck).
+- .structure/todo.md: the planned figures (placeholder::) and slides (deck).
 """
 from __future__ import annotations
 
@@ -113,7 +113,7 @@ def _cell(value):
 
 
 def credits_markdown(pages, credits_of, base, macros=None):
-    """structure/credits.md: origin of the pages, credits, images without credit."""
+    """.structure/credits.md: origin of the pages, credits, images without credit."""
     out = ['# Origin of the slides and credits', '',
            'Written by the generator at each build (lib/credits.py) from the `origin` and `credits`',
            'of the config.yaml of the pages (or of their deck entry).', '',
@@ -151,7 +151,7 @@ def placeholders(pages):
 
 
 def todo_markdown(planned_figures, planned_slides, base):
-    """structure/todo.md: planned figures and slides."""
+    """.structure/todo.md: planned figures and slides."""
     out = ['# To do', '', f'## Planned figures ({len(planned_figures)})', '',
            'The `placeholder::` of the pages.', '']
     out += [f'- `{os.path.relpath(page.src, base)}:{line}` ({page.site_html}): {text or "-"}'

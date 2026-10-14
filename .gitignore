@@ -15,4 +15,5 @@ _layout/
 
 .source-map/
 .verification/
+.structure/
 .layout.lock

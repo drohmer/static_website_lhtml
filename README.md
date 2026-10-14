@@ -120,6 +120,17 @@ plugin:                                # Plugin list (executed in order)
   - 'plugins/title_submenu.py'
 ```
 
+**The site is published; the documents of a project are not.** The site
+holds the pages, the assets, the theme and `structure/structure.{json,yaml}`
+(the pages of the site, read by the plugins and by `--only`, with the keys a
+theme may display: a `notes:` or a `message:` written by the author stays out
+of it, as does the path of the sources). What is written for the author and
+their agent goes to `.structure/`, next to the configuration: `agents.md`
+(the procedure), `design.md` (the macros and tokens of the design),
+`credits.md` (the origin of the pages and the credits of the images) and
+`todo.md` (the planned figures and slides). A custom theme that needs another
+page setting in the site declares it with `public_page_keys:`.
+
 Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lib/configuration.py`.
 
 Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is `menu.py`, `redirection_first_page.py` and `title_submenu.py`: what the bundled theme reads (the menu, the redirection of the first page and the summary of the headings of each page). An explicitly configured relative theme path is relative to the YAML file.
@@ -156,7 +167,7 @@ Optional keys:
 
 The generator runs the following stages:
 
-1. **Data preparation** — Find the `.html.j2` templates, select and order them (deck), copy the sources and theme to the site (or, with `--only`, the templates and assets of its pages), extract titles and sitemap, export `structure/`, write the design (`design.css`, `design.md`)
+1. **Data preparation** — Find the `.html.j2` templates, select and order them (deck), copy the sources and theme to the site (or, with `--only`, the templates and assets of its pages), extract titles and sitemap, export `structure/`, write the design (`design.css` in the site, `design.md` in `.structure/`)
 2. **Pre-process plugins** — Plugin hooks before Jinja2 rendering
 3. **Jinja2 rendering** — Render the templates with their variables (see [Template variables](#template-variables))
 4. **Mid-process plugins** — Plugin hooks between Jinja2 and LHTML
@@ -207,12 +218,13 @@ static_website_lhtml/
     lint.py                # Design lint: values written by hand in the pages
     design_checks.py       # Checks of the layout report by role (title, body, caption, figure)
     report_lock.py         # One build at a time writes the layout report
-    credits.py             # Credits, origin of the slides, planned figures (structure/credits.md, todo.md)
+    credits.py             # Credits, origin of the slides, planned figures (.structure/credits.md, todo.md)
     figures.py             # Figures made from code (*.svg.py, *.svg.tex)
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
-    structure.py           # Pages of the site for plugins (structure, built_pages)
+    structure.py           # Pages of the site for plugins (structure, built_pages),
+                           #   what may be published, and .structure/ of a project
   plugins/
     auto_wrap.py           # Auto-wrap plain HTML in Jinja2 template
     menu.py                # Generate JS menu from sitemap
@@ -232,7 +244,7 @@ static_website_lhtml/
     webpage-frame/         # Default web page theme
     slides/                # Presentation slides theme
     slides-pdf/            # PDF export slides theme
-  docs/agents.md           # Procedure for AI agents writing slides (copied into structure/)
+  docs/agents.md           # Procedure for AI agents writing slides (copied into .structure/)
   agent/                   # Agent extension: --verify (agent/README.md)
   example/                 # Example source content
 ```
@@ -252,12 +264,12 @@ Themes use Jinja2 template inheritance. The base template (`template/base.html`)
 [`docs/agents.md`](docs/agents.md) is the procedure for an agent (LLM) that
 writes or edits slides: plan in the deck, layouts and macros, `--only
 --layout`, `--lint`, how to read the report and when to stop. It does not
-depend on the agent used. Each build copies it into `structure/agents.md` of
+depend on the agent used. Each build copies it into `.structure/agents.md` of
 the site, and the layout report links to it. In a slide project, one line in
 the file that your agent reads (`AGENTS.md`, `CLAUDE.md`, ...) is enough:
 
 ```
-To write or edit the slides, follow <site>/structure/agents.md (e.g. _site/structure/agents.md).
+To write or edit the slides, follow .structure/agents.md of this project.
 ```
 
 ## Deck: order of the slides
@@ -444,7 +456,7 @@ macros):
 
 A layout is a class of `<body>` (`layout-side`, plus `layout-side-s` for a
 variant) styled by its `css` in `design.yaml` (`layouts:` with `css` and
-`doc`, documented in `structure/design.md`); the `design` key adds or
+`doc`, documented in `.structure/design.md`); the `design` key adds or
 removes layouts like macros.
 
 **Lint.** `python generate.py --lint` lists the values written by hand in the
@@ -480,7 +492,7 @@ a list item; captions, credits and notes may stay small (a list of references
 in `tiny::` is reported too: justify it, or write it without a list). The
 patterns are searched in the text only: not in code, math, comments, Jinja,
 HTML tags nor URLs. They are listed in
-`structure/design.md` and reported as the other values written by hand.
+`.structure/design.md` and reported as the other values written by hand.
 
 Each build gives their number (the style debt of the deck), and the layout
 report lists them per page (column `lint` of `summary.md`). What LHTML does
@@ -495,7 +507,7 @@ The generator:
    configuration (a value `null` removes a token or a macro),
 2. writes `theme/css/design.css`: the tokens as CSS variables
    (`font: {small: 85%}` gives `--font-small`), then the `css` of each macro,
-3. writes their reference in `structure/design.md` of the site (macros,
+3. writes their reference in `.structure/design.md` of the project (macros,
    layouts, tokens: for authors and LLMs; the layout report links to it),
 4. validates the tokens and the macros (with LHTML), and gives the macros to LHTML without their `css`.
 
@@ -562,7 +574,7 @@ small::
 ::
 ```
 
-Each build writes `structure/credits.md`: the origin of each page (`origin`,
+Each build writes `.structure/credits.md`: the origin of each page (`origin`,
 or its project), the credits, and the images and videos used by the pages
 without credit (`img::`, `video::`, `videoplay::`, the macros showing an image
 or a video, `src="..."`; to check: your own figures need none). A page whose
@@ -572,7 +584,7 @@ version).
 
 **To do.** `placeholder:: video of the walk cycle ::` draws a planned figure;
 each build lists the planned figures (with their line) and the planned slides
-of the deck in `structure/todo.md`, and gives their number in the log.
+of the deck in `.structure/todo.md`, and gives their number in the log.
 
 **Figures in code.** A file `<name>.<format>.py` of the sources (`svg`, `png`,
 `pdf`, `jpg`), e.g. `assets/curve.svg.py`, is a script that writes the figure

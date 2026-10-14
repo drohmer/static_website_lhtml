@@ -74,11 +74,12 @@ class LayoutBuildTests(unittest.TestCase):
         self.assertEqual(self.body('b'), '<body class="layout-stack">')
         self.assertEqual(self.body('c'), '<body class="layout-side layout-side-s">')
         self.assertIn('C hello', (self.site / 'c/index.html').read_text())
-        self.assertEqual((self.site / 'structure/agents.md').read_text(),
+        self.assertEqual((self.root / '.structure/agents.md').read_text(),
                          (REPO / 'docs/agents.md').read_text())          # the guide for agents
+        self.assertFalse((self.site / 'structure/agents.md').exists())   # the site is published
         from plugins import layout_report
-        self.assertIn('`../site/structure/agents.md`',
-                      layout_report.summary_markdown([], design='../site/structure/design.md'))
+        self.assertIn('`../.structure/agents.md`',
+                      layout_report.summary_markdown([], design='../.structure/design.md'))
         self.assertIn('Lint: 2 value(s) written by hand in 2 of 3', output)    # b, c: a layout without media::
 
     def test_layout_after_an_import_or_a_comment(self):
