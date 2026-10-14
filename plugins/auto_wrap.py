@@ -25,7 +25,7 @@ def pre_process(meta):
     for entry in built_pages(meta):
         file_path = template_path(meta, entry)
 
-        with open(file_path, 'r') as fid:
+        with open(file_path, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
         # Do not change files that are already wrapped
@@ -33,5 +33,5 @@ def pre_process(meta):
             settings = leading_settings(file_content)
             content = template_auto_wrap.format(title=json.dumps(str(entry['title']), ensure_ascii=False),
                                                 settings=settings, content=file_content[len(settings):])
-            with open(file_path, 'w') as fid:
+            with open(file_path, 'w', encoding='utf-8') as fid:
                 fid.write(content)

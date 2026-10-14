@@ -118,9 +118,9 @@ def export_structure(pages, structure_path, public_keys=()):
     # Written into the site: the public part of each entry (lib/structure.py).
     # The build keeps the whole entry, returned below.
     published = [public_entry(entry, public_keys) for entry in structure_to_export]
-    with open(structure_path + 'structure.yaml', 'w') as fid:
+    with open(structure_path + 'structure.yaml', 'w', encoding='utf-8') as fid:
         yaml.dump(published, fid)
-    with open(structure_path + 'structure.json', 'w') as fid:
+    with open(structure_path + 'structure.json', 'w', encoding='utf-8') as fid:
         json.dump(published, fid, indent=4, default=str)
     return structure_to_export
 
@@ -129,5 +129,5 @@ def export_sitemap(sitemap, dir_sitemap):
     os.makedirs(dir_sitemap, exist_ok=True)
 
     for id, page in sitemap.items():
-        with open(dir_sitemap + id + '.html', 'w') as fid:
+        with open(dir_sitemap + id + '.html', 'w', encoding='utf-8') as fid:
             fid.write(f'<html><head><meta http-equiv="refresh" content="0; url=../{page.site_html}"></head></html>')

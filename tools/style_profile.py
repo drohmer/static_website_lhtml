@@ -55,7 +55,7 @@ def deck_pages(deck_dir):
         structure = os.path.join(site, chapter, 'html', 'structure', 'structure.yaml')
         if not os.path.isfile(structure):
             continue
-        with open(structure) as fid:
+        with open(structure, encoding='utf-8') as fid:
             entries = yaml.safe_load(fid) or []
         for e in entries:
             html = os.path.join(site, chapter, 'html', e['dir'] + e['filename'])
@@ -91,11 +91,12 @@ def measure(pages, output_dir, jobs=3, force=False, log=print):
     chunks = [todo[i::jobs] for i in range(jobs) if todo[i::jobs]]
     procs, files = [], []
     for chunk in chunks:
-        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
+        with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
             json.dump([{'html': p['html'], 'out': p['out']} for p in chunk], fid)
         files.append(fid.name)
         procs.append(subprocess.Popen(['node', MEASURE_JS, f'--input={fid.name}', '--images=render'],
-                                      stderr=subprocess.PIPE, text=True))
+                                      stderr=subprocess.PIPE, text=True,
+                                      encoding='utf-8', errors='replace'))
     for proc, name in zip(procs, files):
         _, err = proc.communicate()
         os.remove(name)
@@ -439,7 +440,7 @@ def write_type_sheets(output_dir, types, n=16):
         with open(path, 'w', encoding='utf-8') as fid:
             fid.write(html)
         sheets.append({'html': path, 'png': path[:-len('.html')] + '.png'})
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump(sheets, fid)
     subprocess.run(['node', CONTACT_JS, f'--input={fid.name}'])
     os.remove(fid.name)
@@ -492,7 +493,7 @@ def profile(deck_dirs, output_dir, jobs=3, force=False, log=print):
                         'features': s['features']} for s in slides],
             'idioms': {k: (v.most_common(60) if isinstance(v, Counter) else v) for k, v in idioms.items()
                        if k != 'values'}}
-    with open(os.path.join(output_dir, 'style.json'), 'w') as fid:
+    with open(os.path.join(output_dir, 'style.json'), 'w', encoding='utf-8') as fid:
         json.dump(data, fid, indent=1, ensure_ascii=False)
     write_type_sheets(output_dir, types)
     log(f"Style profile of {len(slides)} slides ({duplicates} duplicates ignored) -> "

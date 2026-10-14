@@ -43,10 +43,14 @@ class Config:
     source_directory: str = 'src_site/'
     site_directory: str = '.site/'
     theme: str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
-    # The bundled theme reads what these three write: the menu ({{TOC}} of
+    # What a bundled theme needs to render a project written in LHTML:
+    # auto_wrap puts a source without {% block content %} in the template of
+    # the theme (without it the page is a bare fragment), and the three
+    # others write what the theme reads - the menu ({{TOC}} of
     # theme/js/menu.js), the summary of the headings (title_id.json) and the
     # redirection of the first page.
-    plugin: list[str] = field(default_factory=lambda: ['plugins/menu.py',
+    plugin: list[str] = field(default_factory=lambda: ['plugins/auto_wrap.py',
+                                                       'plugins/menu.py',
                                                        'plugins/redirection_first_page.py',
                                                        'plugins/title_submenu.py'])
     debug: bool = False
@@ -153,7 +157,7 @@ def load_config(filename, debug_override=None):
             warnings.append("'configure_default.yaml' was renamed 'configure_example.yaml'; update your command.")
             path = replacement
     try:
-        with path.open() as stream:
+        with path.open(encoding='utf-8') as stream:
             data = yaml.safe_load(stream)
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigError(f"Cannot read configuration '{path}': {exc}") from exc

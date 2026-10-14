@@ -16,13 +16,13 @@ def remove_controls(meta, structure):
     for entry in structure:
         filepath = template_path(meta, entry)
 
-        with open(filepath, 'r') as fid:
+        with open(filepath, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
         new_content = re.sub(r'(<video .*?)controls(.*?)>', r'\1\2>', file_content)
         new_content = new_content.replace('{controls}', '')
 
-        with open(filepath, 'w') as fid:
+        with open(filepath, 'w', encoding='utf-8') as fid:
             fid.write(new_content)
 
 

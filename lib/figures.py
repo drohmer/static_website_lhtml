@@ -44,7 +44,8 @@ def _make(script, figure):
     """Make a figure from its script; returns the error text, or None."""
     if script.suffix == '.py':
         result = subprocess.run([sys.executable, script.name, figure.name], cwd=script.parent,
-                                capture_output=True, text=True, timeout=TIMEOUT)
+                                capture_output=True, text=True, encoding='utf-8',
+                                errors='replace', timeout=TIMEOUT)
         if result.returncode or not figure.is_file():
             return (result.stderr or result.stdout).strip()[-800:] or 'no figure written'
         return None
@@ -55,12 +56,14 @@ def _make(script, figure):
         result = subprocess.run(['latex', '-interaction=nonstopmode', '-halt-on-error',
                                  f'-output-directory={build}', f'-jobname={script.stem}',
                                  r'\def\pgfsysdriver{pgfsys-dvisvgm.def}\input{' + script.name + '}'],
-                                cwd=script.parent, capture_output=True, text=True, timeout=TIMEOUT)
+                                cwd=script.parent, capture_output=True, text=True, encoding='utf-8',
+                                errors='replace', timeout=TIMEOUT)
         dvi = Path(build) / (script.stem + '.dvi')         # job name: schema.svg
         if result.returncode or not dvi.is_file():
             return result.stdout.strip()[-800:]
         result = subprocess.run(['dvisvgm', '--no-fonts', '--exact', '-o', str(figure), str(dvi)],
-                                capture_output=True, text=True, timeout=TIMEOUT)
+                                capture_output=True, text=True, encoding='utf-8',
+                                errors='replace', timeout=TIMEOUT)
         if result.returncode or not figure.is_file():
             return result.stderr.strip()[-800:]
     return None

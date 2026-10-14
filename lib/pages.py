@@ -141,7 +141,7 @@ def _read_config(directory, cache):
         path = os.path.join(directory, PAGE_CONFIG)
         config = {}
         if os.path.isfile(path):
-            with open(path) as fid:
+            with open(path, encoding='utf-8') as fid:
                 config = yaml.safe_load(fid)
             if config is None:
                 config = {}

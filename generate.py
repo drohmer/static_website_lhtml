@@ -501,7 +501,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             # Jinja2 rendering failed for this page (error already reported)
             continue
         log.debug(f'- {html_path}')
-        with open(html_path, 'r') as fid:
+        with open(html_path, 'r', encoding='utf-8') as fid:
             input_html = fid.read()
 
         options = {k: meta[k] for k in LHTML_OPTIONS if k in meta}
@@ -620,7 +620,7 @@ def render_files(meta, files, log):
         targets[png] = path
         entries.append({'file': str(path), 'png': str(png)})
     options = _options(meta)
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump(entries, fid)
         listing = fid.name
     try:

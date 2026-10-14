@@ -38,9 +38,9 @@ def post_process(meta):
     # Start from the template of the theme: the menu of the site no longer
     # contains the TOC placeholder (--only)
     template_path = meta['theme'].rstrip('/') + menu_path_relative[len('/theme'):]
-    with open(template_path, 'r') as fid:
+    with open(template_path, 'r', encoding='utf-8') as fid:
         menu_content = fid.read()
     menu_content = menu_content.replace('{{TOC}}', toc_txt)
     os.makedirs(os.path.dirname(menu_path), exist_ok=True)
-    with open(menu_path, 'w') as fid:
+    with open(menu_path, 'w', encoding='utf-8') as fid:
         fid.write(menu_content)

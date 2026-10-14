@@ -33,14 +33,14 @@ def measurement_failed(pages, previous_layouts, output_dir, error):
     for p in pages:
         os.makedirs(p['out'], exist_ok=True)
         if p['name'] in previous_layouts:
-            with open(os.path.join(p['out'], 'layout.json'), 'w') as fid:
+            with open(os.path.join(p['out'], 'layout.json'), 'w', encoding='utf-8') as fid:
                 json.dump(previous_layouts[p['name']], fid, indent=1)
         rows.append(_failed(p, str(error), output_dir))
     _write_aggregate(output_dir, rows, [])
 
 
 def _write_failed(folder, message, render_health=False):
-    with open(os.path.join(folder, 'verification.json'), 'w') as fid:
+    with open(os.path.join(folder, 'verification.json'), 'w', encoding='utf-8') as fid:
         json.dump({'schema_version': 1, 'status': 'failed',
                    'render_health': {'status': 'failed', 'errors': [{'type': 'measurement', 'message': message}]},
                    'diagnostics': [], 'checks': {'geometry': False, 'render_health': render_health,
@@ -124,7 +124,7 @@ class Verification:
                 children.append((child, state_folder, before))
             else:
                 errors.append({'kind': state['id'], 'message': state['error']['message']})
-                with open(os.path.join(state_folder, 'verification.json'), 'w') as fid:
+                with open(os.path.join(state_folder, 'verification.json'), 'w', encoding='utf-8') as fid:
                     json.dump({'schema_version': 1, 'status': 'failed', 'state_id': state['id'],
                                'source': layout['source'], 'plan': state['plan'], 'render_health': state['render_health'],
                                'diagnostics': [], 'checks': {'geometry': False, 'interactive_states': False}},
@@ -138,9 +138,9 @@ class Verification:
             child['page_context'] = layout['page_context']
             self._nested(p, layout, child, child_folder, before, limits)
             os.makedirs(child_folder, exist_ok=True)
-            with open(os.path.join(child_folder, 'layout.json'), 'w') as fid:
+            with open(os.path.join(child_folder, 'layout.json'), 'w', encoding='utf-8') as fid:
                 json.dump(child, fid, indent=1)
-            with open(os.path.join(child_folder, 'layout.md'), 'w') as fid:
+            with open(os.path.join(child_folder, 'layout.md'), 'w', encoding='utf-8') as fid:
                 fid.write(self.page_markdown(p['name'], child['source'], child))
             child_report = write_report(child_folder, child, before)
             for state in current.get('interactive', {}).get('states', []):
@@ -158,7 +158,7 @@ class Verification:
     def finish(self, pages, previous, errors=''):
         """Issue crops, the aggregate verification.json and the triage queue."""
         if self.crop_folders:
-            with open(os.path.join(self.output_dir, '.crops.json'), 'w') as fid:
+            with open(os.path.join(self.output_dir, '.crops.json'), 'w', encoding='utf-8') as fid:
                 json.dump(self.crop_folders, fid)
             try:
                 self.run_node(os.path.join(ASSETS, 'verification_crops.js'), [os.path.join(self.output_dir, '.crops.json')])
@@ -178,6 +178,6 @@ class Verification:
 def _write_aggregate(output_dir, rows, unmeasured):
     statuses = {row['status'] for row in rows if row.get('measured', True)}
     status = next((s for s in ('failed', 'incomplete', 'issues') if s in statuses), 'pass')
-    with open(os.path.join(output_dir, 'verification.json'), 'w') as fid:
+    with open(os.path.join(output_dir, 'verification.json'), 'w', encoding='utf-8') as fid:
         json.dump({'schema_version': 1, 'status': status, 'scope': 'measured_pages',
                    'pages': rows, 'unmeasured_pages': unmeasured, 'visual_review': False}, fid, indent=2)

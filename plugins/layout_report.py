@@ -1284,7 +1284,8 @@ def _run_node(script, arguments, label=None, chrome=None):
         arguments = arguments + [f'--chrome={chrome}']
     cmd = ['node', script if os.path.isabs(script) else path_current_file + 'assets/' + script] + arguments
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                encoding='utf-8', errors='replace')
     except FileNotFoundError:
         raise RuntimeError('node not found: install Node.js, then run `npm install` '
                            'in the static_website_lhtml directory')
@@ -1332,7 +1333,7 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         sheets.append({'html': html_path, 'png': html_path[:-len('.html')] + '.png'})
     if not sheets:
         return
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump(sheets, fid)
         sheets_json = fid.name
     try:
@@ -1450,7 +1451,7 @@ def _post_process(meta):
         log.keyvalue('info', f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
                              f'the others keep their report (--layout for all)', indent_level=2)
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as fid:
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name'],
                     **(agent_report.page_entry(options, p['name']) if meta.get('verify') else {})}
                    for p in pages], fid)
@@ -1494,7 +1495,7 @@ def _post_process(meta):
         entry = entries[p['name']]
         if p['name'] not in remeasured:         # retained measure: its validity is refreshed, not its geometry
             layout['freshness'] = dependencies.freshness(layout.get('dependencies'), meta, entry)
-            with open(layout_path, 'w') as fid:
+            with open(layout_path, 'w', encoding='utf-8') as fid:
                 json.dump(layout, fid, indent=1)
             with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
                 fid.write(page_markdown(p['name'], layout['source'], layout))
@@ -1515,7 +1516,7 @@ def _post_process(meta):
         layout['freshness'] = dependencies.freshness(layout['dependencies'], meta, entry)
         if verification:
             verification.prepare(p, layout, previous_layouts.get(p['name']), limits)
-        with open(layout_path, 'w') as fid:
+        with open(layout_path, 'w', encoding='utf-8') as fid:
             json.dump(layout, fid, indent=1)
         with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
             fid.write(page_markdown(p['name'], layout['source'], layout))
@@ -1533,7 +1534,7 @@ def _post_process(meta):
                and (lines := layout_changes(previous_layouts[p['name']], layout))]
     with open(os.path.join(output_dir, 'changes.md'), 'w', encoding='utf-8') as fid:
         fid.write(changes_markdown(changes, len(pages)))
-    with open(os.path.join(output_dir, 'deck.json'), 'w') as fid:
+    with open(os.path.join(output_dir, 'deck.json'), 'w', encoding='utf-8') as fid:
         json.dump(norms, fid, indent=1)
     if options['images'] and measured:
         write_contact_sheets(output_dir, [(p['name'], os.path.relpath(p['out'], output_dir), layout['analysis'])

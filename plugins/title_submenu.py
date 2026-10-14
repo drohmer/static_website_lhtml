@@ -42,7 +42,7 @@ def pre_process(meta):
     summary_path = meta['site_directory'] + 'structure/title_id.json'
     previous = {}
     if len(built) < len(pages) and os.path.isfile(summary_path):
-        with open(summary_path) as fid:        # --only: headings of the other pages
+        with open(summary_path, encoding='utf-8') as fid:        # --only: headings of the other pages
             previous = json.load(fid)
 
     id_storage = {}
@@ -59,7 +59,7 @@ def pre_process(meta):
             continue
         file_path = template_path(meta, entry)
 
-        with open(file_path, 'r') as fid:
+        with open(file_path, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
         title_id_summary[page_key] = []
@@ -82,12 +82,12 @@ def pre_process(meta):
             position = it.end()
         file_content = ''.join(parts) + file_content[position:]
 
-        with open(file_path, 'w') as fid:
+        with open(file_path, 'w', encoding='utf-8') as fid:
             fid.write(file_content)
 
     meta['headings'] = title_id_summary
 
-    with open(summary_path, 'w') as fid:
+    with open(summary_path, 'w', encoding='utf-8') as fid:
         json.dump(title_id_summary, fid, indent=4)
 
     for entry in pages:
@@ -95,9 +95,9 @@ def pre_process(meta):
             continue
         dirname = meta['site_directory'] + entry['dir']
         headings = title_id_summary[entry['dir'] + entry['filename']]
-        with open(dirname + entry['filename'] + '.title_id.json', 'w') as fid:
+        with open(dirname + entry['filename'] + '.title_id.json', 'w', encoding='utf-8') as fid:
             json.dump(headings, fid, indent=4)
         # Preserve the old URL for a directory index or a single-page folder.
         if entry['filename'] == 'index.html' or pages_per_directory[entry['dir']] == 1:
-            with open(dirname + 'title_id.json', 'w') as fid:
+            with open(dirname + 'title_id.json', 'w', encoding='utf-8') as fid:
                 json.dump(headings, fid, indent=4)

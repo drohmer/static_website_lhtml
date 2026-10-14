@@ -12,10 +12,30 @@ pip install -r requirements.txt
 
 **Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
 
-**Dependencies**: `lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`
+**Required**, and that is all a site of HTML pages or slides needs:
+`lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`,
+`pyyaml`, `rich` - installed by the `pip install` above. No Node, no browser,
+no other program.
 
-Optional:
+**Systems**: Linux and macOS are supported; the tests run on Linux in CI and
+on macOS in development. **Windows is not supported yet.** Measured on
+Windows 11 with Python 3.11: a simple project builds (one source, one theme,
+the default plugins) and every module imports, but 52 of the 308 tests fail -
+mostly the deck, `--only` and the pages in sub-directories, where a path is
+compared with `/` while Windows writes `\`. What is known to work there is a
+flat project without a deck; the rest waits for those separators to be
+normalised, and for the CI to cover it.
+
+**Optional**, each unlocking one feature and needed only for it:
 - **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. Put `generate_pdf.py` last in the plugin list: after the export, it removes the site directory (kept with `-d`).
+- **Layout report** (`--layout`, `--render`): Node.js and `npm install` in
+  this directory. If `npm install` leaves no Chrome behind (recent npm
+  versions skip that step), run `npx puppeteer browsers install chrome`; a
+  Chrome already installed on the machine is used as a last resort, and the
+  configuration key `chrome` names one explicitly.
+- **Videos in several codecs** (`cache_video.py`): `ffmpeg`, and `ffpb` for
+  the progress bar (`pip install ffpb`).
+- **Code snippets from other repositories** (`code_include.py`): `git`.
 - **SASS**: `pip install libsass` to compile `.sass` files (a warning is shown if they are left uncompiled).
 - **Figures in code**: the libraries their scripts import, in the Python that runs the generator (`pip install matplotlib numpy`); `latex` and `dvisvgm` (TeX Live) for the TikZ figures.
 
