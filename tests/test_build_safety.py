@@ -1,6 +1,8 @@
 import argparse
+import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -210,6 +212,74 @@ def test_an_option_the_analysis_does_not_know_is_reported(tmp_path):
     said = ' '.join(build(config, '--layout').stdout.split())
     assert 'unknown: expct, widht' in said, said
 
-    config, _ = project(tmp_path, plugin_arg={'layout_report': {'interactive': {'enabled': True}}})
-    said = ' '.join(build(config, '--layout').stdout.split())
-    assert 'describes states measured by --verify' in said, said
+
+
+def site_fingerprint(site):
+    """Every file of a site with its content: two builds are compared by
+    what they publish, not by how they got there."""
+    return {str(path.relative_to(site).as_posix()): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(site.rglob('*')) if path.is_file()}
+
+
+def test_a_partial_build_gives_the_same_site_as_a_full_one(tmp_path):
+    """The guarantee of --only: for everything it touches and everything that
+    depends on it, a partial build publishes what a full build publishes.
+    When the generator cannot tell what depends on what, it widens the build
+    and says so (lib/dependencies.py)."""
+    source = tmp_path / 'src'
+    for name in ('a', 'b', 'c'):
+        (source / name).mkdir(parents=True)
+        (source / name / 'index.html.j2').write_text(f'= Page {name}\n* first\n')
+    theme = tmp_path / 'theme'
+    shutil.copytree(REPO / 'themes/slides', theme)
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                      'theme': str(theme)}))
+    site = tmp_path / 'site'
+
+    def published(*arguments):
+        """The site after a build, as {path: content}."""
+        result = build(config, *arguments)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return site_fingerprint(site), ' '.join(result.stdout.split())
+
+    def from_scratch():
+        shutil.rmtree(site, ignore_errors=True)
+        return published()[0]
+
+    def edit_page(name, text):
+        (source / name / 'index.html.j2').write_text(text)
+
+    def edit_theme(rule):
+        (theme / 'css/main.css').write_text((theme / 'css/main.css').read_text() + rule)
+
+    before = from_scratch()
+    assert len(before) > 3
+
+    # A page of the project changed: --only on it publishes what a full build does.
+    edit_page('b', '= Page b\n* first\n* second, added\n')
+    expected = from_scratch()
+    assert expected != before, 'the edit changes the site'
+    shutil.rmtree(site, ignore_errors=True)
+    edit_page('b', '= Page b\n* first\n')          # the site of the first state
+    published()
+    edit_page('b', '= Page b\n* first\n* second, added\n')
+    partial, _ = published('--only', 'b')
+    assert partial == expected, 'a partial build must publish what a full build publishes'
+
+    # A shared input changed (the theme): --only cannot tell which pages
+    # depend on it, so it widens the build and says so.
+    css = theme / 'css/main.css'
+    original, rule = css.read_text(), '\n.added { color: red; }\n'
+    shutil.rmtree(site, ignore_errors=True)
+    published()                                     # a site built with the theme as it is
+    css.write_text(original + rule)
+    expected = from_scratch()                       # what a full build gives after the edit
+
+    css.write_text(original)                        # back to the first state, site included
+    shutil.rmtree(site, ignore_errors=True)
+    published()
+    css.write_text(original + rule)
+    widened, said = published('--only', 'a')
+    assert 'full build' in said, said
+    assert widened == expected, 'a widened build must publish what a full build publishes'

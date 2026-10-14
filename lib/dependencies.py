@@ -89,7 +89,7 @@ def input_snapshot(meta, entry, extra=()):
     for path in meta.get('plugin_paths', []):
         add(path, 'plugin')
     # Changes to the evaluator invalidate previous measurements too.
-    for directory in ('lib', 'plugins') + (('agent',) if meta.get('verify') else ()):
+    for directory in ('lib', 'plugins'):
         for path in scope_files(Path(meta['lib_directory']) / directory, 'engine'):
             if path.suffix in ('.py', '.js'):
                 add(path, 'engine')

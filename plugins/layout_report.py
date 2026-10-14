@@ -16,8 +16,7 @@ written to <config_dir>/.layout/pages/<relative HTML path>/:
 with the usual values of the deck (title position, columns, body font size,
 ...: also in deck.json), and contact_NN.png shows thumbnails of all pages. Coordinates are in CSS pixels, origin at the top-left corner of
 the page (1920x1080 for slides). One build at a time writes the report
-(lib/report_lock.py); --verify adds the outputs of the agent extension
-(agent/report.py).
+(lib/report_lock.py).
 
 Options (configure.yaml):
     plugin_arg:
@@ -988,36 +987,6 @@ def page_markdown(name, source, layout):
         lines += ['', '## Report validity', '', 'Freshness: **' + layout['freshness']['status'] + '**.']
         for change in layout['freshness'].get('changes', []):
             lines.append(f"- {change['kind']}: {change.get('path') or 'page parameters or metadata'}")
-    if not layout.get('verification_mode'):     # the sections below: --verify (agent extension)
-        return '\n'.join(lines) + '\n'
-    if any(b.get('provenance') for b in layout['blocks']):
-        lines += ['', '## Source provenance', '', 'Ranges cover observed content; closing-only lines are not included.']
-        for b in layout['blocks']:
-            if b.get('provenance'):
-                origins = ', '.join(f"`{r['file']}:{r['line']}-{r['end_line']}`"
-                                    for r in b['provenance']['ranges'])
-                lines.append(f"- #{b['id']}: {origins}; anchor `{b.get('stable_id')}`; matching: {b['provenance']['matching']}")
-    if layout.get('interactive'):
-        info = layout['interactive']
-        lines += ['', '## Interactive verification', '',
-                  'Each state reloads the initial slide. Samples do not cover every possible interaction.', '']
-        if info.get('truncated'):
-            lines.append('**Incomplete: state budget exhausted.**')
-        for state in info['states']:
-            lines.append(f"- `{state['id']}`: {state['status']}; [report](states/{state['id']}/verification.json)")
-            if state.get('error'):
-                lines.append('  ' + state['error']['message'])
-        lines.append('Controlled: CSS timelines, video seeking and requestAnimationFrame. Native timers and randomness remain uncontrolled.')
-    for frame in layout.get('frame_layouts', []):
-        lines += ['', f"Frame `{frame['id']}` ({frame['layout'].get('source')}): "
-                  f"[report](frames/{frame['id']}/verification.json). Canvas semantics are not verified."]
-    if layout.get('subblocks'):
-        lines += ['', '## Internal hierarchy', '',
-                  'Owned ink excludes child content. Source precision is direct or inherited.', '',
-                  '| ID | Parent | Role / design role | Source | Precision |', '|---|---|---|---|---|']
-        for b in layout['subblocks']:
-            lines.append(f"| {b['id']} | {b.get('parent') or '—'} | {b['role']} / {b.get('design_role', '—')} | {_md_cell(b.get('source'))} | {b['source_precision']} |")
-        lines += ['', 'Overlay: `internal-overlay.png`.']
     return '\n'.join(lines) + '\n'
 
 
@@ -1354,10 +1323,9 @@ def _warn_degenerate_root(measured, options, log):
 
 def _clean_after_measure(output_dir, pages, previous, partial, meta, start):
     """Once the measurement has run: the report of a page it could not write
-    is removed (it would be read as fresh), the reports of pages that are no
-    longer in the site go with them, and the aggregates of a previous
-    --verify are dropped. Nothing of this happens when the measurement
-    fails: the report of the previous build is then kept whole."""
+    is removed (it would be read as fresh), and the reports of pages that
+    are no longer in the site go with them. Nothing of this happens when the
+    measurement fails: the report of the previous build is then kept whole."""
     for page in pages:                      # a page whose measure failed has no report
         path = os.path.join(page['out'], 'layout.json')
         try:
@@ -1377,10 +1345,6 @@ def _clean_after_measure(output_dir, pages, previous, partial, meta, start):
                     os.rmdir(directory)
             except OSError:
                 pass
-    if not meta.get('verify'):              # aggregates of a previous --verify: no longer valid
-        for name in ('verification.json', 'triage.json', 'triage.md'):
-            if os.path.isfile(os.path.join(output_dir, name)):
-                os.remove(os.path.join(output_dir, name))
 
 
 def _same_source(report, page, meta):
@@ -1418,10 +1382,6 @@ def post_process(meta):
 
 def _post_process(meta):
     options = _options(meta)
-    verification = None
-    if meta.get('verify'):                      # agent extension (agent/README.md)
-        from agent import report as agent_report
-        options = agent_report.options(options)
     meta.setdefault('dependency_contexts', {})
     log = meta['log']
     site_dir = meta['site_directory']
@@ -1472,9 +1432,7 @@ def _post_process(meta):
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
     start = time.time()
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
-        json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name'],
-                    **(agent_report.page_entry(options, p['name']) if meta.get('verify') else {})}
-                   for p in pages], fid)
+        json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages], fid)
         pages_json = fid.name
     try:
         stderr = _run_node('layout_measure.js', [
@@ -1485,9 +1443,7 @@ def _post_process(meta):
         for line in stderr.splitlines():
             if line.startswith('layout_measure:'):
                 log.error(line)
-    except RuntimeError as exc:
-        if meta.get('verify'):
-            agent_report.measurement_failed(pages, previous_layouts, output_dir, exc)
+    except RuntimeError:
         raise
     finally:
         os.remove(pages_json)
@@ -1504,9 +1460,6 @@ def _post_process(meta):
     _warn_degenerate_root(measured, options, log)
     norms = deck_norms([layout for _, _, layout in measured])
     limits = {k: options[k] for k in ('max_words', 'min_font')}
-    if meta.get('verify'):
-        verification = agent_report.Verification(meta, options, output_dir, analyse, page_markdown,
-                                                 count_problems, count_warnings, _run_node)
 
     rows = []
     loaded_design = meta.get('loaded_design')
@@ -1521,8 +1474,6 @@ def _post_process(meta):
                 json.dump(layout, fid, indent=1)
             with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
                 fid.write(page_markdown(p['name'], layout['source'], layout))
-            if verification:
-                verification.retained(p, layout)
             rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
                          layout['analysis']))
             continue
@@ -1536,16 +1487,12 @@ def _post_process(meta):
         meta.setdefault('runtime_resources', {})[p['name']] = layout.get('resources', [])
         layout['dependencies'] = dependencies.make_manifest(meta, entry, layout.get('resources', []))
         layout['freshness'] = dependencies.freshness(layout['dependencies'], meta, entry)
-        if verification:
-            verification.prepare(p, layout, previous_layouts.get(p['name']), limits)
         with open(layout_path, 'w', encoding='utf-8') as fid:
             json.dump(layout, fid, indent=1)
         with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
             fid.write(page_markdown(p['name'], layout['source'], layout))
         rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
                      layout['analysis']))
-        if verification:
-            verification.measured(p, layout, previous_layouts.get(p['name']))
 
     with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace') as fid:
         reference = os.path.join(meta['config_directory'], '.structure', 'design.md')
@@ -1564,8 +1511,6 @@ def _post_process(meta):
                              measured[0][2]['viewport'], options, log,
                              changed={k for k, (p, _, _) in enumerate(measured) if p['name'] in remeasured}
                              if partial and not requested else None)      # deck changed: all the sheets
-    if verification:
-        verification.finish(pages, previous, stderr)
 
     n_problems = sum(count_problems(r[2]) for r in rows)
     if previous_layouts:

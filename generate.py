@@ -64,9 +64,6 @@ def parse_arguments():
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
                              'of each page in .layout/ (plugin layout_report.py, requires npm install).')
-    parser.add_argument('--verify', action='store_true',
-                        help='--layout with the structured verification of the agent extension '
-                             '(verification.json, issue crops, interactive states, triage; see agent/README.md).')
     parser.add_argument('--render', metavar='FILE', action='append',
                         help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
                              'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
@@ -78,12 +75,6 @@ def parse_arguments():
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
     args = parser.parse_args()
-    if args.verify:
-        if not os.path.isfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'agent', '__init__.py')):
-            parser.error('--verify requires the agent extension (directory agent/)')
-        if args.clean or args.check_config or args.lint:
-            parser.error('--verify cannot be combined with --clean, --check-config or --lint')
-        args.layout = True
     if not 0 <= args.port <= 65535:
         parser.error('--port must be between 0 and 65535')
     if (args.serve or args.watch) and (args.clean or args.check_config):
@@ -93,7 +84,7 @@ def parse_arguments():
     if args.lint and (args.clean or args.check_config or args.serve or args.watch):
         parser.error('--lint cannot be combined with --clean, --check-config, --serve or --watch')
     if args.render and (args.clean or args.check_config or args.serve or args.watch or args.lint or args.only
-                        or args.layout or args.verify or args.deck or args.scaffold):
+                        or args.layout or args.deck or args.scaffold):
         parser.error('--render is used alone (no build)')
     return args
 
@@ -302,17 +293,10 @@ def prepare_data(meta, selected, built, log):
                 with open(dir_site + page.site_html, 'rb') as fid:
                     meta['previous_pages'][page.site_html] = fid.read()
     transform = None
-    source_transform = None
     if meta.get('source_map'):
         tags = source_scan.value_tags(meta['macros'])
-        if meta.get('verify'):          # persistent anchors of the agent extension
-            from agent.provenance import SourceRegistry
-            meta['source_registry'] = SourceRegistry(meta['config_directory'], tags)
-            source_transform = meta['source_registry'].instrument
-        else:
-            transform = lambda text: source_map.add_markers(text, tags)
-    warnings += pages.place(built, dir_site, project_assets=only, transform=transform,
-                            source_transform=source_transform)
+        transform = lambda text: source_map.add_markers(text, tags)
+    warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
     if only and meta.get('dependency_store'):
         meta['dependency_store'].refresh_assets(meta, built)
     for warning in warnings:
@@ -427,7 +411,7 @@ def jinja_environment(meta, selected, built):
     roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
-    loader = TrackingLoader(loader, meta.get('source_registry'), roots)
+    loader = TrackingLoader(loader, roots)
     return Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
 
 
@@ -527,15 +511,12 @@ def render_lhtml(meta, selected, log, failed_before=()):
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
                 included = set()
-                with lhtml_includes(meta.get('source_registry'), included):
+                with lhtml_includes(included):
                     output_html = lhtml.run(input_html, options)
                 meta.setdefault('include_dependencies', {})[page.site_html] = sorted(included)
             for warning in caught:          # with the page they come from
                 log.warning(f'{page.label}: {warning.message}')
-            if meta.get('source_registry'):
-                from agent.provenance import apply_provenance
-                output_html = apply_provenance(output_html, meta['source_registry'])
-            elif meta.get('source_map'):
+            if meta.get('source_map'):
                 output_html = source_map.apply(output_html, source_map.source_label(
                     page.src, meta['config_directory'], meta['source_directory']))
             if meta.get('feedback'):
@@ -674,7 +655,6 @@ def build_once(args):
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
     # data-lhtml-src="file:line" on the blocks (lib/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
-    meta['verify'] = bool(args.verify)
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
     if args.layout:
         add_layout_plugin(meta)
@@ -846,8 +826,6 @@ def generate_site(meta, selected, built):
     failed += render_lhtml(meta, built, log, failed_before=failed)
     log.ok_elapsed()
 
-    if meta.get('source_registry'):
-        meta['source_registry'].save()
 
     # SASS compilation
     compile_sass(meta, log)

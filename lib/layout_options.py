@@ -11,9 +11,8 @@ DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1
             'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
             'contact_columns': 4, 'contact_rows': 4, 'jobs': 'auto'}
 
-# Options that are not in DEFAULTS: the design rules, and the interactive
-# states, which only --verify reads (agent/).
-OTHER_OPTIONS = {'design_rules': dict, 'interactive': dict}
+# An option that is not in DEFAULTS: the rules of the design checks.
+OTHER_OPTIONS = {'design_rules': dict}
 
 TEXT_OPTIONS = ('root', 'exclude', 'output')
 COUNT_OPTIONS = ('width', 'height', 'threshold', 'max_words', 'min_font',
@@ -59,9 +58,6 @@ def validate(meta, log=None):
     unknown = sorted(set(given) - set(DEFAULTS) - set(OTHER_OPTIONS))
     if unknown and log is not None:
         log.warning(f"layout_report: option(s) ignored, unknown: {', '.join(unknown)}")
-    if 'interactive' in given and not meta.get('verify') and log is not None:
-        log.warning("layout_report: 'interactive' describes states measured by --verify; "
-                    'this build does not read it')
     options = options_of(meta)
     jobs(options)
     for key in TEXT_OPTIONS:

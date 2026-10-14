@@ -58,7 +58,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--verify] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -72,8 +72,6 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--l
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
   --layout             Write a layout report of each page in .layout/ (see below)
-  --verify             --layout with the structured verification of the agent extension
-                       (agent/README.md)
   --render FILE        Render a file as PNG as the slides draw it (an SVG or image at its size,
                        at most the slide; an HTML page at the size of the slide) in
                        .layout/render/ (files outside the project: _outside/); no build
@@ -258,15 +256,12 @@ static_website_lhtml/
     layout_report.py       # Layout report (--layout, requires puppeteer)
     assets/                # Node scripts of the PDF export and of the layout report
     video_convert/         # Video conversion utilities (ffmpeg)
-  tools/
-    style_profile.py       # Style profile of a corpus of slide decks
   tests/                   # pytest suite
   themes/
     webpage-frame/         # Default web page theme
     slides/                # Presentation slides theme
     slides-pdf/            # PDF export slides theme
   docs/agents.md           # Procedure for AI agents writing slides (copied into .structure/)
-  agent/                   # Agent extension: --verify (agent/README.md)
   example/                 # Example source content
 ```
 
@@ -900,34 +895,6 @@ plugin_arg:
 A check set to `null` is disabled; an unknown key or an invalid limit is an
 error of the configuration.
 
-## Style Profile (writing slides in the style of an author)
-
-`tools/style_profile.py` describes what the slides of a corpus usually look
-like and how they are written, so that an LLM can write new slides in the
-same style:
-
-```bash
-python tools/style_profile.py ../course_a ../course_b --output style/
-```
-
-Each argument is a slide project with `src/<chapter>/` and the generated
-`_site/<chapter>/html/` (nothing is regenerated: the pages are measured as
-they are, like `--layout`). Measurements are cached in `style/pages/` and
-redone only for pages generated since (`-f` to force, `-j` for the number of
-browsers in parallel). A slide copied in several chapters counts once.
-
-Output:
-
-- `style.md`: usual values of each deck (title, columns, font sizes, words
-  per slide), layout types of the slides (`section`, `media`, `media_row`,
-  `columns`, `text_left_media_right`, `text_then_media`, `text_code`,
-  `code_media`, `text`, ...) with their frequency in each deck, typical
-  measures and examples (path and LHTML source), and the LHTML idioms of
-  the sources (block tags, spacers, most used style properties and values,
-  most frequent block openers)
-- `types/<type>.png`: thumbnails of 16 examples of each layout type
-- `style.json`: the same data, with the type and measures of every slide
-
 ## Error Reporting
 
 Errors during LHTML conversion show the file path and line number:
@@ -965,9 +932,6 @@ The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and
 ```bash
 LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_integration.py tests/test_development.py -q
 ```
-
-The tests of the agent extension are in `agent/tests` (see `agent/README.md`);
-the workflow runs them too (`python -m pytest tests agent/tests -q`).
 
 The browser and HTTP tests are opt-in locally because they launch Chrome and bind a localhost port. When updating dependencies, update `requirements-lock.txt`, install into a fresh environment, and run both the unit suite and smoke tests before committing. Optional PDF/SASS system tools are not part of the Python lock.
 
