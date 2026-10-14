@@ -24,6 +24,10 @@ RUNTIME_KEYS = frozenset((
     'loaded_design', 'macros',      # the design (lib/design.py) and its macros for LHTML
     'lint_findings',                # {source path: [finding]} of the generated pages (lib/lint.py)
     'measure',                      # --only: the pages the layout report measures again
+    'verify',                       # --verify: the agent extension runs (agent/)
+    'source_registry', 'source_roots',          # the sources read by each page (lib/tracking.py)
+    'dependency_contexts', 'dependency_store', 'dependency_measure',
+    'page_contexts',                # what each page depends on (lib/dependencies.py)
     'headings',                     # {page: [heading]} written by plugins/title_submenu.py
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet

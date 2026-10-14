@@ -22,7 +22,7 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: npm ci
       - name: Unit and regression tests
-        run: python -m pytest tests -q
+        run: python -m pytest tests agent/tests -q
       - name: Chrome layout smoke test
         env:
           LHTML_BROWSER_TEST: '1'
@@ -30,4 +30,4 @@ jobs:
         # Chrome keeps its sandbox; allow its user namespace on Ubuntu runners.
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          python -m pytest tests/test_layout_integration.py tests/test_development.py -q
+          python -m pytest tests/test_layout_integration.py tests/test_development.py agent/tests/test_verify_integration.py -q

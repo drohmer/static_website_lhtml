@@ -59,16 +59,22 @@ def marker(line):
     return f'{OPEN}{line}{CLOSE}'
 
 
-def add_markers(text, tags=source_scan.value_tags()):
+def add_markers(text, tags=source_scan.value_tags(), marker_for=marker, mark_protected=False):
     """The template `text` with a marker of its line number on each line
     where LHTML reads it as before (see the module documentation)."""
     found = source_scan.zones(text)
     skipped = source_scan.multiline_lines(text, found) | _value_block_lines(text, found)
     offsets = source_scan.line_offsets(text)
+    protected_starts = {text.count('\n', 0, z.start) for z in found
+                        if z.kind in ('code', 'verbatim', 'math', 'raw', 'tag')
+                        and '\n' in text[z.start:z.end]} if mark_protected else set()
     commented = {text.count('\n', 0, z.start) for z in found if z.kind == source_scan.LHTML_COMMENT}
     out = []
     for index, line in enumerate(text.split('\n')):
         number = index + 1
+        if index in protected_starts:
+            out.append(marker_for(number) + line)
+            continue
         if (index in skipped or index in commented or not line.strip() or CLOSER.match(line)
                 or JINJA_LINE.match(line) or EMPTY_ITEM.match(line)):
             out.append(line)
@@ -78,14 +84,14 @@ def add_markers(text, tags=source_scan.value_tags()):
         trailing = TRAILING_TAG.search(stripped)
         if last and last.group(1) in tags and not stripped.endswith((']', ')', '}')):
             # the line ends with the value of a tag: marker at its start, if the tag starts it
-            out.append(marker(number) + line if line.lstrip().startswith(last.group(0)) else line)
+            out.append(marker_for(number) + line if line.lstrip().startswith(last.group(0)) else line)
         elif (stripped.endswith('::') and stripped[:-2].count('::') >= 1 and not stripped.endswith('::::')
               and not _in_zone(found, offsets[index] + len(stripped) - 2)):
-            out.append(stripped[:-2] + marker(number) + '::' + line[len(stripped):])
+            out.append(stripped[:-2] + marker_for(number) + '::' + line[len(stripped):])
         elif trailing and _is_tag_zone(found, offsets[index] + trailing.start()):
-            out.append(line[:trailing.start()] + marker(number) + line[trailing.start():])
+            out.append(line[:trailing.start()] + marker_for(number) + line[trailing.start():])
         else:
-            out.append(stripped + marker(number) + line[len(stripped):])
+            out.append(stripped + marker_for(number) + line[len(stripped):])
     return '\n'.join(out)
 
 
@@ -130,11 +136,12 @@ class _After(int):
 
 
 class _Element:
-    __slots__ = ('tag', 'offset', 'items', 'first')
+    __slots__ = ('tag', 'offset', 'items', 'first', 'texts')
 
     def __init__(self, tag, offset):
         self.tag, self.offset = tag, offset
         self.items = []         # in order: child _Element, or the line (int, _After) of a marker in its text
+        self.texts = []
         self.first = None       # line of the first marker inside it
 
     def children(self):
@@ -187,6 +194,7 @@ class _Tree(HTMLParser):
 
     def handle_data(self, data):
         if self.stack:
+            self.stack[-1].texts.append(data)
             items = self.stack[-1].items
             for m in MARKER.finditer(data):
                 after = (not self.new_line and '\n' not in data[:m.start()] and items

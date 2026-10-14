@@ -114,3 +114,18 @@ class AssetsBuildTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_figure_cache_invalidated_by_adjacent_data(tmp_path):
+    from lib import figures
+    folder = tmp_path / 'assets'
+    folder.mkdir()
+    (folder / 'data.txt').write_text('first')
+    (folder / 'plot.svg.py').write_text(
+        'import sys\nfrom pathlib import Path\nPath(sys.argv[1]).write_text(Path("data.txt").read_text())\n')
+    cache = tmp_path / '.cache'
+    assert figures.build_figures([folder], cache)[:2] == (1, 0)
+    assert figures.build_figures([folder], cache)[:2] == (0, 1)
+    (folder / 'data.txt').write_text('second')
+    assert figures.build_figures([folder], cache)[:2] == (1, 0)
+    assert (folder / 'plot.svg').read_text() == 'second'

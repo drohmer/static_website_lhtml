@@ -15,6 +15,12 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
 const {launchOptions} = require('./chrome');
+const {localFrames} = require('./frames');
+// interactive states: agent extension, loaded only for the pages that enable them
+let interactiveModule = null;
+function interactive() {
+    return interactiveModule ||= require(path.join(__dirname, '..', '..', 'agent', 'assets', 'interactive_states'));
+}
 const args = require('minimist')(process.argv.slice(2));
 
 const pages = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
@@ -25,6 +31,8 @@ const height = parseInt(args.height || 1080);
 // images: 1 = render, overlay and blocks; render = render only; 0 = none
 const images = String(args.images === undefined ? '1' : args.images);
 const withImages = images !== '0';
+// number of pages measured at the same time (tabs of one browser)
+const jobs = Math.max(1, parseInt(args.jobs || 1) || 1);
 
 const PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4',
                  '#f032e6', '#bfef45', '#469990', '#9a6324', '#800000', '#808000',
@@ -199,7 +207,8 @@ function extractBlocks(rootSelector, excludeSelector) {
         return found;
     }
 
-    function inkRects(el, fontSize, stats, skip = []) {
+    function inkRects(el, fontSize, stats, skip = [], preciseMath = false) {
+        const metrics = preciseMath ? document.createElement("canvas").getContext("2d") : null;
         const rects = [];
         const own = (e) => {
             if (e.tagName === 'IMG') rects.push(...imageShape(e).cells);
@@ -214,7 +223,21 @@ function extractBlocks(rootSelector, excludeSelector) {
             if (!node.textContent.trim() || isHiddenText(node.parentElement) || inside(node, skip)) continue;
             if (stats) countText(node, stats);
             range.selectNodeContents(node);
-            for (const r of range.getClientRects()) rects.push(toRect(r, 'text'));
+            for (const r of range.getClientRects()) {
+                let drawn = toRect(r, 'text');
+                if (metrics && node.parentElement.closest('.katex')) {
+                    // KaTeX size fonts reserve very tall line boxes for delimiters.
+                    // Canvas font metrics locate the actual glyphs around the baseline.
+                    metrics.font = getComputedStyle(node.parentElement).font;
+                    const m = metrics.measureText(node.textContent);
+                    if (Number.isFinite(m.fontBoundingBoxDescent) && m.actualBoundingBoxAscent + m.actualBoundingBoxDescent > 0) {
+                        const baseline = drawn.y + drawn.h - m.fontBoundingBoxDescent;
+                        drawn.y = round(baseline - m.actualBoundingBoxAscent);
+                        drawn.h = round(m.actualBoundingBoxAscent + m.actualBoundingBoxDescent);
+                    }
+                }
+                rects.push(drawn);
+            }
             count++;
         }
         const descendants = el.getElementsByTagName('*');
@@ -224,7 +247,7 @@ function extractBlocks(rootSelector, excludeSelector) {
             if (cs.display === 'none' || cs.visibility === 'hidden') continue;
             own(descendants[i]);
         }
-        return mergeRects(rects, (t) => t === 'text' ? Math.max(8, fontSize) : 0);
+        return mergeRects(rects, (t) => t === 'text' && !skip.length ? Math.max(8, fontSize) : 0);
     }
 
     // Text statistics of a block: prose words (math and code excluded),
@@ -303,11 +326,14 @@ function extractBlocks(rootSelector, excludeSelector) {
             delete box.t;
             const content = img.tagName === 'IMG' ? {...imageShape(img).content} : {...box};
             delete content.t;
-            return {src: basename(src), w: box.w, h: box.h, tag: img.tagName.toLowerCase(),
+            return {src: basename(src), url: src, w: box.w, h: box.h, tag: img.tagName.toLowerCase(),
                     natural_w: img.naturalWidth || img.videoWidth, natural_h: img.naturalHeight || img.videoHeight,
                     vector: /\.svgz?(\?|#|$)/i.test(src), box, content, drawn: drawnRect(img, box)};
         });
     }
+
+    // Elements whose own text is measured line by line (WRAPPED, SHORT WRAPPED)
+    const LINE_ITEMS = 'li, h1, h2, h3, h4, h5, h6, p, .credit, .ref';
 
     // Lines of the own text of an element (not of its nested lists): the
     // distinct line boxes of its text nodes.
@@ -321,7 +347,7 @@ function extractBlocks(rootSelector, excludeSelector) {
         const formulas = new Set();
         while ((node = walker.nextNode())) {
             if (!node.textContent.trim() || isHiddenText(node.parentElement)) continue;
-            const owner = node.parentElement.closest('li, h1, h2, h3, h4, h5, h6, .credit');
+            const owner = node.parentElement.closest(LINE_ITEMS);
             if (owner !== el) continue;
             // a formula is one box (its sums, indices and fractions are not lines)
             const formula = node.parentElement.closest('.katex');
@@ -345,17 +371,35 @@ function extractBlocks(rootSelector, excludeSelector) {
         return lines.map(l => round(l.x1 - l.x0));
     }
 
-    // Titles, list items and credits written on several lines.
+    // The text of an element as read on the slide: a KaTeX formula once, without
+    // its hidden MathML copy.
+    function visibleText(el) {
+        const copy = el.cloneNode(true);
+        copy.querySelectorAll('.katex-mathml').forEach(m => m.remove());
+        return copy.textContent;
+    }
+
+    // Titles, list items, paragraphs, credits and references written on
+    // several lines: the width of each line, the width the text would take on
+    // one line (the sum of its lines and of the spaces between them), the
+    // width available in the element and where that width starts.
     function wrappedItems(el) {
-        const items = el.matches('li, h1, h2, h3, h4, h5, h6, .credit') ? [el] : [];
-        items.push(...el.querySelectorAll('li, h1, h2, h3, h4, h5, h6, .credit'));
+        const items = el.matches(LINE_ITEMS) ? [el] : [];
+        items.push(...el.querySelectorAll(LINE_ITEMS));
         const found = [];
         for (const item of items.slice(0, 200)) {
             const widths = ownLines(item);
             if (widths.length > 1) {
-                found.push({tag: item.tagName.toLowerCase() + (item.classList.contains('credit') ? '.credit' : ''),
-                            text: excerpt(item.innerText, 50), lines: widths.length,
-                            first_w: widths[0], last_w: widths[widths.length - 1]});
+                const cs = getComputedStyle(item);
+                const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+                const r = item.getBoundingClientRect();
+                const space = 0.25 * (parseFloat(cs.fontSize) || 16);
+                const tag = item.tagName.toLowerCase() + (item.classList.contains('credit') ? '.credit'
+                    : item.classList.contains('ref') ? '.ref' : '');
+                found.push({tag, text: excerpt(visibleText(item), 50), lines: widths.length,
+                            first_w: widths[0], last_w: widths[widths.length - 1],
+                            natural_w: round(widths.reduce((a, b) => a + b, 0) + space * (widths.length - 1)),
+                            avail_w: round(r.width - padL - padR), x: round(r.left + padL)});
             }
         }
         return found;
@@ -537,13 +581,13 @@ function extractBlocks(rootSelector, excludeSelector) {
         return found;
     }
 
-    function describe(el, skip = []) {
+    function describe(el, skip = [], details = true) {
         const cs = getComputedStyle(el);
         const box = toRect(el.getBoundingClientRect());
         delete box.t;
         const fontSize = parseFloat(cs.fontSize) || 16;
         const stats = newStats();
-        const ink = inkRects(el, fontSize, stats, skip);
+        const ink = inkRects(el, fontSize, stats, skip, !details);
         const visual = unionRects(ink);
         const media = mediaInfo(el, skip);
         elementStats(el, stats);
@@ -560,10 +604,18 @@ function extractBlocks(rootSelector, excludeSelector) {
         return {
             kind: visual ? kindOf(el) : 'spacer',
             signature,
+            dom_id: el.id || null,
+            source,
+            stable_id: el.id && source ? `explicit:${source.slice(0, source.lastIndexOf(':'))}:${el.id}`
+                : marked?.getAttribute('data-lhtml-id') || null,
+            provenance: marked?.hasAttribute('data-lhtml-provenance')
+                ? JSON.parse(marked.getAttribute('data-lhtml-provenance')) : null,
             line: source ? parseInt(source.split(':').pop()) || null : null,
             box,
             visual,
             ink,
+            unverified_canvas: (el.matches('canvas') ? [el] : [...el.querySelectorAll('canvas')])
+                .some(c => !inside(c, skip) && isVisible(c)),
             position: cs.position,
             text_align: cs.textAlign,
             margin: ['Top', 'Right', 'Bottom', 'Left'].map(s => round(parseFloat(cs['margin' + s]) || 0)),
@@ -571,9 +623,9 @@ function extractBlocks(rootSelector, excludeSelector) {
             overflow: cs.overflow,
             scroll: {w: el.scrollWidth, h: el.scrollHeight, client_w: el.clientWidth, client_h: el.clientHeight},
             media,
-            wrapped: wrappedItems(el),
-            rows: figureRows(el),
-            svg: svgFigures(el, skip),
+            wrapped: details ? wrappedItems(el) : [],
+            rows: details ? figureRows(el) : [],
+            svg: details ? svgFigures(el, skip) : [],
             text: stats,
             // overlap marked as intentional in the source, e.g. ::(.overlay)[...]
             intentional: el.classList.contains('overlay'),
@@ -603,7 +655,19 @@ function extractBlocks(rootSelector, excludeSelector) {
             const s = elementStats(n, newStats());
             stats.formulas += s.formulas; stats.code_lines += s.code_lines; stats.items += s.items;
         }
-        const block = {kind: 'text', signature: `text "${excerpt(nodes.map(n => n.textContent).join(' '))}"`,
+        const marked = nodes.filter(n => n.nodeType === Node.ELEMENT_NODE)
+            .map(n => n.hasAttribute('data-lhtml-src') ? n : n.querySelector('[data-lhtml-src]')).find(Boolean);
+        const textValue = clean(nodes.map(n => n.textContent).join(' '));
+        const free = JSON.parse(root.getAttribute('data-lhtml-free-text') || '[]')
+            .find(row => textValue.includes(row.text));
+        const source = marked?.getAttribute('data-lhtml-src') || free?.source || null;
+        const stable_id = marked?.getAttribute('data-lhtml-id') || free?.stable_id || null;
+        const provenance = marked?.hasAttribute('data-lhtml-provenance')
+            ? JSON.parse(marked.getAttribute('data-lhtml-provenance')) : free?.provenance || null;
+        const freeStats = newStats();
+        for (const n of nodes) if (n.nodeType === Node.TEXT_NODE && clean(n.textContent)) countText(n, freeStats);
+        const block = {design_text: freeStats, source, stable_id, provenance, line: source ? parseInt(source.split(':').pop()) : null,
+                       design_role: 'body', kind: 'text', signature: `text "${excerpt(nodes.map(n => n.textContent).join(' '))}"`,
                        box: visual, visual, ink, position: 'static', margin: [0, 0, 0, 0],
                        text_align: getComputedStyle(root).textAlign,
                        font_size: round(fontSize), overflow: 'visible', scroll: null, media: [],
@@ -635,6 +699,72 @@ function extractBlocks(rootSelector, excludeSelector) {
     flushRun();
     blocks.forEach((b, i) => { b.id = i + 1; });
     blocks.forEach(b => { if (b.inside) b.inside = b.inside.id; });
+
+    // Owned ink: semantic children are removed from their parent's measurement.
+    // Keep aggregate blocks unchanged for occupancy and existing reports.
+    const subblocks = [], selected = new Map();
+    const atomic = 'svg, img, video, canvas, iframe, pre, .katex';
+    const semantic = '.col, .column, .credit, .legende, figure, figcaption, ul, ol, li, p, h1, h2, h3, h4, blockquote, td, th, pre, .katex, img, svg, video, canvas, iframe, [data-lhtml-src]';
+    let truncated = false;
+    function visit(el, parent, owner) {
+        if (!isVisible(el) || el.matches('script, style, noscript, template')
+            || (excludeSelector && el.matches(excludeSelector))) return;
+        let current = parent;
+        if (!parent || el.matches(semantic)) {
+            if (subblocks.length >= 400) { truncated = true; return; }
+            const role = el.matches('.katex') ? 'formula' : el.matches('.col, .column') ? 'column'
+                : el.matches('.credit, .legende, figcaption') ? 'caption' : el.tagName.toLowerCase();
+            current = {el, children: [], parent, owner, role, id: 's' + (subblocks.length + 1)};
+            if (parent) parent.children.push(el);
+            subblocks.push(current); selected.set(el, current);
+        }
+        if (!el.matches(atomic)) for (const child of el.children) visit(child, current, owner);
+    }
+    for (const [el, block] of blockOf) {
+        if (!block.inside) visit(el, null, block.id);
+    }
+    const internal = subblocks.map(n => {
+        const b = describe(n.el, n.children, false);
+        const direct = n.el.hasAttribute('data-lhtml-src');
+        const origin = direct ? n.el : n.el.closest('[data-lhtml-src]');
+        if (origin) {
+            b.source = origin.getAttribute('data-lhtml-src');
+            b.line = parseInt(b.source.split(':').pop()) || null;
+            b.provenance = JSON.parse(origin.getAttribute('data-lhtml-provenance') || 'null');
+            const peers = n.parent ? n.parent.children.filter(e => selected.get(e).role === n.role) : [n.el];
+            b.stable_id = (origin.getAttribute('data-lhtml-id') || b.source)
+                + ':internal:' + n.role + ':' + peers.indexOf(n.el);
+        }
+        const declared = n.el.closest('[data-lhtml-role]')?.getAttribute('data-lhtml-role');
+        const roles = ['title', 'heading', 'body', 'caption', 'reference', 'code', 'formula', 'figure', 'decorative'];
+        b.design_role = roles.includes(declared) ? declared
+            : n.el.closest('.katex') ? 'formula' : n.el.closest('pre, .code') ? 'code'
+            : n.el.closest('.source, .reference') ? 'reference'
+            : n.el.closest('.credit, .legende, figcaption') ? 'caption'
+            : n.el.matches('img, svg, video, canvas, iframe') ? 'figure'
+            : n.el.closest('h1') ? 'title' : n.el.closest('h2, h3, h4, h5, h6') ? 'heading' : 'body';
+        b.figure_container = n.el.matches('figure, .media');
+        b.design_lines = 0;
+        if (n.el.matches('h1')) {
+            const ys = [];
+            for (const r of inkRects(n.el, b.font_size, null).filter(r => r.t === 'text')) {
+                if (!ys.some(y => Math.abs(y - r.y) < b.font_size * .5)) ys.push(r.y);
+            }
+            b.design_lines = ys.length;
+        }
+        b.source_precision = direct ? 'direct' : 'inherited';
+        b.id = n.id; b.parent = n.parent?.id || null; b.owner = n.owner; b.role = n.role;
+        b.intentional = !!n.el.closest('.overlay');
+        b.legacy_block = ownerOfInternal(n.el).id;
+        const cs = getComputedStyle(n.el), r = n.el.getBoundingClientRect();
+        b.frame = {x: round(r.left + scrollX + parseFloat(cs.borderLeftWidth)),
+                   y: round(r.top + scrollY + parseFloat(cs.borderTopWidth)),
+                   w: n.el.clientWidth, h: n.el.clientHeight};
+        return b;
+    });
+    function ownerOfInternal(el) {
+        for (let e = el; e; e = e.parentElement) if (blockOf.has(e)) return blockOf.get(e);
+    }
 
     // Hidden text: along each line of text, find the topmost element that
     // actually paints at that point (opaque image pixel, background,
@@ -717,7 +847,9 @@ function extractBlocks(rootSelector, excludeSelector) {
         for (const part of parts) reserved.push({...part, name});
     }
     return {root: document.querySelector(rootSelector) ? rootSelector : 'body', title: document.title,
-            viewport: {w: innerWidth, h: innerHeight}, area, blocks, reserved,
+            viewport: {w: innerWidth, h: innerHeight},
+            layout_name: [...document.body.classList].find(c => c.startsWith('layout-'))?.slice(7) || 'flow',
+            design_measurement: {roles: true, title_lines: true}, area, blocks, subblocks: internal, internal_measurement: {truncated, limit: 400, measured: internal.length}, reserved,
             scrolling: !framed && document.documentElement.scrollHeight > innerHeight + 1};
 }
 
@@ -740,9 +872,9 @@ function drawOverlay(blocks, palette, filled) {
         layer.appendChild(d);
         return d;
     };
-    for (const b of blocks) {
+    for (const [index, b] of blocks.entries()) {
         if (b.kind === 'spacer') continue;
-        const color = palette[(b.id - 1) % palette.length];
+        const color = palette[index % palette.length];
         for (const r of (b.ink && b.ink.length ? b.ink : [b.visual || b.box])) {
             rectDiv(r, filled ? {background: color, opacity: '0.7'} : {border: `2px solid ${color}`});
         }
@@ -763,17 +895,26 @@ function drawOverlay(blocks, palette, filled) {
 async function freezeMedia(page) {
     await page.evaluate(async () => {
         for (const a of document.getAnimations()) { try { a.pause(); a.currentTime = 0; } catch (e) { /* ignore */ } }
+        // wait for the size of each video (its box depends on it), then for its
+        // first frame; a video already at 0 sends no 'seeked'
         await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
             v.autoplay = false;
             v.pause();
-            const timer = setTimeout(resolve, 3000);
+            const timer = setTimeout(resolve, 10000);
             const done = () => { clearTimeout(timer); resolve(); };
-            if (v.readyState >= 2 && v.currentTime === 0) return done();
-            v.addEventListener('seeked', done, {once: true});
             v.addEventListener('error', done, {once: true});
-            if (v.readyState >= 1) v.currentTime = 0;
-            else v.addEventListener('loadedmetadata', () => { v.currentTime = 0; }, {once: true});
+            const first = () => {
+                if (v.currentTime !== 0) {
+                    v.addEventListener('seeked', done, {once: true});
+                    v.currentTime = 0;
+                } else if (v.readyState >= 2) done();
+                else v.addEventListener('loadeddata', done, {once: true});
+            };
+            if (v.readyState >= 1) first();
+            else v.addEventListener('loadedmetadata', first, {once: true});
         })));
+        const gifs = [...document.images].filter(i => /\.gif(\?|#|$)/i.test(i.currentSrc || i.src));
+        for (const img of gifs) img.dataset.layoutGifUrl = img.currentSrc || img.src;
         if (!('ImageDecoder' in window)) return;
         const load = (url) => new Promise((resolve, reject) => {      // fetch() does not read file://
             const xhr = new XMLHttpRequest();
@@ -783,14 +924,15 @@ async function freezeMedia(page) {
             xhr.onerror = reject;
             xhr.send();
         });
-        for (const img of [...document.images].filter(i => /\.gif(\?|#|$)/i.test(i.currentSrc || i.src))) {
+        for (const img of gifs) {
             try {
+                img.dataset.layoutGifUrl = img.currentSrc || img.src;
                 const decoder = new ImageDecoder({data: await load(img.currentSrc || img.src), type: 'image/gif'});
                 const {image} = await decoder.decode({frameIndex: 0});
                 const canvas = document.createElement('canvas');
                 canvas.width = image.displayWidth; canvas.height = image.displayHeight;
                 canvas.getContext('2d').drawImage(image, 0, 0);
-                image.close();
+                image.close(); decoder.close();
                 img.dataset.layoutSrc = img.getAttribute('src');
                 await new Promise(resolve => { img.onload = img.onerror = resolve; img.src = canvas.toDataURL(); });
             } catch (e) { /* the GIF as it is */ }
@@ -901,52 +1043,174 @@ async function loadSvgImages(page) {
 
 
 async function waitForContent(page) {
-    await page.evaluate(async () => {
+    const explicit = await page.evaluate(async () => {
+        const contract = window.__lhtmlReady;
+        const trusted = contract?.version === 1 && contract.trusted();
+        if (trusted) await contract.ready();
         await document.fonts.ready;
         await Promise.all([...document.images].filter(img => !img.complete).map(img =>
             new Promise(resolve => { img.onload = img.onerror = resolve; })));
+        return trusted && !document.querySelector('video, audio');
     });
+    // Legacy apps retain their settling period; explicit readiness avoids it.
+    if (!explicit)
     // let deferred scripts (KaTeX auto-render, theme scripts) finish
     await new Promise(resolve => setTimeout(resolve, 150));
 }
 
 
 (async () => {
-    const browser = await puppeteer.launch(launchOptions(args, {headless: true, args: ['--allow-file-access-from-files']}));
+    // pages are independent: `jobs` tabs of one browser measure them in parallel;
+    // background tabs are not throttled (timers, rendering)
+    const browser = await puppeteer.launch(launchOptions(args, {headless: true,
+        args: ['--allow-file-access-from-files',
+               '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+               '--disable-backgrounding-occluded-windows']}));
+    let failures = 0, next = 0, done = 0;
+    await Promise.all(Array.from({length: Math.min(jobs, pages.length) || 1}, () => worker()));
+    console.log(`progress ${pages.length} ${pages.length} done`);
+    await browser.close();
+    process.exit(0);
+
+  async function worker() {
     const page = await browser.newPage();
     await page.setViewport({width, height});
-    let failures = 0;
-    for (const [index, entry] of pages.entries()) {
+    let events = [];
+    let resources = new Set();
+    page.on('request', request => resources.add(request.url()));
+    page.on('pageerror', error => events.push({type: 'javascript', message: error.message}));
+    page.on('requestfailed', request => events.push({type: 'request', url: request.url(),
+        message: request.failure()?.errorText || 'Request failed'}));
+    page.on('response', response => { if (response.status() >= 400) events.push({type: 'http',
+        url: response.url(), status: response.status()}); });
+    let clockScript = null;
+    async function ready() {
+        let timer;
+        try {
+            await Promise.race([Promise.all((await localFrames(page)).map(frame => waitForContent(frame))),
+                new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Content readiness timeout')), 15000); })]);
+        } finally { clearTimeout(timer); }
+    }
+    async function measure(frame, checkedFrames) {
+        const layout = await frame.evaluate(extractBlocks, frame === page.mainFrame() ? rootSelector : 'body',
+                                           frame === page.mainFrame() ? excludeSelector : '');
+        const health = await frame.evaluate(checkedFrames => ({
+            images: [...document.images].filter(i => !i.complete || !i.naturalWidth).map(i => ({type: 'image', url: i.currentSrc || i.src})),
+            fonts: [...document.fonts].filter(f => f.status === 'error').map(f => ({type: 'font', family: f.family})),
+            math: [...document.querySelectorAll('.katex-error')].map(e => ({type: 'math', message: e.getAttribute('title') || e.textContent})),
+            video: [...document.querySelectorAll('video')].filter(v => v.error).map(v => ({type: 'video', url: v.src, message: v.error.message})),
+            clock: (window.__lhtmlVerificationClock?.errors || []).map(message => ({type: 'javascript', message})),
+            unchecked: [...document.querySelectorAll('iframe, canvas')]
+                .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 &&
+                    !(e.tagName === 'IFRAME' && checkedFrames.includes(e.src || 'about:srcdoc')); })
+                .map(e => ({type: e.tagName.toLowerCase(), url: e.src || null,
+                    reason: e.tagName === 'CANVAS' ? 'Raster geometry captured; canvas semantics are not verified' : 'Frame inaccessible or not sampled'}))
+        }), checkedFrames);
+        const errors = [...events, ...health.images, ...health.fonts, ...health.math, ...health.video, ...health.clock];
+        layout.media_samples = await frame.evaluate(() => window.__lhtmlMediaSamples || []);
+        layout.render_health = {status: errors.length ? 'incomplete' : 'ready', errors, unchecked: health.unchecked};
+        return layout;
+    }
+    async function snapshot(out, withFrames) {
+        fs.mkdirSync(out, {recursive: true});
+        await page.evaluate(() => document.getElementById('__layout_overlay')?.remove());
+        const frames = withFrames ? (await localFrames(page)).filter(f => f !== page.mainFrame()) : [];
+        const layout = await measure(page.mainFrame(), frames.map(f => f.url()));
+        layout.frame_layouts = [];
+        if (withImages) await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'render.png'), clip: {x: 0, y: 0, width, height}});
+        for (const [i, frame] of frames.entries()) {
+            const handle = await frame.frameElement();
+            const box = await handle.boundingBox();
+            const origin = await handle.evaluate(el => el.closest('[data-lhtml-src]')?.getAttribute('data-lhtml-src') || null);
+            await loadSvgImages(frame);
+            const inner = await measure(frame, []);
+            inner.source = frame.url();
+            const id = 'f' + (i + 1), folder = path.join(out, 'frames', id);
+            fs.mkdirSync(folder, {recursive: true});
+            if (withImages) await handle.screenshot({optimizeForSpeed: true, path: path.join(folder, 'render.png')});
+            await handle.dispose();
+            layout.frame_layouts.push({id, url: frame.url(), box, origin, layout: inner});
+        }
+        if (withImages && images !== 'render') {
+            const clip = {x: 0, y: 0, width, height};
+            await page.evaluate(drawOverlay, layout.subblocks, PALETTE, false);
+            await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'internal-overlay.png'), clip});
+            await page.evaluate(drawOverlay, layout.blocks, PALETTE, false);
+            await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'overlay.png'), clip});
+            await page.evaluate(drawOverlay, layout.blocks, PALETTE, true);
+            await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'blocks.png'), clip});
+            await page.evaluate(() => document.getElementById('__layout_overlay')?.remove());
+        }
+        return layout;
+    }
+    while (next < pages.length) {
+        const entry = pages[next++];
         // progress on stdout, read by layout_report.py: "progress <done> <total> <page>"
-        console.log(`progress ${index} ${pages.length} ${entry.name || entry.html}`);
+        console.log(`progress ${done} ${pages.length} ${entry.name || entry.html}`);
+        events = [];
+        resources = new Set();
         try {
             fs.mkdirSync(entry.out, {recursive: true});
+            if (clockScript) { await page.removeScriptToEvaluateOnNewDocument(clockScript.identifier); clockScript = null; }
+            if (entry.interactive?.enabled) clockScript = await page.evaluateOnNewDocument(interactive().installClock);
+            // outputs of a previous --verify (agent extension): written again by --verify only
+            for (const name of ['states', 'frames', 'issues', 'verification.json', 'changes.json'])
+                fs.rmSync(path.join(entry.out, name), {recursive: true, force: true});
             // pages with streaming media (autoplay videos, iframes) never become
             // idle: wait for the load event, then for a short network idle
             await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 60000});
-            await page.waitForNetworkIdle({idleTime: 500, timeout: 5000}).catch(() => {});
-            await waitForContent(page);
+            const trustedFrames = await Promise.all((await localFrames(page)).map(frame =>
+                frame.evaluate(() => window.__lhtmlReady?.version === 1 && window.__lhtmlReady.trusted() && !document.querySelector('video, audio') && ![...document.querySelectorAll('iframe')].some(el => /^https?:/.test(el.src)))));
+            if (!trustedFrames.length || trustedFrames.some(trusted => !trusted))
+                await page.waitForNetworkIdle({idleTime: 500, timeout: 5000}).catch(() => {});
+            await ready();
             await freezeMedia(page);
             await loadSvgImages(page);
-            const layout = await page.evaluate(extractBlocks, rootSelector, excludeSelector);
+            const options = entry.interactive || {enabled: false};
+            // --verify (agent extension) measures the local frames, with or without interactive states
+            const withFrames = entry.interactive !== undefined;
+            if (withFrames) {
+                for (const frame of await localFrames(page)) {
+                    if (frame !== page.mainFrame()) await freezeMedia(frame);
+                }
+            }
+            if (options.enabled) await interactive().advance(page, 0);
+            const layout = await snapshot(entry.out, withFrames);
+            if (options.enabled) {
+                const discovery = await interactive().discover(page, options);
+                layout.interactive = {...discovery, enabled: true, states: [], exhaustive: false,
+                    capabilities: {raf_clock: true, css_timeline: true, video_seek: true, gif_frames: true,
+                        native_timers: false, random_seed: false, canvas_semantics: false}};
+                delete layout.interactive.plans;
+                for (const plan of discovery.plans) {
+                    const out = path.join(entry.out, 'states', plan.name);
+                    const state = {id: plan.name, plan, journal: [], status: 'failed'};
+                    try {
+                        events = [];
+                        await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 30000});
+                        await ready();
+                        for (const frame of await localFrames(page)) await freezeMedia(frame);
+                        await interactive().advance(page, 0);
+                        state.journal = await interactive().apply(page, plan, state.journal, ready);
+                        await loadSvgImages(page);
+                        state.layout = await snapshot(out, true);
+                        state.status = 'measured';
+                    } catch (error) {
+                        state.error = {type: 'interactive_state', message: error.message};
+                        state.render_health = {status: 'failed', errors: [state.error], unchecked: []};
+                    }
+                    layout.interactive.states.push(state);
+                }
+            }
+            layout.resources = [...resources].filter(url => !url.startsWith('data:'));
             fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
-            if (withImages) {
-                const clip = {x: 0, y: 0, width, height};
-                await page.screenshot({path: path.join(entry.out, 'render.png'), clip});
-            }
-            if (withImages && images !== 'render') {
-                const clip = {x: 0, y: 0, width, height};
-                await page.evaluate(drawOverlay, layout.blocks, PALETTE, false);
-                await page.screenshot({path: path.join(entry.out, 'overlay.png'), clip});
-                await page.evaluate(drawOverlay, layout.blocks, PALETTE, true);
-                await page.screenshot({path: path.join(entry.out, 'blocks.png'), clip});
-            }
+
         } catch (e) {
             failures += 1;
             console.error(`layout_measure: ${entry.html}: ${e.message}`);
         }
+        done += 1;
     }
-    console.log(`progress ${pages.length} ${pages.length} done`);
-    await browser.close();
-    process.exit(failures ? 1 : 0);
+    await page.close();
+  }
 })();

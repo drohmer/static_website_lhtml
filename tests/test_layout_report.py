@@ -5,6 +5,8 @@ import importlib.util
 import os
 import sys
 
+import pytest
+
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, ROOT)
 spec = importlib.util.spec_from_file_location('layout_report', os.path.join(ROOT, 'plugins', 'layout_report.py'))
@@ -283,6 +285,24 @@ def test_no_density_warnings_on_scrolling_pages():
     assert analysis['dense'] == [] and analysis['density']['words'] == 900
 
 
+def test_short_wrapped_fits_on_one_line_of_the_slide():
+    area = {'x': 100, 'y': 0, 'w': 1700, 'h': 900}
+    item = lambda text, natural, x=150, **w: dict({'tag': 'li', 'text': text, 'lines': 2, 'first_w': 400,
+                                                  'last_w': 300, 'natural_w': natural, 'avail_w': 420, 'x': x}, **w)
+    b = block(1, 0, 0, 500, 100, wrapped=[
+        item('Fits on the slide', 710),                      # 710 px <= 1800 - 150
+        item('Too long for the slide', 1700),                 # wraps anyway
+        item('Starts far right', 710, x=1200),                # 710 px > 1800 - 1200
+        item('Orphan word', 470, last_w=60),                  # already a WRAPPED item
+        item('Broken in the source', 400),                    # <br>: no width missing
+        {'tag': 'h2', 'text': 'Title', 'lines': 2, 'first_w': 400, 'last_w': 300,
+         'natural_w': 710, 'avail_w': 420, 'x': 150},         # titles: WRAPPED
+        {'tag': 'li', 'text': 'Old report', 'lines': 2, 'first_w': 400, 'last_w': 300}])
+    found = layout_report.find_short_wrapped([b], area)
+    assert [(w['text'], w['missing']) for w in found] == [('Fits on the slide', 290)]
+    assert layout_report._line_item('p') == 'paragraph' and layout_report._line_item('div.ref') == 'reference'
+
+
 def test_content_over_the_navigation():
     blocks = [block(1, 900, 450, 80, 40), block(2, 0, 0, 100, 100)]
     found = layout_report.find_reserved_overlaps(blocks, [{'x': 880, 'y': 440, 'w': 120, 'h': 60, 'name': 'nav'}])
@@ -391,3 +411,23 @@ def test_a_root_that_does_not_match_the_theme_is_reported():
         {'root': '#main'}, log)
     layout_report._warn_degenerate_root([], {'root': 'body'}, log)
     assert warnings == []
+
+
+def test_canvas_bounds_are_candidates_not_proof_of_occluded_text():
+    canvas = block(1, 0, 0, 800, 400, kind='image', unverified_canvas=True,
+                   ink=[{'x': 0, 'y': 0, 'w': 800, 'h': 400, 't': 'media'}])
+    label = block(2, 20, 20, 100, 30, ink=[{'x': 20, 'y': 20, 'w': 100, 'h': 30, 't': 'text'}],
+                  hidden_text=[{'by': 1, 'x': 20, 'y': 20, 'w': 100, 'h': 30, 'samples': 10, 'total': 10}])
+    result = layout_report.analyse({'blocks': [canvas, label], 'area': AREA})
+    assert not result['hidden_text'] and not result['collisions']
+    assert result['canvas_overlaps'][0]['kind'] == 'hidden_text'
+    assert layout_report.count_problems(result) == 0
+    assert layout_report.count_warnings(result) >= 1
+
+
+def test_jobs_option():
+    assert layout_report._jobs({'jobs': 3}) == 3
+    assert 1 <= layout_report._jobs({'jobs': 'auto'}) <= 6 and layout_report._jobs({}) >= 1
+    for bad in (0, -2, 'four', True, 1.5):
+        with pytest.raises(ValueError):
+            layout_report._jobs({'jobs': bad})

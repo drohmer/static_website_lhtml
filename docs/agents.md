@@ -163,6 +163,8 @@ reported.
 - `SMALL FONT`: text too small.
 - `WRAPPED`: a title on several lines, or an item with a few words on its
   second line: shorten it, or give it more width.
+- `SHORT WRAPPED`: text on several lines that would fit on one line of the
+  slide; the report gives the missing width: widen its column, or shorten it.
 - `ROW`: figures side by side not aligned.
 - `SMALL IN ITS BOX` / `CROPPED`: a figure much smaller than its area
   (`media::(.fill)`, or another arrangement), or cut.
@@ -208,3 +210,12 @@ A slide is done when:
   crowded.
 
 Report what was changed and any value kept by hand, with the reason.
+
+## Structured verification (optional)
+
+If the generator has its agent extension (directory `agent/` of
+static_website_lhtml), `--verify` replaces `--layout`: the same report, plus a
+`verification.json` per page with a status (`pass`, `issues`, `incomplete`,
+`failed`), crops of each problem, the interactive states of the demos and a
+queue of the problems grouped by source line. Its procedure is in
+`agent/README.md`. A `pass` never replaces looking at `render.png`.
