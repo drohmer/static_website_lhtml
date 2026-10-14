@@ -40,6 +40,7 @@ import unicodedata
 
 import yaml
 
+from lib.filesystem import read_text
 from lib.generator_tool import STRUCTURE_KEYS
 from lib.pages import is_template, template_name
 
@@ -192,8 +193,9 @@ def load_deck(source, base_directory='.'):
         origin = str(source)
         base_directory = Path(source).resolve().parent
         try:
-            with open(source, encoding='utf-8') as stream:
-                source = yaml.safe_load(stream)
+            source = yaml.safe_load(read_text(source))
+        except ValueError as exc:                   # not UTF-8: the message names the file
+            raise DeckError(str(exc)) from None
         except (OSError, yaml.YAMLError) as exc:
             raise DeckError(f"cannot read '{origin}': {exc}") from exc
     sources, target = {}, None

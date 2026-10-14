@@ -171,14 +171,15 @@ def test_nothing_private_of_the_project_reaches_the_site(tmp_path):
 def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
     """A measurement that cannot run is reported and the build goes on; an
     option of the wrong shape is a configuration error and stops it, before
-    the analysis writes anything."""
+    the build starts (lib/layout_options.py, also used by --check-config)."""
     for bad in ({'design_rules': 42}, {'jobs': 'four'}, {'jobs': 0},
                 {'width': 'wide'}, {'root': ''}, {'images': 'yes'}, {'contact_rows': -1}):
         config, _ = project(tmp_path, plugin_arg={'layout_report': bad})
         result = build(config, '--layout')
         assert result.returncode == 1, (bad, result.stdout + result.stderr)
         said = ' '.join(result.stdout.split())      # independent of the terminal width
-        assert 'layout_report' in said and 'configuration of layout_report.py' in said, (bad, said)
+        assert 'layout_report' in said and list(bad)[0] in said, (bad, said)
+        assert 'Start website generator' not in said, (bad, said)      # refused before the build
         assert not (tmp_path / '.layout').exists(), bad
 
 

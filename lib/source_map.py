@@ -32,6 +32,7 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 import html as html_lib
+import os
 import re
 
 from lib import source_scan
@@ -245,6 +246,25 @@ def block_lines(html):
             continue
         previous = None
     return lines
+
+
+def source_label(src, config_directory, source_directory=None):
+    """How a source is named in the pages: its path relative to the project.
+
+    The marker is read by an author and by their agent, so it must point at
+    a file of the project - never at the machine it was built on. A source
+    outside the configuration directory would give a path climbing out of
+    it ('../../../Users/...'), published in every page of a --layout build:
+    it is named relative to the sources instead, and by its name alone if
+    it is outside them too."""
+    relative = os.path.relpath(src, config_directory)
+    if not relative.startswith('..'):
+        return relative
+    if source_directory:
+        inside = os.path.relpath(src, source_directory)
+        if not inside.startswith('..'):
+            return inside
+    return os.path.basename(src)
 
 
 def apply(html, source):

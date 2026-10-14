@@ -57,11 +57,9 @@ from lib.lint import Linter
 from lib.report_lock import report_lock
 from lib.structure import built_pages, structure
 from lib.configuration import ConfigError, layout_output_directory
+from lib.layout_options import DEFAULTS, jobs, options_of, validate as _validate_options
 
 
-DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
-            'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
-            'contact_columns': 4, 'contact_rows': 4, 'jobs': 'auto'}
 
 FLOW_POSITIONS = ('static', 'relative', 'sticky')
 
@@ -1257,64 +1255,10 @@ span {{ margin-left: 6px; padding: 0 6px; border-radius: 4px; font-weight: bold;
 # Plugin
 # ---------------------------------------------------------------------------
 
-def _jobs(options):
-    """Pages measured at the same time: `jobs` of the configuration, or 'auto'
-    (half of the processors, at most 6)."""
-    jobs = options.get('jobs', 'auto')
-    if jobs in (None, 'auto'):
-        return max(1, min(6, (os.cpu_count() or 2) // 2))
-    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
-        raise ValueError(f"layout_report: jobs must be 'auto' or a positive integer, not {jobs!r}")
-    return jobs
-
-
-# Options of the report that are not in DEFAULTS: the design rules, and the
-# interactive states, which only --verify reads (agent/).
-OTHER_OPTIONS = {'design_rules': dict, 'interactive': dict}
-TEXT_OPTIONS = ('root', 'exclude', 'output')
-COUNT_OPTIONS = ('width', 'height', 'threshold', 'max_words', 'min_font',
-                 'contact_columns', 'contact_rows')
-
-
-def _validate_options(meta, log=None):
-    """Check the options of the report before it starts. A value the report
-    cannot make sense of is a configuration error (ConfigError: the build
-    stops and says which key), not a failure of the measurement. A key it
-    does not know is reported as a warning: it is a typo, and it would
-    otherwise be read, copied and never used."""
-    given = (meta.get('plugin_arg') or {}).get('layout_report') or {}
-    unknown = sorted(set(given) - set(DEFAULTS) - set(OTHER_OPTIONS))
-    if unknown and log is not None:
-        log.warning(f"layout_report: option(s) ignored, unknown: {', '.join(unknown)}")
-    if 'interactive' in given and not meta.get('verify') and log is not None:
-        log.warning("layout_report: 'interactive' describes states measured by --verify; "
-                    'this build does not read it')
-    try:
-        options = _options(meta)
-        _jobs(options)
-        for key in TEXT_OPTIONS:
-            if not isinstance(options[key], str) or not options[key].strip():
-                raise ValueError(f"layout_report: '{key}' must be a non-empty string, "
-                                 f'not {options[key]!r}')
-        for key in COUNT_OPTIONS:
-            if isinstance(options[key], bool) or not isinstance(options[key], int) or options[key] <= 0:
-                raise ValueError(f"layout_report: '{key}' must be a positive integer, "
-                                 f'not {options[key]!r}')
-        if not isinstance(options['images'], bool):
-            raise ValueError(f"layout_report: 'images' must be a boolean, not {options['images']!r}")
-        for key, kind in OTHER_OPTIONS.items():
-            if key in given and not isinstance(given[key], kind):
-                raise ValueError(f"layout_report: '{key}' must be a mapping, not {given[key]!r}")
-    except ValueError as error:
-        raise ConfigError(str(error)) from None
-
-
-def _options(meta):
-    options = dict(DEFAULTS)
-    options.update((meta.get('plugin_arg') or {}).get('layout_report') or {})
-    options['chrome'] = meta.get('chrome')      # configuration key, not a plugin_arg
-    validate_design_rules(options.get('design_rules', {}))
-    return options
+# The options and their validation live in lib/layout_options.py, so that
+# --check-config can refuse what the build would refuse without loading a
+# plugin. These two names are kept for the tests and for style_profile.
+_jobs, _options = jobs, options_of
 
 
 def _run_node(script, arguments, label=None, chrome=None, log=None):

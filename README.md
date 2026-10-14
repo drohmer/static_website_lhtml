@@ -243,6 +243,7 @@ static_website_lhtml/
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
+    layout_options.py      # Options of the layout report, checked by --check-config
     structure.py           # Pages of the site for plugins (structure, built_pages),
                            #   what may be published, and .structure/ of a project
   plugins/

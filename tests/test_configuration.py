@@ -247,3 +247,31 @@ class LoggerTests(unittest.TestCase):
         self.assertIn('[a[b]] [bold]x[/bold]', text)
         self.assertIn('plain', text)
         self.assertNotIn('[info]', text)
+
+
+class CheckConfigTests(unittest.TestCase):
+    """--check-config answers for what the build will refuse, and it loads no
+    plugin to do it (the options live in lib/layout_options.py)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='lhtml-check-')
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        (self.root / 'src').mkdir()
+        (self.root / 'src/a.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
+
+    def check(self, **report):
+        config = self.root / 'configure.yaml'
+        config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                          'plugin': ['plugins/layout_report.py'],
+                                          'plugin_arg': {'layout_report': report}}))
+        return subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--check-config'],
+                              cwd=self.root, capture_output=True, text=True)
+
+    def test_the_options_the_build_refuses_are_refused_here(self):
+        for bad in ({'jobs': 'four'}, {'width': 'wide'}, {'images': 'yes'},
+                    {'design_rules': 42}, {'output': '../../..'}):
+            result = self.check(**bad)
+            self.assertEqual(result.returncode, 1, (bad, result.stdout + result.stderr))
+        self.assertEqual(self.check(jobs=2).returncode, 0)
+        self.assertIn('unknown: widht', ' '.join(self.check(widht=10).stdout.split()))

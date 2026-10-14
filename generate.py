@@ -33,6 +33,7 @@ from lib import source_scan
 from lib import logger
 from lib import pages
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
+from lib import layout_options
 from lib.build_output import staged_site
 from lib.structure import documents_directory
 
@@ -535,7 +536,8 @@ def render_lhtml(meta, selected, log, failed_before=()):
                 from agent.provenance import apply_provenance
                 output_html = apply_provenance(output_html, meta['source_registry'])
             elif meta.get('source_map'):
-                output_html = source_map.apply(output_html, os.path.relpath(page.src, meta['config_directory']))
+                output_html = source_map.apply(output_html, source_map.source_label(
+                    page.src, meta['config_directory'], meta['source_directory']))
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
@@ -685,8 +687,11 @@ def build_once(args):
         if plugin_failures:
             sys.exit(1)
     if any(path.endswith('layout_report.py') for path in context.plugin_paths):
+        # What the report will refuse, refused here: before the build, and
+        # with --check-config, which loads no plugin (lib/layout_options.py).
         try:
             layout_output_directory(meta)
+            layout_options.validate(meta, log)
         except ConfigError as exc:
             log.error(str(exc))
             sys.exit(1)

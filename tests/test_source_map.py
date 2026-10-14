@@ -1,5 +1,6 @@
 """Source map of the pages (lib/source_map.py): markers of the source lines
 through LHTML, then data-lhtml-src="file:line" on the blocks."""
+import os
 import re
 import unittest
 
@@ -146,6 +147,18 @@ class SourceMapTests(unittest.TestCase):
 
     def test_without_markers(self):
         self.assertEqual(source_map.apply('<body><p>x</p></body>', 'a'), '<body><p>x</p></body>')
+
+
+def test_a_source_is_named_relative_to_the_project_never_to_the_machine():
+    """The marker is published in every page of a --layout build: a source
+    outside the configuration directory must not be named by a path that
+    climbs out of it ('../../../Users/...')."""
+    label = source_map.source_label
+    assert label('/p/src/a/index.html.j2', '/p/', '/p/src/') == os.path.join('src', 'a', 'index.html.j2')
+    assert label('/elsewhere/deck/src/b.html.j2', '/p/', '/elsewhere/deck/src/') == 'b.html.j2'
+    assert label('/anywhere/c.html.j2', '/p/', '/p/src/') == 'c.html.j2'
+    for src in ('/elsewhere/deck/src/b.html.j2', '/anywhere/c.html.j2'):
+        assert not label(src, '/p/', '/p/src/').startswith('..')
 
 
 if __name__ == '__main__':

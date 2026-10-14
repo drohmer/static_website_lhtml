@@ -36,6 +36,7 @@ import copy
 import re
 
 import lhtml
+from lib.filesystem import read_text
 import yaml
 
 DESIGN_FILE = 'design.yaml'
@@ -57,8 +58,9 @@ class DesignError(ValueError):
 
 def _read_yaml(path):
     try:
-        with open(path, encoding='utf-8') as stream:
-            data = yaml.safe_load(stream)
+        data = yaml.safe_load(read_text(path))
+    except ValueError as exc:                       # not UTF-8: the message names the file
+        raise DesignError(str(exc)) from None
     except (OSError, yaml.YAMLError) as exc:
         raise DesignError(f"cannot read '{path}': {exc}") from exc
     if data is None:

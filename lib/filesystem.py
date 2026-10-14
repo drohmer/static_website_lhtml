@@ -9,6 +9,17 @@ import shutil
 BUILD_DIRECTORIES = ('.site-build-', '.site-backup-')
 
 
+def read_text(path):
+    """The text of a file of the project. A file that is not UTF-8 says so
+    with its name and the byte that stopped the reading: the message of the
+    decoder alone names neither."""
+    try:
+        with open(path, encoding='utf-8') as stream:
+            return stream.read()
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"'{path}' is not UTF-8 text (byte {exc.start}): save it in UTF-8") from None
+
+
 def directory_name_clean(d_in):
     d = d_in
     if d == '' or d == '.':

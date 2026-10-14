@@ -9,6 +9,7 @@ import difflib
 import os
 import yaml
 
+from lib.filesystem import read_text
 from lib.structure import PRIVATE_KEYS
 
 GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
@@ -159,8 +160,9 @@ def load_config(filename, debug_override=None):
             warnings.append("'configure_default.yaml' was renamed 'configure_example.yaml'; update your command.")
             path = replacement
     try:
-        with path.open(encoding='utf-8') as stream:
-            data = yaml.safe_load(stream)
+        data = yaml.safe_load(read_text(path))
+    except ValueError as exc:                       # not UTF-8: the message names the file
+        raise ConfigError(str(exc)) from None
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigError(f"Cannot read configuration '{path}': {exc}") from exc
     if data is None:

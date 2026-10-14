@@ -19,7 +19,7 @@ import unicodedata
 
 import yaml
 
-from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy
+from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy, read_text
 from lib import source_scan
 from lib.generator_tool import STRUCTURE_KEYS
 
@@ -141,8 +141,7 @@ def _read_config(directory, cache):
         path = os.path.join(directory, PAGE_CONFIG)
         config = {}
         if os.path.isfile(path):
-            with open(path, encoding='utf-8') as fid:
-                config = yaml.safe_load(fid)
+            config = yaml.safe_load(read_text(path))      # names the file when it is not UTF-8
             if config is None:
                 config = {}
             if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
