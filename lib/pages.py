@@ -155,14 +155,25 @@ def _read_config(directory, cache):
     return cache[directory]
 
 
-def discover(source, exclude=()):
+def hidden(path_local, filename):
+    """Whether a page is hidden: its file, or any directory above it in the
+    source, starts with a dot. Such a page is a draft of the author - it is
+    not copied into the site, so it is not generated either."""
+    return any(part.startswith('.') for part in (path_local or '').split('/') + [filename] if part)
+
+
+def discover(source, exclude=(), include_hidden=False):
     """Pages of a source, in file order, with the config.yaml of their
-    directory. Hidden files and directories at the top level of the source
-    are ignored (as they are not copied into the site), and the directories
-    `exclude` (the site)."""
+    directory, and the directories `exclude` (the site) left out.
+
+    A hidden page (its file, or a directory above it, starts with a dot) is
+    a draft: it is not part of the pages of a project, since it is not
+    copied into the site either. `include_hidden` keeps them, for a deck:
+    naming one is the choice of its author."""
     cache = {}
     found = [f['path'] for f in find_files_in_hierarchy(source.root, is_template, exclude=exclude)]
-    found = [f for f in found if not (f.path_local or f.filename).startswith('.')]
+    if not include_hidden:
+        found = [f for f in found if not hidden(f.path_local, f.filename)]
     return [Page(source, f.path_local, f.filename, position=k,
                  config=_read_config(source.root + f.path_local, cache))
             for k, f in enumerate(found)]

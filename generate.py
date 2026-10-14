@@ -209,13 +209,17 @@ def select_pages(meta, log, scaffold=False):
     created first."""
     loaded_deck = load_deck(meta)
     site = [meta['site_directory']]
-    found = pages.discover(pages.Source(None, meta['source_directory']), exclude=site)
+    # Without a deck, every page of the project is published: a hidden page
+    # is a draft and stays out. A deck publishes what it names, so a hidden
+    # page it names is published - that is its author asking for it.
+    found = pages.discover(pages.Source(None, meta['source_directory']), exclude=site,
+                           include_hidden=loaded_deck is not None)
     if loaded_deck is None:
         pages.name_outputs(found)
         return found
     for name, root in loaded_deck.sources.items():
         if any(e.source == name for e in loaded_deck.entries):
-            found += pages.discover(pages.Source(name, root), exclude=site)
+            found += pages.discover(pages.Source(name, root), exclude=site, include_hidden=True)
     result = deck.apply_deck(loaded_deck, found)
     if scaffold and result.missing:
         for path in deck.scaffold(result.missing, meta['source_directory']):

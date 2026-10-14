@@ -182,6 +182,26 @@ def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
         assert not (tmp_path / '.layout').exists(), bad
 
 
+def test_a_page_that_places_itself_is_not_wrapped_again(tmp_path):
+    """auto_wrap is in the default plugins: a page that already extends the
+    theme, or that is a whole document, must be left alone - wrapping the
+    first stops the build on two {% extends %}, the second gives two <html>."""
+    source = tmp_path / 'src'
+    (source / 'own').mkdir(parents=True)
+    (source / 'raw').mkdir()
+    (source / 'own/index.html.j2').write_text(
+        '{% extends "theme/template/base.html" %}\n'
+        '{% block head %}<meta name="x">{% endblock %}\n')       # no block content
+    (source / 'raw/index.html.j2').write_text('<!DOCTYPE html>\n<html><body><h1>Raw</h1></body></html>\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src',
+                                      'theme': str(REPO / 'themes/slides')}))
+    result = build(config)
+    assert result.returncode == 0, result.stdout + result.stderr
+    for name in ('own', 'raw'):
+        assert (tmp_path / '.site' / name / 'index.html').read_text().upper().count('<!DOCTYPE') == 1
+
+
 def test_an_option_the_analysis_does_not_know_is_reported(tmp_path):
     """A key of plugin_arg that no option matches is a typo: it was read,
     copied and never used, without a word."""

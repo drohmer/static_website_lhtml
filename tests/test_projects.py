@@ -147,10 +147,15 @@ class WithoutDeckTests(unittest.TestCase):
         self.assertIn('../zz.html ../a/index.html', (self.root / 'site/a/index.html').read_text())
 
     def test_hidden_files(self):
+        """A draft is hidden at every level, not only at the top: without a
+        deck, the pages of the project are published, so a hidden page would
+        be published with them. A deck publishes what it names."""
         self.write('a/.drafts/index.html.j2', HEAD + "= Draft\n{% endblock %}\n")
         self.write('.top.html.j2', HEAD + "= Top\n{% endblock %}\n")
+        self.write('a/index.html.j2', HEAD + "= A\n{% endblock %}\n")
         self.build()
-        self.assertTrue((self.root / 'site/a/.drafts/index.html').is_file())
+        self.assertTrue((self.root / 'site/a/index.html').is_file())
+        self.assertFalse((self.root / 'site/a/.drafts/index.html').exists())
         self.assertFalse((self.root / 'site/.top.html').exists())
 
 
