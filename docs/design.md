@@ -117,8 +117,11 @@ symptom of a missing contract, not bad luck:
 - `RESERVED AREA` reported 33 problems on the three example pages, all false:
   the reserved zone was the union of the boxes of all visible descendants of
   the navigation, and a navigation with parts at two corners covers the whole
-  page. Fixed by keeping one rectangle per part that paints. Missing
-  contract: *what the theme reserves*.
+  page. Fixed by keeping one rectangle per part that paints - and that fix,
+  correct on the example, reported a block five times on a real deck, once
+  per icon of the navigation, until the findings were grouped per block.
+  Missing contract: *what the theme reserves*. Worth remembering as the
+  argument for section 5.3: three example pages cannot calibrate a check.
 - With the default `root: 'body'` and the bundled theme, every page was
   measured as a **single block**, so every per-block check was empty while
   the report looked healthy; the right value was documented in the plugin's
@@ -298,12 +301,15 @@ thresholds. Three names, three jobs:
 - A **preset** is a named combination of a target and its analyses, for the
   user: what `--layout` and `--pdf` select today.
 
-**An analysis that fails does not fail its target.** Today the layout
-report is a plugin, so a failure of the measurement counts as a plugin
-failure, the build raises, and the site is not published: a missing Chrome
-has already thrown away a correct build ("Build failed; previous site
-preserved"). A target either renders or does not; an analysis reports, or
-reports that it could not run. They cannot share a failure mode.
+**An analysis that fails does not fail its target.** A failure of the
+measurement used to count as a plugin failure, so the build raised and the
+site was not published: a missing Chrome threw away a correct build ("Build
+failed; previous site preserved"). The layout plugin now catches its own
+failures and says the report was not produced, which is the behaviour this
+separation makes structural rather than a precaution inside one plugin. An
+unsafe output directory stays fatal: that is a configuration error, not a
+failure of the analysis. A target either renders or does not; an analysis
+reports, or reports that it could not run.
 
 Those three replace `add_layout_plugin`, the three file-name tests, the
 `if staging.is_dir()` of `build_output.py`, the private import of
@@ -335,8 +341,9 @@ plugin.
   data.
 - `lib/layout/measure.py`: the Node runner and the choice of Chrome - the
   configured one, else `PUPPETEER_EXECUTABLE_PATH`, else the one puppeteer
-  downloaded, else an installed Chrome, saying which it took. A measurement
-  must not fail because a browser was not downloaded next to the generator.
+  downloaded, else an installed Chrome, saying which it took. This one is
+  done (`plugins/assets/chrome.js`) and only has to move: a measurement must
+  not fail because a browser was not downloaded next to the generator.
 
 ### 5.1 Findings as first-class objects
 
@@ -382,12 +389,30 @@ most per iteration, and the machinery already exists.
 ### 5.3 Precision before container
 
 Centralising the vocabulary is worthless without evidence that the checks are
-right. The acceptance criterion is a **reference corpus** - the example site
-at minimum, in two themes - with expected findings and a stated precision
-target per check. Known defects to settle on the way, beyond the two already
-fixed: `WRAPPED` fires on any list item whose second line is under 30 % of
-the first, which is a property of ragged-right text rather than a defect (18
-of the 21 findings left on the example site); the density metrics
+right. The acceptance criterion is a **reference corpus** - a real deck, not
+the example site - with expected findings and a stated precision target per
+check.
+
+A first run on a deck of 78 slides says what that corpus is for. After the
+grouping fix, 40 problems remain, and about 35 of them have one cause: the
+full-bleed images, declared `position: fixed` over the whole slide with the
+class `overlay`, are measured against the usable area (the inside of the
+slide frame) and against the navigation they pass under. The class is
+already honoured for collisions ("marked as intentional") and ignored by
+`OUT OF AREA` and `RESERVED AREA`. Two rules would settle it: an intentional
+overlay is compared with the page rather than with the usable area, and
+`RESERVED AREA` separates text written over the navigation from a background
+passing under it. What is left then is five or six findings, all plausible -
+among them a `HIDDEN TEXT` that is a real defect, an image credit covered at
+100 % by the next layer.
+
+The same run shows why findings need a cause (section 5.1): 21 `OUT OF AREA`
+are one layout repeated over seven slides of a series.
+
+Known defects to settle on the way, beyond the three already fixed:
+`WRAPPED` fires on any list item whose second line is under 30 % of the
+first, which is a property of ragged-right text rather than a defect; the
+density metrics
 (`occupancy`, `text_area`, `free_bottom`) are computed against a 1920x1080
 window even when `scrolling` is true, which prints statements such as "free
 space at the bottom: -6440 px" as facts; and `NEAR-ALIGNED` reports offsets
@@ -408,10 +433,11 @@ and in each finding as `measured` / `limit`, and the type-scale-dependent
 ones (`min_font`) living with the design, which already owns the type scale.
 
 Named sets normalise the **shared** vocabulary; they do not forbid a project
-from having rules of its own. A deck that defines its own setting and its own
-check (a part number, a naming convention of its slides) keeps them, and the
-report states them as it states the others. What must not happen is the same
-name meaning two different things in two projects.
+from having rules of its own - and that is not a wish, it already works: a
+deck declares its own checks under `design: lint: rules:`, with a pattern and
+the advice to print, and the real deck of the corpus uses one. The report
+states them as it states the others. What must not happen is the same name
+meaning two different things in two projects.
 
 ### 5.5 The agent loop is part of the product
 
@@ -555,8 +581,9 @@ property at a time, never two at once.
 0. **Two point fixes first**, because they cost a day of work each time they
    bite and need none of the rest: a measurement finds a Chrome instead of
    failing, an analysis that fails leaves the build alone, and `src`, the
-   authoring documents and the private settings stop being published. The
-   last one is done; the first two are not.
+   private settings and the authoring documents stop being published. Done,
+   except the authoring documents (`structure/agents.md`, `design.md`,
+   `todo.md`), which are still written into the site.
 1. **The guarantees of section 3, on paper and under test**: when a partial
    build widens itself, and what a build publishes. These are observable
    from outside, so they can be pinned by tests before any file moves - and
