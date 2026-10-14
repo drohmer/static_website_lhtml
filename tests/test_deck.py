@@ -234,7 +234,10 @@ class DeckProjectsTests(unittest.TestCase):
             self.assertEqual([e['dir'] + e['filename'] for e in structure],
                              ['00_plan/index.html', '01_a/index.html', 'course/05_b/01_c/index.html',
                               '00_plan/index-2.html'])
-            self.assertEqual(structure[2]['credit'], 'course')
+            # 'credit' is a setting of the page, kept in the build and not published;
+            # 'source' says publicly that the page comes from the other project.
+            self.assertEqual(structure[2]['source'], 'course')
+            self.assertNotIn('credit', structure[2])
             self.assertEqual(structure[3]['title'], 'Plan (2)')
             first = (self.site / '00_plan/index.html').read_text()
             second = (self.site / '00_plan/index-2.html').read_text()

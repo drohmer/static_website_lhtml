@@ -31,6 +31,17 @@ def is_template(name):
     return name.endswith('.html' + TEMPLATE_SUFFIX)
 
 
+PAGE_CONFIG = 'config.yaml'      # settings of the pages of a directory
+
+
+def is_build_input(name):
+    """A file of the sources that the build reads and that is not content:
+    the template of a page, and the configuration of a directory (it holds
+    the settings an author writes for themselves). Never copied into the
+    site."""
+    return is_template(name) or name == PAGE_CONFIG
+
+
 def html_name(name):
     """index.html.j2 -> index.html (other names unchanged)"""
     return name[:-len(TEMPLATE_SUFFIX)] if is_template(name) else name
@@ -127,7 +138,7 @@ class Page:
 
 def _read_config(directory, cache):
     if directory not in cache:
-        path = os.path.join(directory, 'config.yaml')
+        path = os.path.join(directory, PAGE_CONFIG)
         config = {}
         if os.path.isfile(path):
             with open(path) as fid:
@@ -182,7 +193,7 @@ def copy_assets(source_dir, target_dir):
     """Copy the assets of a page directory: its files and its subdirectories
     without templates (those of other pages), not the templates (see
     filesystem.copy_tree). Returns the warnings."""
-    hidden = ignore_hidden(source_dir, skip=is_template)
+    hidden = ignore_hidden(source_dir, skip=is_build_input)
     top = os.path.abspath(source_dir)
 
     def ignore(directory, names):

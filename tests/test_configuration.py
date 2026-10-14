@@ -1,6 +1,7 @@
 """Configuration precedence, diagnostics, and non-destructive path validation."""
 from pathlib import Path
 from types import SimpleNamespace
+import re
 import subprocess
 import sys
 import tempfile
@@ -146,7 +147,50 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(len(warnings), 2)
 
 
+    def test_chrome_executable_is_resolved_and_checked(self):
+        executable = self.root / 'chrome'
+        executable.write_text('#!/bin/sh\n')
+        executable.chmod(0o755)
+        self.write()                                        # without the key
+        self.assertIsNone(load_config(self.file)[0].chrome)
+        self.assertNotIn('chrome', load_config(self.file)[0].to_meta())
+
+        self.write(chrome='chrome')                          # relative to the configuration
+        config = load_config(self.file)[0]
+        self.assertEqual(config.chrome, str(executable))
+        self.assertEqual(config.to_meta()['chrome'], str(executable))
+
+        bundle = self.root / 'Chrome.app/Contents/MacOS'     # macOS bundle
+        bundle.mkdir(parents=True)
+        (bundle / 'Chrome').write_text('#!/bin/sh\n')
+        (bundle / 'Chrome').chmod(0o755)
+        self.write(chrome='Chrome.app')
+        self.assertEqual(load_config(self.file)[0].chrome, str(bundle / 'Chrome'))
+
+        not_executable = self.root / 'plain'
+        not_executable.write_text('')
+        not_executable.chmod(0o644)
+        for value in ('missing-chrome', '   ', 42, str(not_executable)):
+            self.write(chrome=value)
+            with self.assertRaises(ConfigError):
+                load_config(self.file)
+
+
 class ReservedKeysAndWatchTests(unittest.TestCase):
+    def test_every_runtime_key_written_by_the_build_is_reserved(self):
+        """A key the generator writes in meta must be in RUNTIME_KEYS, else the
+        same key written in the YAML reaches meta (through 'extras') and the
+        build reads the user's value instead of its own."""
+        from lib.configuration import Config, RUNTIME_KEYS
+        known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
+        written = {}
+        for file in [REPO / 'generate.py', *sorted((REPO / 'lib').glob('*.py')),
+                     *sorted((REPO / 'plugins').glob('*.py'))]:
+            for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text()):
+                written.setdefault(match.group(1), file.name)
+        unreserved = {key: name for key, name in written.items() if key not in known}
+        self.assertEqual(unreserved, {}, f'add these keys to RUNTIME_KEYS: {unreserved}')
+
     def test_params_keyword_is_reserved(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / 'c.yaml'

@@ -14,6 +14,7 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const {launchOptions} = require('./chrome');
 const args = require('minimist')(process.argv.slice(2));
 
 const pages = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
@@ -700,16 +701,20 @@ function extractBlocks(rootSelector, excludeSelector) {
     } : {x: 0, y: 0, w: innerWidth, h: innerHeight};
     // Areas reserved by the theme (the navigation): the visible parts of the
     // excluded elements; the content must not cover them.
+    // One rectangle per part that paints, never their union: the parts of a
+    // navigation are usually far apart (a title at the top, arrows at the
+    // bottom corners), and their union is then the whole page, which would
+    // make every block of the content overlap the navigation.
     const reserved = [];
     for (const el of (excludeSelector ? document.querySelectorAll(excludeSelector) : [])) {
+        const name = el.id ? '#' + el.id : el.tagName.toLowerCase();
         const parts = [el, ...el.querySelectorAll('*')].filter(e => {
             const cs = getComputedStyle(e);
             if (cs.display === 'none' || cs.visibility === 'hidden' || e.closest('.hidden')) return false;
             const r = e.getBoundingClientRect();
             return r.width > 0 && r.height > 0 && (e.children.length === 0 || paints(cs));
         }).map(e => toRect(e.getBoundingClientRect(), 'reserved'));
-        const u = unionRects(parts);
-        if (u) reserved.push({...u, name: el.id ? '#' + el.id : el.tagName.toLowerCase()});
+        for (const part of parts) reserved.push({...part, name});
     }
     return {root: document.querySelector(rootSelector) ? rootSelector : 'body', title: document.title,
             viewport: {w: innerWidth, h: innerHeight}, area, blocks, reserved,
@@ -907,7 +912,7 @@ async function waitForContent(page) {
 
 
 (async () => {
-    const browser = await puppeteer.launch({headless: true, args: ['--allow-file-access-from-files']});
+    const browser = await puppeteer.launch(launchOptions(args, {headless: true, args: ['--allow-file-access-from-files']}));
     const page = await browser.newPage();
     await page.setViewport({width, height});
     let failures = 0;

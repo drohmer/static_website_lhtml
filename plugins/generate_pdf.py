@@ -39,6 +39,7 @@ def post_process(meta):
     site_dir = os.path.abspath(meta['site_directory'])
     output_dir = os.path.dirname(site_dir)
     script = path_current_file + 'assets/template_html_to_pdf.js'
+    chrome = ['--chrome=' + meta['chrome']] if meta.get('chrome') else []
 
     # Stage fresh outputs so a failed export cannot reuse stale PDFs or remove
     # the HTML needed to diagnose/retry the failure.
@@ -49,7 +50,7 @@ def post_process(meta):
             stem = os.path.join(staging, 'slide_' + str(counter).zfill(3))
             pdf_path = stem + '.pdf'
             subprocess.run(['node', script, '--input=' + html_path,
-                            '--output=' + pdf_path], check=True)
+                            '--output=' + pdf_path] + chrome, check=True)
             if not os.path.isfile(pdf_path):
                 raise RuntimeError(f'PDF not generated: {pdf_path}')
             subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf_path, stem], check=True)

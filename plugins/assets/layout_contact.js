@@ -11,13 +11,14 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const {launchOptions} = require('./chrome');
 const args = require('minimist')(process.argv.slice(2));
 
 const sheets = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
 const width = parseInt(args.width || 1920);
 
 (async () => {
-    const browser = await puppeteer.launch({headless: true, args: ['--allow-file-access-from-files']});
+    const browser = await puppeteer.launch(launchOptions(args, {headless: true, args: ['--allow-file-access-from-files']}));
     const page = await browser.newPage();
     await page.setViewport({width, height: 600});
     let failures = 0;

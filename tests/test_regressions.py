@@ -77,7 +77,8 @@ class GeneratorRegressions(unittest.TestCase):
         self.assertIn('b/index.html', menu)
         self.assertTrue((self.site / 'sitemap/second.html').exists())
         structure = yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
-        self.assertEqual(structure[1]['custom'], 'fresh')
+        self.assertEqual(structure[1]['title'], 'Second')       # the new page was read by this build
+        self.assertNotIn('custom', structure[1])                # its settings stay out of the site
         self.assertEqual((self.site / 'asset.txt').read_text(), 'changed asset')
         (self.source / 'a/index.html.j2').unlink()
         self.page('b/index.html.j2', 'Renamed')

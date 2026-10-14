@@ -11,7 +11,9 @@ async function fetch_title_id(filepath) {
     .catch(error_fetch_title_id);
 }
 function error_fetch_title_id(error) {
-    console.log('Failed to fetch title_id file');
+    // No summary for this page (plugins/title_submenu.py did not run, or the
+    // page has no heading of its own): the column stays hidden.
+    console.log('No title_id file for this page (plugins/title_submenu.py)');
     console.log(error);
 }
 
@@ -29,20 +31,29 @@ function create_new_link(level, title, id) {
 function load_title_id(data) {
 
     const title_id_element = document.querySelector('#title_id');
-    title_id_element.innerHTML = '<div class="title">Page content</div>'
 
+    const links = [];
     for(let k=0; k<data.length; k=k+1) {
 
         const level = data[k]['level'];
         const title = data[k]['title'];
         const id = data[k]['id'];
 
-        const title_id_element = document.querySelector('#title_id');
         if(level>1 && level<3){
-            const a_element = create_new_link(level, title, id);
-            title_id_element.appendChild(a_element);
+            links.push(create_new_link(level, title, id));
         }
     }
+
+    // A page without heading of its own keeps the column hidden, instead of
+    // showing an empty box (the column is hidden by the theme, see main.css).
+    if(links.length === 0){
+        return;
+    }
+    title_id_element.innerHTML = '<div class="title">Page content</div>'
+    for(const link of links){
+        title_id_element.appendChild(link);
+    }
+    title_id_element.style.display = 'block';
 
 }
 

@@ -176,3 +176,31 @@ def test_render_files_outside_the_project(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     pngs = sorted((project / '.layout/render/_outside').rglob('f.svg.png'))
     assert len(pngs) == 2 and pngs[0].read_bytes() != pngs[1].read_bytes()
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_a_navigation_in_two_corners_does_not_reserve_the_whole_page(tmp_path):
+    """The reserved areas are the parts of the navigation that paint, never
+    their union: a navigation with a part in each corner would otherwise
+    reserve the whole page, and every block of the content would be reported
+    as covering it."""
+    source = tmp_path / 'src'
+    source.mkdir()
+    (source / 'index.html.j2').write_text(
+        '<html><body>\n'
+        '<nav><a style="position:fixed; left:0; top:0; width:80px; height:20px;">up</a>'
+        '<a style="position:fixed; right:0; bottom:0; width:80px; height:20px;">down</a></nav>\n'
+        '<div style="position:absolute; left:500px; top:400px; width:300px; height:60px;">Content</div>\n'
+        '</body></html>')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': []}))
+    result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                            capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stdout + result.stderr
+    layout = json.loads((tmp_path / '.layout/pages/index.html/layout.json').read_text())
+
+    reserved = layout['reserved']
+    assert len(reserved) >= 2, reserved
+    page = layout['viewport']
+    assert not any(r['w'] > page['w'] / 2 and r['h'] > page['h'] / 2 for r in reserved), reserved
+    assert layout['analysis']['reserved'] == []

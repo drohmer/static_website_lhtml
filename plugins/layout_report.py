@@ -1061,12 +1061,17 @@ span {{ margin-left: 6px; padding: 0 6px; border-radius: 4px; font-weight: bold;
 def _options(meta):
     options = dict(DEFAULTS)
     options.update((meta.get('plugin_arg') or {}).get('layout_report') or {})
+    options['chrome'] = meta.get('chrome')      # configuration key, not a plugin_arg
     return options
 
 
-def _run_node(script, arguments, label=None):
+def _run_node(script, arguments, label=None, chrome=None):
     """Run a Node script of assets/; its lines 'progress <done> <total> <item>'
-    on stdout are shown as a progress bar (`label`). Returns its stderr."""
+    on stdout are shown as a progress bar (`label`). `chrome` is the Chrome
+    executable to run instead of the one downloaded by puppeteer.
+    Returns its stderr."""
+    if chrome:
+        arguments = arguments + [f'--chrome={chrome}']
     cmd = ['node', path_current_file + 'assets/' + script] + arguments
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -1093,6 +1098,10 @@ def _run_node(script, arguments, label=None):
     stderr = ''.join(errors)
     if 'Cannot find module' in stderr:
         raise RuntimeError('puppeteer not found: run `npm install` in the static_website_lhtml directory')
+    if 'Could not find Chrome' in stderr or 'Browser was not found' in stderr:
+        raise RuntimeError('Chrome not found: run `npx puppeteer browsers install chrome` '
+                           '(npm may skip the download of puppeteer), or give the Chrome to run '
+                           "with the configuration key 'chrome' (or PUPPETEER_EXECUTABLE_PATH)")
     if proc.returncode:
         raise RuntimeError(f'{script} failed ({proc.returncode}): {stderr.strip()}')
     return stderr
@@ -1117,12 +1126,28 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         json.dump(sheets, fid)
         sheets_json = fid.name
     try:
-        stderr = _run_node('layout_contact.js', [f'--input={sheets_json}'], label='Contact sheets')
+        stderr = _run_node('layout_contact.js', [f'--input={sheets_json}'], label='Contact sheets',
+                           chrome=options['chrome'])
         for line in stderr.splitlines():
             if line.startswith('layout_contact:'):
                 log.error(line)
     finally:
         os.remove(sheets_json)
+
+
+def _warn_degenerate_root(measured, options, log):
+    """A root selector that does not match the theme gives one block per page:
+    the whole content is a single box, and every check on the blocks
+    (collisions, alignment, gaps) is then empty while the report looks
+    healthy. Say so, with the root actually used."""
+    degenerate = [p['name'] for p, _, layout in measured if len(layout.get('blocks') or []) <= 1]
+    if len(degenerate) < len(measured) or not measured:
+        return                      # a single page may legitimately hold one block
+    used = measured[0][2].get('root') or options['root']
+    log.warning(f"Layout report: every page was measured as a single block (root: '{used}'). "
+                f"The root selector probably does not match the theme; the checks on the blocks "
+                f"found nothing. Set plugin_arg: layout_report: root: to the content element of "
+                f"the theme (webpage-frame: '#main-content-centered').")
 
 
 def _same_source(report, page, meta):
@@ -1192,7 +1217,8 @@ def post_process(meta):
         stderr = _run_node('layout_measure.js', [
             f'--input={pages_json}', f"--root={options['root']}", f"--exclude={options['exclude']}",
             f"--width={options['width']}", f"--height={options['height']}",
-            f"--images={1 if options['images'] else 0}"], label='Measure layout')
+            f"--images={1 if options['images'] else 0}"], label='Measure layout',
+            chrome=options['chrome'])
         for line in stderr.splitlines():
             if line.startswith('layout_measure:'):
                 log.error(line)
@@ -1206,6 +1232,7 @@ def post_process(meta):
         if os.path.isfile(layout_path):
             with open(layout_path, encoding='utf-8') as fid:
                 measured.append((p, layout_path, json.load(fid)))
+    _warn_degenerate_root(measured, options, log)
     norms = deck_norms([layout for _, _, layout in measured])
     limits = {k: options[k] for k in ('max_words', 'min_font')}
 

@@ -15,7 +15,7 @@ pip install -r requirements.txt
 **Dependencies**: `lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`
 
 Optional:
-- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Put `generate_pdf.py` last in the plugin list: after the export, it removes the site directory (kept with `-d`).
+- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. Put `generate_pdf.py` last in the plugin list: after the export, it removes the site directory (kept with `-d`).
 - **SASS**: `pip install libsass` to compile `.sass` files (a warning is shown if they are left uncompiled).
 - **Figures in code**: the libraries their scripts import, in the Python that runs the generator (`pip install matplotlib numpy`); `latex` and `dvisvgm` (TeX Live) for the TikZ figures.
 
@@ -115,11 +115,12 @@ theme: 'themes/webpage-frame/'         # Theme directory
 plugin:                                # Plugin list (executed in order)
   - 'plugins/menu.py'
   - 'plugins/redirection_first_page.py'
+  - 'plugins/title_submenu.py'
 ```
 
 Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lib/configuration.py`.
 
-Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. An explicitly configured relative theme path is relative to the YAML file.
+Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is `menu.py`, `redirection_first_page.py` and `title_submenu.py`: what the bundled theme reads (the menu, the redirection of the first page and the summary of the headings of each page). An explicitly configured relative theme path is relative to the YAML file.
 
 Configuration values are type-checked before generating or cleaning. Unknown keys produce warnings (with spelling suggestions) but remain available to custom plugins. Runtime fields such as `log`, `args`, and `plugin_paths` cannot be supplied in YAML. Prefer `plugin_arg` for custom plugin options.
 
@@ -144,6 +145,7 @@ Optional keys:
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
+| `chrome` | Chrome executable run by the Node scripts (layout report, PDF export, `--render`), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
 | `title_id` | Give the headings IDs and write their summary (`title_id.json`) with `plugins/title_submenu.py` (default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |

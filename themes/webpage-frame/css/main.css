@@ -148,6 +148,7 @@ h2, h3, h4 {
 
 
 #title_id{
+    display: none;             /* shown by js/title_id.js when the page has a summary */
     position: fixed;
     overflow: auto;
     

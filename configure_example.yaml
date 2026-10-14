@@ -10,6 +10,7 @@ theme: 'themes/webpage-frame/'  # Omit to use the bundled webpage-frame theme.
 plugin:
   - 'plugins/menu.py'
   - 'plugins/redirection_first_page.py'
+  - 'plugins/title_submenu.py'
 
 # Optional settings (uncomment to override the defaults):
 # debug: false           # --debug takes precedence; also keeps intermediate files.
@@ -18,6 +19,10 @@ plugin:
 # title_id: true
 # keywords: {}           # Variables exposed to Jinja2 templates.
 # include_head: []
+# chrome: '/Applications/Google Chrome.app'  # Chrome run by the Node scripts (layout
+                                             # report, PDF export, --render); without it,
+                                             # PUPPETEER_EXECUTABLE_PATH, else the Chrome
+                                             # downloaded by puppeteer.
 # plugin_arg: {}         # Plugin-specific options.
 # cache_video_directory: 'cache_video_directory/'
 
@@ -25,3 +30,7 @@ plugin:
 # plugin_arg:
 #   layout_report:
 #     output: '.layout/'
+#     root: '#main-content-centered'   # content element measured; 'body' by default,
+#                                      # which is right for the slides themes. With a
+#                                      # root that does not match the theme, each page
+#                                      # is measured as a single block (the report says so).

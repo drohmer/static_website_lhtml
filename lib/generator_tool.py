@@ -6,6 +6,7 @@ import yaml
 import json
 
 from lib import source_scan
+from lib.structure import public_entry
 
 # Keys of structure.yaml written by the generator (not available to the deck
 # metadata nor to the config.yaml of the pages)
@@ -93,11 +94,13 @@ def extract_titles(pages):
     return sitemap
 
 
-def export_structure(pages, structure_path):
-    """structure.yaml (and .json): one entry per page, in order, for the plugins
-    and the theme: its title, configuration and deck metadata, its place in the
-    site (dir, filename, template, level) and origin (src, source, occurrence).
-    Returns the entries."""
+def export_structure(pages, structure_path, public_keys=()):
+    """structure.yaml (and .json): one entry per page, in order, for the
+    plugins and the theme: its title, its place in the site (dir, filename,
+    template, level) and its origin (source, occurrence). The files written
+    into the site hold the public keys only (lib/structure.py); the entries
+    returned, which the build uses, also hold the settings of the page and
+    `src`, the path of its source."""
     structure_to_export = []
     for page in pages:
         structure = {'title': page.title, **page.settings,
@@ -112,10 +115,13 @@ def export_structure(pages, structure_path):
 
     os.makedirs(structure_path, exist_ok=True)
 
+    # Written into the site: the public part of each entry (lib/structure.py).
+    # The build keeps the whole entry, returned below.
+    published = [public_entry(entry, public_keys) for entry in structure_to_export]
     with open(structure_path + 'structure.yaml', 'w') as fid:
-        yaml.dump(structure_to_export, fid)
+        yaml.dump(published, fid)
     with open(structure_path + 'structure.json', 'w') as fid:
-        json.dump(structure_to_export, fid, indent=4, default=str)
+        json.dump(published, fid, indent=4, default=str)
     return structure_to_export
 
 

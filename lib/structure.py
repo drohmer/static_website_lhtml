@@ -6,9 +6,31 @@ it generates in meta['built']: all of them, or those named by --only (the
 other pages of the site are those of the previous build). A plugin working
 on the pages (templates, HTML) uses built_pages; one writing a file for the
 whole site (menu, redirection) uses structure.
+
+Two levels of detail. In meta, an entry holds everything the build knows
+about a page, including the settings its author wrote for themselves and the
+absolute path of its source. Written into the site, an entry holds only
+PUBLIC_KEYS: structure/ is served with the site, so what a reader must not
+see does not go there.
 """
 
 import json
+
+# What may be written into the site for each page: what places it (dir,
+# filename, template, level, occurrence), what names it (title, source), and
+# the display flags the themes read. A setting that is not listed here
+# (notes:, message:, duration: ... of a config.yaml or of a deck entry) stays
+# in the build and never reaches the site.
+# Read by the themes to display a page in their menu.
+DISPLAY_KEYS = ('title', 'level', 'level-toc', 'hide-toc', 'nourl-toc', 'direct-url', 'delimiter')
+
+PUBLIC_KEYS = DISPLAY_KEYS + ('dir', 'filename', 'template', 'source', 'occurrence')
+
+
+def public_entry(entry, extra=()):
+    """The part of a page entry that may be written into the site."""
+    keys = tuple(PUBLIC_KEYS) + tuple(extra)
+    return {key: value for key, value in entry.items() if key in keys}
 
 
 def load_structure(site_directory):

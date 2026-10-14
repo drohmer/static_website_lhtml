@@ -12,6 +12,7 @@ const os = require('os');
 const path = require('path');
 const {pathToFileURL} = require('url');
 const puppeteer = require('puppeteer');
+const {launchOptions} = require('./chrome');
 const args = require('minimist')(process.argv.slice(2));
 
 const files = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
@@ -19,7 +20,7 @@ const width = parseInt(args.width || 1920);
 const height = parseInt(args.height || 1080);
 
 (async () => {
-    const browser = await puppeteer.launch({headless: true, args: ['--allow-file-access-from-files']});
+    const browser = await puppeteer.launch(launchOptions(args, {headless: true, args: ['--allow-file-access-from-files']}));
     const page = await browser.newPage();
     let failures = 0;
     for (const entry of files) {

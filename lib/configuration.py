@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 import copy
 import difflib
+import os
 import yaml
 
 GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
@@ -22,6 +23,7 @@ RUNTIME_KEYS = frozenset((
     'previous_pages',               # --only: HTML of the pages before the build (restored if they fail)
     'loaded_design', 'macros',      # the design (lib/design.py) and its macros for LHTML
     'lint_findings',                # {source path: [finding]} of the generated pages (lib/lint.py)
+    'measure',                      # --only: the pages the layout report measures again
     'headings',                     # {page: [heading]} written by plugins/title_submenu.py
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
@@ -37,15 +39,25 @@ class Config:
     source_directory: str = 'src_site/'
     site_directory: str = '.site/'
     theme: str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
-    plugin: list[str] = field(default_factory=lambda: ['plugins/menu.py', 'plugins/redirection_first_page.py'])
+    # The bundled theme reads what these three write: the menu ({{TOC}} of
+    # theme/js/menu.js), the summary of the headings (title_id.json) and the
+    # redirection of the first page.
+    plugin: list[str] = field(default_factory=lambda: ['plugins/menu.py',
+                                                       'plugins/redirection_first_page.py',
+                                                       'plugins/title_submenu.py'])
     debug: bool = False
     level_print: int = 0
     title_id: bool = True
     keywords: dict = field(default_factory=dict)
     use_tidy: bool = False
     include_head: list[str] = field(default_factory=list)
+    # Page settings a custom theme needs in the site, beyond the ones the
+    # bundled themes display (lib/structure.py, PUBLIC_KEYS). Everything else
+    # an author writes in a config.yaml or a deck entry stays out of the site.
+    public_page_keys: list[str] = field(default_factory=list)
     plugin_arg: dict = field(default_factory=dict)
     cache_video_directory: str | None = None
+    chrome: str | None = None
     design: dict | str | None = None
     deck: list | dict | str | None = None
     # Legacy extensions stay available to custom plugins, with a warning.
@@ -54,8 +66,9 @@ class Config:
     def to_meta(self):
         values = asdict(self)
         values.update(values.pop('extras'))
-        if values['cache_video_directory'] is None:
-            del values['cache_video_directory']
+        for key in ('cache_video_directory', 'chrome'):
+            if values[key] is None:
+                del values[key]
         for key in ('design', 'deck'):
             if values[key] is None:
                 del values[key]
@@ -99,6 +112,34 @@ def _file_or_inline(values, key, inline_types, inline_text, config_directory):
         raise ConfigError(f"'{key}' must be {inline_text} or the path of a YAML file")
 
 
+def _chrome_executable(values, config_directory):
+    """'chrome': the Chrome executable the Node scripts run (layout report,
+    PDF export, --render), instead of the one downloaded by puppeteer. A
+    relative path is resolved from the configuration directory; a macOS
+    bundle ('.app') is resolved to the executable it contains."""
+    value = values.get('chrome')
+    if value is None:
+        return
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("'chrome' must be the path of the Chrome executable")
+    file = Path(value.strip()).expanduser()
+    if not file.is_absolute():
+        file = config_directory / file
+    if file.suffix == '.app' and file.is_dir():                 # macOS bundle
+        inside = file / 'Contents/MacOS' / file.stem
+        if not inside.is_file():
+            candidates = sorted(p for p in (file / 'Contents/MacOS').glob('*') if p.is_file())
+            if not candidates:
+                raise ConfigError(f"'chrome': no executable in the bundle '{file}'")
+            inside = candidates[0]
+        file = inside
+    if not file.is_file():
+        raise ConfigError(f"'chrome' executable not found: '{file}'")
+    if not os.access(file, os.X_OK):
+        raise ConfigError(f"'chrome' is not executable: '{file}'")
+    values['chrome'] = str(file.resolve())
+
+
 def load_config(filename, debug_override=None):
     path = Path(filename).expanduser().resolve()
     warnings = []
@@ -124,7 +165,7 @@ def load_config(filename, debug_override=None):
         data['plugin'] = data.pop('plugin_post')
 
     defaults = Config().to_meta()
-    known = set(defaults) | {'cache_video_directory', 'design', 'deck'}
+    known = set(defaults) | {'cache_video_directory', 'chrome', 'design', 'deck'}
     extras = {}
     for key in set(data) - known:
         if key in RUNTIME_KEYS:
@@ -151,9 +192,11 @@ def load_config(filename, debug_override=None):
     elif plugins is None:
         plugins = []
     values['plugin'] = plugins
-    for key in ('plugin', 'include_head'):
+    for key in ('plugin', 'include_head', 'public_page_keys'):
         if not isinstance(values[key], list) or any(not isinstance(v, str) or not v.strip() for v in values[key]):
             raise ConfigError(f"'{key}' must be a list of non-empty strings")
+
+    _chrome_executable(values, path.parent)
 
     _file_or_inline(values, 'design', dict, 'a mapping (tokens, macros)', path.parent)
     _file_or_inline(values, 'deck', (list, dict), 'a list of slides', path.parent)

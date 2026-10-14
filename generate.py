@@ -263,7 +263,7 @@ def prepare_data(meta, selected, built, log):
     warnings = []
     if not only:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        warnings += filesystem.copy_directories(dir_source, dir_site, skip=pages.is_template,
+        warnings += filesystem.copy_directories(dir_source, dir_site, skip=pages.is_build_input,
                                                 exclude=[meta.get('published_site_directory')])
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         warnings += filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
@@ -290,7 +290,8 @@ def prepare_data(meta, selected, built, log):
     log.debug(f"Found {len(selected)} template files")
     sitemap = generator_tool.extract_titles(selected)
     generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
-    meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/')
+    meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/',
+                                                       meta.get('public_page_keys') or ())
     shutil.copy2(AGENTS_GUIDE, dir_site + 'structure/agents.md')
     built_set = set(built)
     meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if page in built_set]
@@ -593,7 +594,7 @@ def render_files(meta, files, log):
         listing = fid.name
     try:
         _run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
-                                     f"--height={options['height']}"])
+                                     f"--height={options['height']}"], chrome=options['chrome'])
     except RuntimeError as exc:
         log.error(str(exc))
         sys.exit(1)

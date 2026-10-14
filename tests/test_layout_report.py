@@ -371,3 +371,23 @@ def test_svg_overflow_and_labels():
     assert lines.count('SVG LABEL') == 1 and '"l0", "l1", "l2" and 37 more are drawn across a line' in lines
     analysis = {'svg_overflow': overflow, 'svg_labels': layout_report.find_svg_labels(blocks)}
     assert layout_report.count_problems(analysis) == 1 and layout_report.count_warnings(analysis) == 1
+
+
+def test_a_root_that_does_not_match_the_theme_is_reported():
+    """Every page measured as a single block means the root selector misses
+    the content of the theme: the checks on the blocks then find nothing."""
+    warnings = []
+    log = type('Log', (), {'warning': lambda self, text: warnings.append(text)})()
+    page = {'name': 'a.html'}
+
+    one_block = [(page, 'a/layout.json', {'root': 'body', 'blocks': [{'id': 1}]})]
+    layout_report._warn_degenerate_root(one_block, {'root': 'body'}, log)
+    assert len(warnings) == 1
+    assert "single block (root: 'body')" in warnings[0] and 'main-content-centered' in warnings[0]
+
+    warnings.clear()                      # a measured page with real blocks: nothing to say
+    layout_report._warn_degenerate_root(
+        [(page, 'a/layout.json', {'root': '#main', 'blocks': [{'id': 1}, {'id': 2}]})],
+        {'root': '#main'}, log)
+    layout_report._warn_degenerate_root([], {'root': 'body'}, log)
+    assert warnings == []
