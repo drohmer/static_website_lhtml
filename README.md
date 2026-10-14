@@ -671,12 +671,19 @@ Detected problems:
   of another block is visible on top of the text)
 - `COLLISION`: the drawn content of two blocks overlaps (text on text, text
   on the drawn part of an image, images, backgrounds)
-- `OUT OF AREA`: block beyond the usable area
+- `OUT OF AREA`: block beyond the usable area. A block marked as an
+  intentional overlay (class `overlay`) is compared with the whole page
+  instead: a full-bleed figure covers the slide on purpose, one that
+  spills past the page is still reported
 - `CLIPPED`: content cut by `overflow`
 - `UPSCALED IMAGE`: bitmap or video drawn more than 1.25× its native size,
   hence blurry (vector images such as SVG are ignored)
-- `RESERVED AREA`: content over an area of the theme (the navigation: the
-  elements of `exclude`)
+- `RESERVED AREA`: **text** written over an area of the theme (the
+  navigation: the elements of `exclude`), reported once per block and per
+  element, whatever the number of parts that element is drawn in. A figure
+  or a background passing under the navigation is not reported: the theme
+  draws its navigation over the content, which is what a full-bleed slide
+  is for
 - `COLLAPSED FIGURE`: an image or a video drawn (almost) without width or
   height, e.g. in a flex box without a height: invisible
 - `SVG OVERFLOW`: an SVG figure draws beyond its viewBox (by more than the

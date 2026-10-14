@@ -303,9 +303,15 @@ def test_short_wrapped_fits_on_one_line_of_the_slide():
     assert layout_report._line_item('p') == 'paragraph' and layout_report._line_item('div.ref') == 'reference'
 
 
-def test_content_over_the_navigation():
-    blocks = [block(1, 900, 450, 80, 40), block(2, 0, 0, 100, 100)]
-    found = layout_report.find_reserved_overlaps(blocks, [{'x': 880, 'y': 440, 'w': 120, 'h': 60, 'name': 'nav'}])
+def test_text_over_the_navigation_counts_and_a_figure_under_it_does_not():
+    """The navigation is drawn over the content: a figure passing under it is
+    what a full-bleed slide is for, a text written there is unreadable."""
+    nav = [{'x': 880, 'y': 440, 'w': 120, 'h': 60, 'name': 'nav'}]
+    text = block(1, 900, 450, 80, 40, ink=[{'x': 900, 'y': 450, 'w': 80, 'h': 40, 't': 'text'}])
+    figure = block(2, 880, 440, 200, 200, kind='image',
+                   ink=[{'x': 880, 'y': 440, 'w': 200, 'h': 200, 't': 'media'}])
+    elsewhere = block(3, 0, 0, 100, 100, ink=[{'x': 0, 'y': 0, 'w': 100, 'h': 100, 't': 'text'}])
+    found = layout_report.find_reserved_overlaps([text, figure, elsewhere], nav)
     assert [(f['id'], f['name']) for f in found] == [(1, 'nav')]
 
 
@@ -438,9 +444,26 @@ def test_a_block_over_a_navigation_of_several_parts_is_reported_once():
     navigation of five icons must not turn one full-bleed image into five
     findings."""
     nav = [{'x': 1630 + 40 * k, 'y': 990, 'w': 30, 'h': 40, 'name': 'nav'} for k in range(5)]
-    full_bleed = block(1, 0, 0, 1920, 1080, kind='image',
-                       ink=[{'x': 0, 'y': 0, 'w': 1920, 'h': 1080, 't': 'media'}])
-    found = layout_report.find_reserved_overlaps([full_bleed], nav)
+    banner = block(1, 0, 0, 1920, 1080,
+                   ink=[{'x': 0, 'y': 0, 'w': 1920, 'h': 1080, 't': 'text'}])
+    found = layout_report.find_reserved_overlaps([banner], nav)
     assert len(found) == 1
     assert found[0]['id'] == 1 and found[0]['name'] == 'nav'
     assert (found[0]['x0'], found[0]['x1']) == (1630, 1820)      # over all the parts
+
+
+def test_an_intentional_overlay_is_measured_against_the_page():
+    """A full-bleed figure (class overlay) covers the slide on purpose, so it
+    is not out of the usable area; one that spills past the page still is."""
+    page = {'viewport': {'w': 1920, 'h': 1080}}
+    usable = {'x': 32, 'y': 32, 'w': 1856, 'h': 1016}
+    full_bleed = block(1, 0, 0, 1920, 1080, position='fixed', intentional=True)
+    ordinary = block(2, 0, 0, 1920, 1080, position='fixed')
+    spilling = block(3, -50, 0, 2020, 1080, position='fixed', intentional=True)
+
+    found = layout_report.find_out_of_area([full_bleed, ordinary, spilling], usable,
+                                           page=layout_report._page_rect(page))
+    assert [f['id'] for f in found] == [2, 3]
+    assert found[1] == {'id': 3, 'left': 50, 'right': 50}
+    # without the size of the page, every block is compared with the usable area
+    assert [f['id'] for f in layout_report.find_out_of_area([full_bleed], usable)] == [1]

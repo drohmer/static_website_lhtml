@@ -178,18 +178,31 @@ def find_background_overlaps(blocks, collisions, threshold=4):
     return result
 
 
-def find_out_of_area(blocks, area, threshold=4, scrolling=False):
+def find_out_of_area(blocks, area, threshold=4, scrolling=False, page=None):
     """Blocks extending beyond the usable area: {id, left, top, right, bottom} in px.
-    On a scrolling page (web page, not a slide), the bottom side is not checked."""
+    On a scrolling page (web page, not a slide), the bottom side is not checked.
+    A block marked as an intentional overlay (class 'overlay') is compared
+    with the whole page when it is known: a full-bleed figure covers the
+    slide on purpose, while one that spills past the page is still
+    reported."""
     result = []
-    ax0, ay0, ax1, ay1 = area['x'], area['y'], area['x'] + area['w'], area['y'] + area['h']
     for b in blocks:
+        bounds = page if page and b.get('intentional') else area
+        ax0, ay0 = bounds['x'], bounds['y']
+        ax1, ay1 = bounds['x'] + bounds['w'], bounds['y'] + bounds['h']
         x0, y0, x1, y1 = _rect(b)
         out = {'left': ax0 - x0, 'top': ay0 - y0, 'right': x1 - ax1, 'bottom': y1 - ay1}
         out = {k: v for k, v in out.items() if v > threshold and not (scrolling and k == 'bottom')}
         if out:
             result.append({'id': b['id'], **out})
     return result
+
+
+def _page_rect(layout):
+    """The whole page, for the blocks an intentional overlay covers on
+    purpose; None when the measurement does not say its size."""
+    viewport = layout.get('viewport')
+    return {'x': 0, 'y': 0, 'w': viewport['w'], 'h': viewport['h']} if viewport else None
 
 
 def find_clipped(blocks, threshold=4):
@@ -261,12 +274,16 @@ def find_reserved_overlaps(blocks, reserved, threshold=4):
     navigation): {id, name, x0, y0, x1, y1}. An element of the theme is
     measured as one rectangle per part that paints, so a block covering a
     navigation of several parts is reported once, over all of them, and not
-    once per part."""
+    once per part.
+
+    Only text counts: the navigation of a theme is drawn over the content,
+    so a figure or a background passing under it is what a full-bleed slide
+    is for, while a text written there is unreadable."""
     covered = {}
     for zone in reserved or []:
         z = (zone['x'], zone['y'], zone['x'] + zone['w'], zone['y'] + zone['h'])
         for b in blocks:
-            parts = [o for r in _ink(b) if (o := _overlap(r, z, threshold))]
+            parts = [o for r in _ink(b) if r[4] == 'text' and (o := _overlap(r, z, threshold))]
             if parts:
                 covered.setdefault((b['id'], zone.get('name', 'reserved')), []).extend(parts)
     found = []
@@ -762,7 +779,8 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
         'reserved': find_reserved_overlaps(blocks, layout.get('reserved'), threshold),
         'collisions': collisions,
         'hidden_text': hidden_text,
-        'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False)),
+        'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False),
+                                       page=_page_rect(layout)),
         'clipped': find_clipped(blocks, threshold),
         'upscaled_images': find_upscaled_images(blocks),
         'collapsed': find_collapsed(blocks),
@@ -851,7 +869,7 @@ def problem_lines(analysis):
     for u in analysis.get('upscaled_images', []):
         problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
     for r in analysis.get('reserved', []):
-        problems.append(f"- RESERVED AREA #{r['id']}: covers the {r['name']} of the theme "
+        problems.append(f"- RESERVED AREA #{r['id']}: text over the {r['name']} of the theme "
                         f"(x {r['x0']}..{r['x1']}, y {r['y0']}..{r['y1']})")
     for c in analysis.get('collapsed', []):
         problems.append(f"- COLLAPSED FIGURE #{c['id']}: {c['src']} drawn at {c['w']} × {c['h']} px (invisible)")
@@ -1057,8 +1075,8 @@ image names).
 Problems: HIDDEN TEXT (text covered by another block drawn on top of it),
 COLLISION (drawn content of two blocks overlapping), OUT OF AREA (block
 beyond the usable area), CLIPPED (content cut by overflow), UPSCALED IMAGE
-(bitmap displayed larger than its native size: blurry), RESERVED AREA (content
-over the navigation of the theme), COLLAPSED FIGURE (image or video drawn
+(bitmap displayed larger than its native size: blurry), RESERVED AREA (text
+written over the navigation of the theme), COLLAPSED FIGURE (image or video drawn
 without width or height), SVG OVERFLOW (SVG figure drawing beyond its viewBox:
 cut), INTERNAL COLLISION / INTERNAL CLIPPED (the same between the inner blocks
 of a block: items, formulas, captions; see internal-overlay.png), COLUMN
