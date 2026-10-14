@@ -260,3 +260,31 @@ def test_the_chrome_asked_for_wins_and_an_installed_one_is_the_last_resort():
     assert chosen['options']['executablePath'] == '/bin/given'
     assert chosen['env'] == ''                      # nothing asked for: puppeteer decides
     assert chosen['installed'] == '' or os.path.isfile(chosen['installed'])
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_a_failed_measurement_keeps_the_report_of_the_previous_build(tmp_path):
+    """An analysis reports, or reports that it could not run: what it cannot
+    replace, it does not destroy."""
+    source = tmp_path / 'src'
+    source.mkdir()
+    for name in ('a', 'b'):
+        (source / (name + '.html.j2')).write_text("{% set pageTitle = '" + name + "' %}\n<h1>" + name + '</h1>')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': []}))
+    assert subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                          capture_output=True, text=True, timeout=120).returncode == 0
+    reports = sorted(p.relative_to(tmp_path).as_posix() for p in (tmp_path / '.layout').rglob('layout.json'))
+    assert len(reports) == 2
+    summary = (tmp_path / '.layout/summary.md').read_text()
+
+    broken = tmp_path / 'broken.yaml'                   # a Chrome that is not a browser
+    broken.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
+                                      'chrome': '/bin/echo' if os.name != 'nt' else 'C:\\Windows\\System32\\cmd.exe'}))
+    failed = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(broken), '--layout'],
+                            capture_output=True, text=True, timeout=120)
+    assert failed.returncode == 0, failed.stdout + failed.stderr
+    assert 'Layout report not produced' in failed.stdout
+    assert sorted(p.relative_to(tmp_path).as_posix()
+                  for p in (tmp_path / '.layout').rglob('layout.json')) == reports
+    assert (tmp_path / '.layout/summary.md').read_text() == summary

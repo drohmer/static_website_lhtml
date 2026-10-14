@@ -632,7 +632,7 @@ def render_files(meta, files, log):
         listing = fid.name
     try:
         _run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
-                                     f"--height={options['height']}"], chrome=options['chrome'])
+                                     f"--height={options['height']}"], chrome=options['chrome'], log=log)
     except RuntimeError as exc:
         log.error(str(exc))
         sys.exit(1)

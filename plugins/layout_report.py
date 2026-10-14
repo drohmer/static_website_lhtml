@@ -45,6 +45,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import traceback
 
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
@@ -1275,10 +1276,12 @@ def _options(meta):
     return options
 
 
-def _run_node(script, arguments, label=None, chrome=None):
+def _run_node(script, arguments, label=None, chrome=None, log=None):
     """Run a Node script of assets/; its lines 'progress <done> <total> <item>'
     on stdout are shown as a progress bar (`label`). `chrome` is the Chrome
-    executable to run instead of the one downloaded by puppeteer.
+    executable to run instead of the one downloaded by puppeteer. What the
+    script says about the browser it took ('chrome: ...') is logged, so that
+    a report measured with another Chrome than the usual one says so.
     Returns its stderr."""
     if chrome:
         arguments = arguments + [f'--chrome={chrome}']
@@ -1307,6 +1310,9 @@ def _run_node(script, arguments, label=None, chrome=None):
     proc.wait()
     reader.join()
     stderr = ''.join(errors)
+    for line in stderr.splitlines():
+        if line.startswith('chrome:') and log is not None:
+            log.warning(line)
     if 'Cannot find module' in stderr:
         raise RuntimeError('puppeteer not found: run `npm install` in the static_website_lhtml directory')
     if 'Could not find Chrome' in stderr or 'Browser was not found' in stderr:
@@ -1338,7 +1344,7 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         sheets_json = fid.name
     try:
         stderr = _run_node('layout_contact.js', [f'--input={sheets_json}'], label='Contact sheets',
-                           chrome=options['chrome'])
+                           chrome=options['chrome'], log=log)
         for line in stderr.splitlines():
             if line.startswith('layout_contact:'):
                 log.error(line)
@@ -1359,6 +1365,37 @@ def _warn_degenerate_root(measured, options, log):
                 f"The root selector probably does not match the theme; the checks on the blocks "
                 f"found nothing. Set plugin_arg: layout_report: root: to the content element of "
                 f"the theme (webpage-frame: '#main-content-centered').")
+
+
+def _clean_after_measure(output_dir, pages, previous, partial, meta, start):
+    """Once the measurement has run: the report of a page it could not write
+    is removed (it would be read as fresh), the reports of pages that are no
+    longer in the site go with them, and the aggregates of a previous
+    --verify are dropped. Nothing of this happens when the measurement
+    fails: the report of the previous build is then kept whole."""
+    for page in pages:                      # a page whose measure failed has no report
+        path = os.path.join(page['out'], 'layout.json')
+        try:
+            if os.path.getmtime(path) < start:
+                shutil.rmtree(page['out'], ignore_errors=True)
+        except OSError:
+            pass
+    if not partial:                         # pages that left the site
+        kept = {os.path.abspath(p['out']) for p in pages + previous}
+        root = os.path.abspath(os.path.join(output_dir, 'pages'))
+        for directory, _, files in os.walk(root, topdown=False):
+            if 'layout.json' in files and os.path.abspath(directory) not in kept:
+                shutil.rmtree(directory, ignore_errors=True)
+        for directory, _, _ in os.walk(root, topdown=False):      # the directories left empty
+            try:
+                if os.path.abspath(directory) != root and not os.listdir(directory):
+                    os.rmdir(directory)
+            except OSError:
+                pass
+    if not meta.get('verify'):              # aggregates of a previous --verify: no longer valid
+        for name in ('verification.json', 'triage.json', 'triage.md'):
+            if os.path.isfile(os.path.join(output_dir, name)):
+                os.remove(os.path.join(output_dir, name))
 
 
 def _same_source(report, page, meta):
@@ -1427,30 +1464,25 @@ def _post_process(meta):
         elif os.path.isfile(html):
             pages.append(page)
 
-    previous_layouts = {}             # the previous measure of the pages measured again, for changes.md
+    # Read (and do not remove) the previous measure of the pages measured
+    # again, for changes.md: nothing is deleted before the measurement, so a
+    # measurement that fails leaves the report of the previous build intact.
+    previous_layouts = {}
     for p in pages:
         path = os.path.join(p['out'], 'layout.json')
-        if os.path.isfile(path) and requested and not _same_source(path, p, meta):
-            os.remove(path)             # the report of another page (the deck changed): no changes
-        elif os.path.isfile(path):
+        if os.path.isfile(path) and not (requested and not _same_source(path, p, meta)):
             try:
                 with open(path, encoding='utf-8') as fid:
                     previous_layouts[p['name']] = json.load(fid)
             except (OSError, ValueError):
                 pass
-            os.remove(path)             # a page whose measure fails has none (not the previous one)
-    if os.path.isdir(output_dir) and not partial:
-        shutil.rmtree(output_dir)
     os.makedirs(output_dir, exist_ok=True)
-    if not meta.get('verify'):              # aggregates of a previous --verify: no longer valid
-        for name in ('verification.json', 'triage.json', 'triage.md'):
-            if os.path.isfile(os.path.join(output_dir, name)):
-                os.remove(os.path.join(output_dir, name))
 
     if requested:
         log.keyvalue('info', f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
                              f'the others keep their report (--layout for all)', indent_level=2)
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
+    start = time.time()
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name'],
                     **(agent_report.page_entry(options, p['name']) if meta.get('verify') else {})}
@@ -1461,7 +1493,7 @@ def _post_process(meta):
             f'--input={pages_json}', f"--root={options['root']}", f"--exclude={options['exclude']}",
             f"--width={options['width']}", f"--height={options['height']}",
             f"--images={1 if options['images'] else 0}", f"--jobs={_jobs(options)}"],
-            label='Measure layout', chrome=options['chrome']) if pages else ''
+            label='Measure layout', chrome=options['chrome'], log=log) if pages else ''
         for line in stderr.splitlines():
             if line.startswith('layout_measure:'):
                 log.error(line)
@@ -1471,6 +1503,8 @@ def _post_process(meta):
         raise
     finally:
         os.remove(pages_json)
+
+    _clean_after_measure(output_dir, pages, previous, partial, meta, start)
 
     remeasured = {p['name'] for p in pages}
     measured = []
