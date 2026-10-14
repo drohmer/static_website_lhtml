@@ -172,9 +172,23 @@ def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
     """A measurement that cannot run is reported and the build goes on; an
     option of the wrong shape is a configuration error and stops it, before
     the analysis writes anything."""
-    for bad in ({'design_rules': 42}, {'jobs': 'four'}, {'jobs': 0}):
+    for bad in ({'design_rules': 42}, {'jobs': 'four'}, {'jobs': 0},
+                {'width': 'wide'}, {'root': ''}, {'images': 'yes'}, {'contact_rows': -1}):
         config, _ = project(tmp_path, plugin_arg={'layout_report': bad})
         result = build(config, '--layout')
         assert result.returncode == 1, (bad, result.stdout + result.stderr)
-        assert 'layout_report' in result.stdout and 'configuration of layout_report.py' in result.stdout
+        said = ' '.join(result.stdout.split())      # independent of the terminal width
+        assert 'layout_report' in said and 'configuration of layout_report.py' in said, (bad, said)
         assert not (tmp_path / '.layout').exists(), bad
+
+
+def test_an_option_the_analysis_does_not_know_is_reported(tmp_path):
+    """A key of plugin_arg that no option matches is a typo: it was read,
+    copied and never used, without a word."""
+    config, _ = project(tmp_path, plugin_arg={'layout_report': {'widht': 3000, 'expct': 'x'}})
+    said = ' '.join(build(config, '--layout').stdout.split())
+    assert 'unknown: expct, widht' in said, said
+
+    config, _ = project(tmp_path, plugin_arg={'layout_report': {'interactive': {'enabled': True}}})
+    said = ' '.join(build(config, '--layout').stdout.split())
+    assert 'describes states measured by --verify' in said, said

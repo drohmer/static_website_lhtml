@@ -1268,12 +1268,43 @@ def _jobs(options):
     return jobs
 
 
-def _validate_options(meta):
+# Options of the report that are not in DEFAULTS: the design rules, and the
+# interactive states, which only --verify reads (agent/).
+OTHER_OPTIONS = {'design_rules': dict, 'interactive': dict}
+TEXT_OPTIONS = ('root', 'exclude', 'output')
+COUNT_OPTIONS = ('width', 'height', 'threshold', 'max_words', 'min_font',
+                 'contact_columns', 'contact_rows')
+
+
+def _validate_options(meta, log=None):
     """Check the options of the report before it starts. A value the report
     cannot make sense of is a configuration error (ConfigError: the build
-    stops and says which key), not a failure of the measurement."""
+    stops and says which key), not a failure of the measurement. A key it
+    does not know is reported as a warning: it is a typo, and it would
+    otherwise be read, copied and never used."""
+    given = (meta.get('plugin_arg') or {}).get('layout_report') or {}
+    unknown = sorted(set(given) - set(DEFAULTS) - set(OTHER_OPTIONS))
+    if unknown and log is not None:
+        log.warning(f"layout_report: option(s) ignored, unknown: {', '.join(unknown)}")
+    if 'interactive' in given and not meta.get('verify') and log is not None:
+        log.warning("layout_report: 'interactive' describes states measured by --verify; "
+                    'this build does not read it')
     try:
-        _jobs(_options(meta))
+        options = _options(meta)
+        _jobs(options)
+        for key in TEXT_OPTIONS:
+            if not isinstance(options[key], str) or not options[key].strip():
+                raise ValueError(f"layout_report: '{key}' must be a non-empty string, "
+                                 f'not {options[key]!r}')
+        for key in COUNT_OPTIONS:
+            if isinstance(options[key], bool) or not isinstance(options[key], int) or options[key] <= 0:
+                raise ValueError(f"layout_report: '{key}' must be a positive integer, "
+                                 f'not {options[key]!r}')
+        if not isinstance(options['images'], bool):
+            raise ValueError(f"layout_report: 'images' must be a boolean, not {options['images']!r}")
+        for key, kind in OTHER_OPTIONS.items():
+            if key in given and not isinstance(given[key], kind):
+                raise ValueError(f"layout_report: '{key}' must be a mapping, not {given[key]!r}")
     except ValueError as error:
         raise ConfigError(str(error)) from None
 
@@ -1428,7 +1459,7 @@ def post_process(meta):
     # shape) stops the build, before anything is written, so that a typo is
     # not answered by a report that never comes.
     output = layout_output_directory(meta)
-    _validate_options(meta)
+    _validate_options(meta, meta['log'])
     try:
         # one build at a time writes the reports (another build waits for it)
         with report_lock(output, meta['log']):
