@@ -393,18 +393,22 @@ right. The acceptance criterion is a **reference corpus** - a real deck, not
 the example site - with expected findings and a stated precision target per
 check.
 
-A first run on a deck of 78 slides says what that corpus is for. After the
-grouping fix, 40 problems remain, and about 35 of them have one cause: the
-full-bleed images, declared `position: fixed` over the whole slide with the
-class `overlay`, are measured against the usable area (the inside of the
-slide frame) and against the navigation they pass under. The class is
-already honoured for collisions ("marked as intentional") and ignored by
-`OUT OF AREA` and `RESERVED AREA`. Two rules would settle it: an intentional
-overlay is compared with the page rather than with the usable area, and
-`RESERVED AREA` separates text written over the navigation from a background
-passing under it. What is left then is five or six findings, all plausible -
-among them a `HIDDEN TEXT` that is a real defect, an image credit covered at
-100 % by the next layer.
+A first run on a deck of 78 slides says what that corpus is for, and what it
+is worth. The check reported 109 problems. Grouping the findings per block
+brought it to 40, and about 35 of those had one cause: the full-bleed
+images, declared `position: fixed` over the whole slide with the class
+`overlay`, were measured against the usable area (the inside of the slide
+frame) and against the navigation they pass under, although the class was
+already honoured for collisions. Two rules settled it - an intentional
+overlay is compared with the page, and `RESERVED AREA` counts text only -
+and the deck now reports **6 problems**, each one actionable: three texts
+covered at 100 % (one of them an image credit), two images displayed at
+twice their size, and one block over the usable area that is not declared as
+an overlay.
+
+109 to 6 on the same slides, with no check removed: that is the difference
+between a report an agent reads and one it learns to ignore, and none of it
+was visible on the three pages of the example site.
 
 The same run shows why findings need a cause (section 5.1): 21 `OUT OF AREA`
 are one layout repeated over seven slides of a series.
