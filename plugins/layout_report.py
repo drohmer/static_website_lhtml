@@ -1268,6 +1268,16 @@ def _jobs(options):
     return jobs
 
 
+def _validate_options(meta):
+    """Check the options of the report before it starts. A value the report
+    cannot make sense of is a configuration error (ConfigError: the build
+    stops and says which key), not a failure of the measurement."""
+    try:
+        _jobs(_options(meta))
+    except ValueError as error:
+        raise ConfigError(str(error)) from None
+
+
 def _options(meta):
     options = dict(DEFAULTS)
     options.update((meta.get('plugin_arg') or {}).get('layout_report') or {})
@@ -1413,9 +1423,12 @@ def post_process(meta):
     # An analysis reports, or reports that it could not run: it never takes
     # the build down with it. A missing browser used to throw away a site
     # that had rendered correctly.
-    # An unsafe output directory is a configuration error, not a failure of
-    # the analysis: it still stops the build, before anything is written.
+    # What it is asked to do is another matter: a configuration it cannot
+    # make sense of (an unsafe output directory, an option of the wrong
+    # shape) stops the build, before anything is written, so that a typo is
+    # not answered by a report that never comes.
     output = layout_output_directory(meta)
+    _validate_options(meta)
     try:
         # one build at a time writes the reports (another build waits for it)
         with report_lock(output, meta['log']):

@@ -661,6 +661,16 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 writes a text report that an LLM (or any script) can read to find and fix
 layout problems. It requires `npm install` (see Installation).
 
+**What happens when it cannot run.** The analysis never takes the build with
+it: a missing browser, a page it cannot measure, a measurement that crashes
+are reported (`Layout report not produced ...`), the site is built and
+published, and the report of the previous build is left whole - what the
+measurement cannot replace, it does not destroy. What it is *asked* to do is
+another matter: an output directory that would overlap the sources, the
+theme or the site, and an option of the wrong shape (`jobs`,
+`design_rules`), stop the build with the name of the key, before anything is
+written.
+
 ```bash
 python generate.py --layout          # full generation + layout report
 python generate.py --only 03_squelette/04_ik --layout   # after editing a slide

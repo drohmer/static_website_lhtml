@@ -177,6 +177,10 @@ def run_plugins(meta, hook_name, log):
             if hasattr(module, hook_name):
                 log.keyvalue('Run plugin', full_path.split('/')[-1])
                 getattr(module, hook_name)(meta)
+        except ConfigError as e:        # what it was asked to do, not what happened
+            log.error(f'{e} (configuration of {os.path.basename(full_path)})')
+            log.debug(traceback.format_exc())
+            failures += 1
         except Exception as e:
             log.error(f'Plugin {full_path} failed ({hook_name}): {type(e).__name__}: {e}')
             log.debug(traceback.format_exc())

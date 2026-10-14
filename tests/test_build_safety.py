@@ -166,3 +166,15 @@ def test_nothing_private_of_the_project_reaches_the_site(tmp_path):
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'public_page_keys': ['src']}))
     failed = build(config)
     assert failed.returncode == 1 and 'public_page_keys' in failed.stdout
+
+
+def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
+    """A measurement that cannot run is reported and the build goes on; an
+    option of the wrong shape is a configuration error and stops it, before
+    the analysis writes anything."""
+    for bad in ({'design_rules': 42}, {'jobs': 'four'}, {'jobs': 0}):
+        config, _ = project(tmp_path, plugin_arg={'layout_report': bad})
+        result = build(config, '--layout')
+        assert result.returncode == 1, (bad, result.stdout + result.stderr)
+        assert 'layout_report' in result.stdout and 'configuration of layout_report.py' in result.stdout
+        assert not (tmp_path / '.layout').exists(), bad
