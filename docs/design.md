@@ -111,9 +111,12 @@ symptom of a missing contract, not bad luck:
 - The menu published **every** page setting into `theme/js/menu.js`, a file
   served to every visitor: a `notes:` or `message:` written for the author
   was readable in the site. Fixed with a declared list of keys
-  (`plugins/menu.py`). Missing contract: *which page settings a theme may
-  see*. `structure/structure.yaml` is still written into the site with every
-  setting - see the open questions.
+  (`plugins/menu.py`), then the same rule applied to what the build writes
+  into the site: `structure/structure.{json,yaml}` carries the public part of
+  each page, the files the build reads (a page `config.yaml`) are no longer
+  copied, and the documents of the project moved out (see 3.2). Missing
+  contract, now stated by a list in one place: *which page settings a theme
+  may see*.
 - `RESERVED AREA` reported 33 problems on the three example pages, all false:
   the reserved zone was the union of the boxes of all visible descendants of
   the navigation, and a navigation with parts at two corners covers the whole
@@ -181,15 +184,16 @@ including the `notes:` an author writes for themselves - and with `src`, the
 site). Filtering what the theme receives, as the menu now does, is not
 enough: the files the generator copies or exports must obey the same rule.
 
-The same applies to the documents the build writes next to them:
-`structure/agents.md` (the procedure for an agent), `structure/design.md`
-(the macros and tokens of the theme) and `structure/todo.md` (the planned
-figures) are working documents of the author, published with the slides
-because the build had nowhere else to put them. They belong with the
-diagnostics, not in the site.
+The same applied to the documents the build writes next to them:
+`agents.md` (the procedure for an agent), `design.md` (the macros and tokens
+of the theme), `credits.md` and `todo.md` were published with the slides
+because the build had nowhere else to put them. They are written in
+`.structure/`, next to the configuration, beside `.layout/` and
+`.verification/`; the site keeps the machine-readable structure the plugins
+and `--only` read.
 
-The rule: **build state lives outside the site; what is published is an
-explicit list.** Then `publish:` stops being a boolean. A PDF target
+The rule, now applied: **build state lives outside the site; what is
+published is an explicit list.** Then `publish:` stops being a boolean. A PDF target
 publishes `slides.pdf` and `images/`, keeps the HTML as an intermediate, and
 keeps the diagnostics (`.layout/`, the lint) outside the published tree -
 three different answers that `publish: false` conflates.
@@ -586,8 +590,7 @@ property at a time, never two at once.
    bite and need none of the rest: a measurement finds a Chrome instead of
    failing, an analysis that fails leaves the build alone, and `src`, the
    private settings and the authoring documents stop being published. Done,
-   except the authoring documents (`structure/agents.md`, `design.md`,
-   `todo.md`), which are still written into the site.
+   including the documents of the project, which now live in `.structure/`.
 1. **The guarantees of section 3, on paper and under test**: when a partial
    build widens itself, and what a build publishes. These are observable
    from outside, so they can be pinned by tests before any file moves - and
