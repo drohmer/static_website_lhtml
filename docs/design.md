@@ -88,15 +88,15 @@ their behalf. Several are internal build state: `loaded_design`, `measure`,
 `published_site_directory`, `plugin_paths`, `config_file`. And `headings` is
 written by a plugin and read by nobody: dead runtime state to drop.
 
-**The analysis code is trapped inside a plugin.** Of the 1271 lines of
-`plugins/layout_report.py`, 653 are pure analysis (61-713) and 343 are
-Markdown rendering (714-1056) - 996 lines that use neither `meta` nor any
-`lib` import, although the module as a whole imports `lib.lint`,
-`lib.structure` and `lib.configuration` at lines 47-49 for its glue. Only the
-last 215 lines (1057-1271) are that glue; the first 60 are the docstring, the
-imports and `DEFAULTS`. Because that code has no legitimate home, three
-places reach into it by path: `tools/style_profile.py:36-39` inserts two
-entries in `sys.path` and uses 12 symbols, 4 of them private;
+**The analysis code is trapped inside a plugin**, and the merge of
+`split-agent` made it larger rather than less trapped: of the 1516 lines of
+`plugins/layout_report.py`, lines 70 to 1230 - analysis, alignment and
+density, Markdown rendering, 1161 lines - still use no `meta` at all, and
+their single tie to `lib` is `analyse_design` from `lib/design_checks.py`,
+which is itself a pure analysis module and belongs in the same place. Only
+the last 285 lines are plugin glue. Because that code has no legitimate home,
+three places reach into it by path: `tools/style_profile.py:36-39` inserts
+two entries in `sys.path` and uses 12 symbols, 4 of them private;
 `tests/test_layout_report.py:10` loads the file by location; the core imports
 it as a package.
 
@@ -140,20 +140,31 @@ the previous bytes of the pages it does not build, builds in place instead of
 in a staging directory (`:700-706`), and changes what the layout analysis
 measures (`:699`).
 
-What decides whether it is safe is `only_pages()` (`generate.py:234-249`),
-and it compares **only the list of page paths** against
-`structure/structure.json`. A change of theme, of a macro of the design, or
-of a shared template leaves that list identical, so the build stays partial -
-and under `--only` the theme is not even copied, so a theme edit is simply
-not applied. `restore_previous_pages()` (`:346-352`) restores the HTML bytes
-of a page that failed, and nothing else it may have written.
-
 The rule: **a partial build produces, for everything it touches and
 everything that depends on it, the same result as a full build. When the
 generator cannot determine those dependencies, it widens the build and says
-why.** A conservative version is enough to start - a fingerprint of the
-theme, the design and the shared templates, compared with the previous build
-- and it does not require a dependency cache.
+why.**
+
+Most of this now exists, and it arrived with the merge of `split-agent`:
+`lib/dependencies.py` fingerprints the inputs of each page (its assets, the
+whole theme, the design, the configuration, the plugins) in
+`.verification/builds.json`. `BuildStore.expand()` adds to a partial build
+the pages whose inputs changed, and when the change touches a shared input -
+or anything untracked - it returns to a full build and says so. Checked: a
+`--only a` after editing a file of the theme prints "shared inputs changed or
+untracked; full build". The conservative fallback is the right one.
+
+What is left is the part that makes it a guarantee rather than a behaviour:
+
+- it is not pinned as a property. A test should state it from outside - the
+  same sources, built fully and partially, give the same site - rather than
+  test the fingerprints;
+- `only_pages()` keeps its own check (the list of pages), so two mechanisms
+  decide the same thing in two places;
+- `restore_previous_pages()` restores the HTML bytes of a page that failed,
+  and nothing else it may have written;
+- an external resource is reported as untracked, which is honest, and makes
+  every build with one a full build. Worth measuring on a real deck.
 
 ### 3.2 What is published, and what stays private
 
@@ -313,8 +324,8 @@ in a browser and stated as data, so an agent can fix a slide on numbers
 instead of guesses. It should be built as a product, not as the output of a
 plugin.
 
-- `lib/layout/analysis.py`: pure functions on measured blocks. No build, no
-  configuration, no `meta`.
+- `lib/layout/analysis.py`: pure functions on measured blocks, with the
+  checks of `lib/design_checks.py`. No build, no configuration, no `meta`.
 - `lib/layout/vocabulary.py`: the registry of checks - code, severity,
   default threshold, description, remedy template. The JSON, the Markdown
   glossary and the documentation are generated from it, so they cannot drift
@@ -407,14 +418,15 @@ name meaning two different things in two projects.
 The format is optimised today; the loop that consumes it is not, and that is
 where the time goes.
 
-- A machine-readable **verdict** and counts at the top of both files; today
-  neither says when to stop, and the stop criterion lives in `docs/agents.md`.
-- **"Nothing found" and "not looked at" must not read alike.** The verdict
-  states which pages and which checks were actually run, which measures come
-  from a previous build (routine with `--only`, which keeps the reports of
-  the pages it did not measure), and which measures failed. Without it an
-  agent concludes that a deck is clean when half of it was never measured -
-  and the deck norms are computed over that mix of fresh and stale pages.
+- **"Nothing found" and "not looked at" must not read alike.** Half of this
+  arrived with `split-agent`: `layout.md` now has a "Report validity"
+  section, and `dependencies.freshness()` states `current`, `stale` or
+  `unknown` per page, with what changed. What is missing is the other half -
+  the counts and the state of the whole deck in one place, so that an agent
+  does not conclude that a deck is clean when a third of it is `stale`.
+- A machine-readable **verdict** at the top of both files. The freshness is
+  prose in the Markdown; the stop criterion still lives in `docs/agents.md`,
+  not in the artefact.
 - **Findings grouped by cause** and ordered by severity: three `OUT OF AREA`
   from one overflowing column are one problem, and the code already
   half-knows it (it deduplicates `COLLISION` and `HIDDEN TEXT`).
@@ -454,10 +466,11 @@ tools/          outside the build: style_profile (on top of lib/layout), process
 Nothing here is urgent at three pages; all of it is cheap to decide now and
 expensive to retrofit.
 
-- **The measurement is sequential**: one browser, one page, a loop
-  (`layout_measure.js`), about 1 s per slide. `tools/style_profile.py:91`
-  already shards the same work across several node processes. The library
-  should carry the sharding, not the tool.
+- **The measurement is parallel since `split-agent`**: `jobs` tabs of one
+  browser, `auto` being half the processors and at most six. What remains is
+  that `tools/style_profile.py` shards the same work its own way, across
+  processes: two implementations of one idea, which the extraction into
+  `lib/layout/measure.py` should reduce to one.
 - **Unbounded process fan-out**: `generate_pdf.py:63` uses a bare
   `ThreadPoolExecutor()`, each task spawning node, Chrome, `pdftoppm` and
   `magick`; `cache_video.py` starts one process per video and codec, all at
