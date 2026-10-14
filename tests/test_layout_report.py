@@ -431,3 +431,16 @@ def test_jobs_option():
     for bad in (0, -2, 'four', True, 1.5):
         with pytest.raises(ValueError):
             layout_report._jobs({'jobs': bad})
+
+
+def test_a_block_over_a_navigation_of_several_parts_is_reported_once():
+    """The theme is measured as one rectangle per part that paints, so a
+    navigation of five icons must not turn one full-bleed image into five
+    findings."""
+    nav = [{'x': 1630 + 40 * k, 'y': 990, 'w': 30, 'h': 40, 'name': 'nav'} for k in range(5)]
+    full_bleed = block(1, 0, 0, 1920, 1080, kind='image',
+                       ink=[{'x': 0, 'y': 0, 'w': 1920, 'h': 1080, 't': 'media'}])
+    found = layout_report.find_reserved_overlaps([full_bleed], nav)
+    assert len(found) == 1
+    assert found[0]['id'] == 1 and found[0]['name'] == 'nav'
+    assert (found[0]['x0'], found[0]['x1']) == (1630, 1820)      # over all the parts

@@ -258,17 +258,23 @@ def find_svg_labels(blocks):
 
 def find_reserved_overlaps(blocks, reserved, threshold=4):
     """Blocks whose ink covers an area reserved by the theme (the
-    navigation): {id, name, x0, y0, x1, y1}."""
-    found = []
+    navigation): {id, name, x0, y0, x1, y1}. An element of the theme is
+    measured as one rectangle per part that paints, so a block covering a
+    navigation of several parts is reported once, over all of them, and not
+    once per part."""
+    covered = {}
     for zone in reserved or []:
         z = (zone['x'], zone['y'], zone['x'] + zone['w'], zone['y'] + zone['h'])
         for b in blocks:
             parts = [o for r in _ink(b) if (o := _overlap(r, z, threshold))]
             if parts:
-                bounds = _bounds(parts)
-                found.append({'id': b['id'], 'name': zone.get('name', 'reserved'),
-                              **{k: bounds[k] for k in ('x0', 'y0', 'x1', 'y1')}})
-    return found
+                covered.setdefault((b['id'], zone.get('name', 'reserved')), []).extend(parts)
+    found = []
+    for (block_id, name), parts in covered.items():
+        bounds = _bounds(parts)
+        found.append({'id': block_id, 'name': name,
+                      **{k: bounds[k] for k in ('x0', 'y0', 'x1', 'y1')}})
+    return sorted(found, key=lambda f: (f['id'], f['name']))
 
 
 def find_wrapped(blocks, short=0.3):
