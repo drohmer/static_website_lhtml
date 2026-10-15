@@ -596,7 +596,8 @@ def render_files(meta, files, log):
     outside it, under _outside/<its directory>/), at the size of the slides
     of the layout report."""
     from pathlib import Path
-    from plugins.layout_report import _options, _run_node
+    from lib.layout.measure import run_node
+    from lib.layout_options import options_of
     try:
         output = layout_output_directory(meta) / 'render'
     except ConfigError as exc:
@@ -617,12 +618,12 @@ def render_files(meta, files, log):
             sys.exit(1)
         targets[png] = path
         entries.append({'file': str(path), 'png': str(png)})
-    options = _options(meta)
+    options = options_of(meta)
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump(entries, fid)
         listing = fid.name
     try:
-        _run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
+        run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
                                      f"--height={options['height']}"], chrome=options['chrome'], log=log)
     except RuntimeError as exc:
         log.error(str(exc))

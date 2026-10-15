@@ -242,6 +242,10 @@ static_website_lhtml/
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
     layout_options.py      # Options of the layout report, checked by --check-config
+    layout/
+      analysis.py          # What a measured page shows: collisions, overflows, density, deviations
+      report.py            # layout.md, summary.md, changes.md and the contact sheets
+      measure.py           # Measurement in headless Chrome (Node scripts of plugins/assets/)
     structure.py           # Pages of the site for plugins (structure, built_pages),
                            #   what may be published, and .structure/ of a project
   plugins/
@@ -253,7 +257,7 @@ static_website_lhtml/
     code_include.py        # Include code from external repos
     cache_video.py         # Video codec conversion and caching
     generate_pdf.py        # PDF/image generation (requires puppeteer)
-    layout_report.py       # Layout report (--layout, requires puppeteer)
+    layout_report.py       # Hook of the layout report during a build (--layout; the analysis is lib/layout/)
     assets/                # Node scripts of the PDF export and of the layout report
     video_convert/         # Video conversion utilities (ffmpeg)
   tests/                   # pytest suite
@@ -648,7 +652,7 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
 | `cache_video.py` | pre | Converts and caches videos in multiple codecs |
-| `layout_report.py` | post | Layout report of each page (`--layout`, requires `npm install`) |
+| `layout_report.py` | post | Layout report of each page (`--layout`, requires `npm install`); the analysis itself is `lib/layout/` |
 | `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation; put it last) |
 
 ## Layout Report (LLM-assisted slide layout)

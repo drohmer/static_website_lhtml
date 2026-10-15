@@ -1,17 +1,10 @@
-"""Tests of the layout analysis (plugins/layout_report.py), on synthetic
-measurements: no browser needed."""
-
-import importlib.util
-import os
-import sys
+"""Tests of the layout analysis (lib/layout/), on synthetic measurements:
+no browser needed."""
 
 import pytest
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-sys.path.insert(0, ROOT)
-spec = importlib.util.spec_from_file_location('layout_report', os.path.join(ROOT, 'plugins', 'layout_report.py'))
-layout_report = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(layout_report)
+from lib.layout import analysis as checks, measure, report as markdown
+from lib.layout_options import jobs
 
 AREA = {'x': 0, 'y': 0, 'w': 1000, 'h': 500}
 
@@ -25,7 +18,7 @@ def block(id, x, y, w, h, kind='div', position='static', **extra):
 
 def find_collisions(blocks, threshold=4):
     """Pairs of blocks whose drawn content overlaps."""
-    return layout_report.find_overlaps(blocks, threshold)[0]
+    return checks.find_overlaps(blocks, threshold)[0]
 
 
 def test_collision_with_overlap_rectangle():
@@ -58,20 +51,20 @@ def test_overlap_with_image_background_only_is_a_note():
     image = block(1, 600, 100, 200, 200, kind='image', media=media, ink=[content])
     text = block(2, 0, 20, 550, 40)
     layout = {'area': AREA, 'blocks': [image, text]}
-    analysis = layout_report.analyse(layout)
+    analysis = checks.analyse(layout)
     assert analysis['collisions'] == []
     assert analysis['background_overlaps'] == [{'image': 1, 'other': 2, 'src': 'tri.png'}]
-    md = layout_report.page_markdown('p', 'src/p/index.html.j2', layout)
+    md = markdown.page_markdown('p', 'src/p/index.html.j2', layout)
     assert '#2 overlaps only the background' in md
 
 
 def test_out_of_area_sides():
-    out = layout_report.find_out_of_area([block(1, -20, 480, 1100, 40)], AREA)
+    out = checks.find_out_of_area([block(1, -20, 480, 1100, 40)], AREA)
     assert out == [{'id': 1, 'left': 20, 'right': 80, 'bottom': 20}]
 
 
 def test_scrolling_page_bottom_not_checked():
-    out = layout_report.find_out_of_area([block(1, -20, 480, 100, 900)], AREA, scrolling=True)
+    out = checks.find_out_of_area([block(1, -20, 480, 100, 900)], AREA, scrolling=True)
     assert out == [{'id': 1, 'left': 20}]
 
 
@@ -80,7 +73,7 @@ def test_clipped_content_only_when_overflow_hidden():
     visible = block(1, 0, 0, 100, 200, scroll=scroll)
     hidden = block(2, 0, 0, 100, 200, scroll=scroll)
     hidden['overflow'] = 'hidden'
-    assert layout_report.find_clipped([visible, hidden]) == [{'id': 2, 'w': 0, 'h': 100}]
+    assert checks.find_clipped([visible, hidden]) == [{'id': 2, 'w': 0, 'h': 100}]
 
 
 def test_upscaled_image():
@@ -88,41 +81,41 @@ def test_upscaled_image():
              {'src': 'b.png', 'w': 100, 'h': 100, 'natural_w': 200, 'natural_h': 200},
              {'src': 'c.png', 'w': 220, 'h': 100, 'natural_w': 200, 'natural_h': 100},   # ×1.1: not visible
              {'src': 'd.svg', 'w': 800, 'h': 400, 'natural_w': 200, 'natural_h': 100, 'vector': True}]
-    assert layout_report.find_upscaled_images([block(1, 0, 0, 400, 200, media=media)]) == \
+    assert checks.find_upscaled_images([block(1, 0, 0, 400, 200, media=media)]) == \
         [{'id': 1, 'src': 'a.png', 'scale': 2.0}]
 
 
 def test_vertical_gaps_ignore_positioned_blocks():
     blocks = [block(1, 0, 0, 100, 50), block(2, 0, 400, 100, 50, position='fixed'), block(3, 0, 80, 100, 20)]
-    assert layout_report.vertical_gaps(blocks) == [(1, 3, 30)]
+    assert checks.vertical_gaps(blocks) == [(1, 3, 30)]
 
 
 def test_spacers_are_ignored_by_the_analysis():
     layout = {'area': AREA, 'blocks': [block(1, 0, 0, 100, 100), block(2, 0, 0, 1000, 600, kind='spacer')]}
-    analysis = layout_report.analyse(layout)
+    analysis = checks.analyse(layout)
     assert analysis['collisions'] == [] and analysis['out_of_area'] == []
 
 
 def test_occupancy():
     layout = {'area': AREA, 'blocks': [block(1, 0, 0, 500, 500)]}
-    assert layout_report.analyse(layout)['occupancy'] == 0.5
+    assert checks.analyse(layout)['occupancy'] == 0.5
 
 
 def test_cells_of_the_grid():
     """A cell counts when its centre is inside the area (also for a size that is not a multiple of 10)."""
     for w, cells in ((1920, 192), (106, 11), (104, 10), (5, 0)):
-        assert len(layout_report.coverage([], {'x': 0, 'y': 0, 'w': w, 'h': 20})[0]) == cells
+        assert len(checks.coverage([], {'x': 0, 'y': 0, 'w': w, 'h': 20})[0]) == cells
     area = {'x': 0, 'y': 0, 'w': 108, 'h': 108}
-    assert layout_report.occupancy([block(1, 0, 0, 108, 108)], area) == 1.0
+    assert checks.occupancy([block(1, 0, 0, 108, 108)], area) == 1.0
 
 
 def test_markdown_report_and_summary():
     layout = {'area': AREA, 'blocks': [block(1, 0, 0, 100, 100), block(2, 50, 50, 100, 100, position='fixed')]}
-    layout_report.analyse(layout)
-    md = layout_report.page_markdown('content/a', 'src/content/a/index.html.j2', layout)
+    checks.analyse(layout)
+    md = markdown.page_markdown('content/a', 'src/content/a/index.html.j2', layout)
     assert '| 2 | - | div | 50, 50 | 100 × 100 |' in md
     assert 'COLLISION #1 × #2' in md
-    summary = layout_report.summary_markdown([('content/a', 'content/a/layout.md', layout['analysis'])])
+    summary = markdown.summary_markdown([('content/a', 'content/a/layout.md', layout['analysis'])])
     assert '| content/a | 1 | 0 | 1 | 0 | 0 | 0 | 0 |' in summary
 
 
@@ -134,17 +127,17 @@ def test_text_on_background_of_another_block_is_not_a_collision():
     code = block(1, 0, 0, 800, 300, kind='code', ink=[{'x': 0, 'y': 0, 'w': 800, 'h': 300, 't': 'paint'},
                                                       text(10, 10, 300, 30)])
     note = block(2, 400, 10, 300, 40, position='fixed', ink=[text(400, 10, 300, 40)])
-    collisions, tight, intentional = layout_report.find_overlaps([code, note])
+    collisions, tight, intentional = checks.find_overlaps([code, note])
     assert collisions == tight == intentional == []
 
 
 def test_shallow_text_overlap_is_tight():
     title = block(1, 0, 0, 500, 50, kind='title', ink=[text(0, 0, 500, 50)], font_size=40)
     formula = block(2, 0, 42, 500, 60, ink=[text(0, 42, 500, 60)], font_size=35)
-    collisions, tight, _ = layout_report.find_overlaps([title, formula])
+    collisions, tight, _ = checks.find_overlaps([title, formula])
     assert collisions == [] and [(t['a'], t['b']) for t in tight] == [(1, 2)]
     deep = block(3, 0, 10, 500, 60, ink=[text(0, 10, 500, 60)], font_size=35)
-    collisions, tight, _ = layout_report.find_overlaps([title, deep])
+    collisions, tight, _ = checks.find_overlaps([title, deep])
     assert [(c['a'], c['b']) for c in collisions] == [(1, 3)] and tight == []
 
 
@@ -153,10 +146,10 @@ def test_intentional_overlay():
     zoom = block(2, 400, 200, 200, 200, kind='image', position='fixed', intentional=True,
                  ink=[{'x': 400, 'y': 200, 'w': 200, 'h': 200, 't': 'media'}])
     layout = {'area': AREA, 'blocks': [image, zoom]}
-    analysis = layout_report.analyse(layout)
+    analysis = checks.analyse(layout)
     assert analysis['collisions'] == [] and [(c['a'], c['b']) for c in analysis['intentional']] == [(1, 2)]
-    assert layout_report.count_problems(analysis) == 0
-    assert 'marked as intentional' in layout_report.page_markdown('p', 's', layout)
+    assert checks.count_problems(analysis) == 0
+    assert 'marked as intentional' in markdown.page_markdown('p', 's', layout)
 
 
 def test_hidden_text_is_a_problem():
@@ -165,9 +158,9 @@ def test_hidden_text_is_a_problem():
     image = block(2, 600, 0, 300, 100, kind='image', position='fixed',
                   ink=[{'x': 650, 'y': 0, 'w': 100, 'h': 100, 't': 'media'}])
     layout = {'area': AREA, 'blocks': [sentence, image]}
-    analysis = layout_report.analyse(layout)
+    analysis = checks.analyse(layout)
     assert analysis['hidden_text'] == [{'id': 1, 'by': 2, 'x0': 600, 'y0': 0, 'x1': 900, 'y1': 40, 'fraction': 0.3}]
-    md = layout_report.page_markdown('p', 's', layout)
+    md = markdown.page_markdown('p', 's', layout)
     assert 'HIDDEN TEXT #1 under #2' in md and '30 % of the text of #1' in md
     # the overlap of the text with the image content is not reported again as a collision
     assert analysis['collisions'] == []
@@ -181,12 +174,12 @@ def test_near_alignment_of_frames_and_text_left_edges():
     # two framed boxes stacked: right edges 6 px apart
     code = block(1, 100, 100, 700, 200, ink=[paint(100, 100, 700, 200)])
     image = block(2, 100, 350, 694, 300, ink=[paint(100, 350, 694, 300)])
-    near = layout_report.find_near_alignments([code, image], AREA)
+    near = checks.find_near_alignments([code, image], AREA)
     assert near == [{'id': 1, 'axis': 'x', 'edge': 'right', 'value': 800, 'ref': 794,
                      'ref_label': 'right of #2', 'delta': 6}]
     # left-aligned text 7 px off a column of the deck
     para = block(3, 159, 700, 400, 40, ink=[text(159, 700, 400, 40)])
-    near = layout_report.find_near_alignments([para], {'x': 0, 'y': 0, 'w': 1000, 'h': 1000}, grid=[152])
+    near = checks.find_near_alignments([para], {'x': 0, 'y': 0, 'w': 1000, 'h': 1000}, grid=[152])
     assert [(n['id'], n['edge'], n['ref_label'], n['delta']) for n in near] == [(3, 'left', 'deck column', 7)]
 
 
@@ -197,7 +190,7 @@ def test_ragged_text_edges_and_line_boxes_are_not_compared():
     centered = block(3, 306, 300, 200, 40, ink=[text(306, 300, 200, 40)], text_align='center')
     framed = block(4, 300, 400, 210, 100, ink=[paint(300, 400, 210, 100)])
     side = block(5, 700, 105, 200, 40, ink=[text(700, 105, 200, 40)])
-    assert layout_report.find_near_alignments([a, b, centered, framed, side], AREA) == []
+    assert checks.find_near_alignments([a, b, centered, framed, side], AREA) == []
 
 
 def test_image_with_transparent_margin_has_no_precise_edges():
@@ -205,9 +198,9 @@ def test_image_with_transparent_margin_has_no_precise_edges():
               'content': {'x': 550, 'y': 150, 'w': 200, 'h': 200}}]
     image = block(1, 550, 150, 200, 200, kind='image', media=media,
                   ink=[{'x': 550, 'y': 150, 'w': 200, 'h': 200, 't': 'media'}])
-    assert layout_report._precise_edges(image) == {}
+    assert checks._precise_edges(image) == {}
     media[0]['content'] = media[0]['box']
-    assert set(layout_report._precise_edges(image)) == {'left', 'right', 'center', 'top', 'bottom', 'middle'}
+    assert set(checks._precise_edges(image)) == {'left', 'right', 'center', 'top', 'bottom', 'middle'}
 
 
 def page(title_y=58, title_font=70, body_font=35, words=30, extra=()):
@@ -220,19 +213,19 @@ def page(title_y=58, title_font=70, body_font=35, words=30, extra=()):
 
 def test_deck_norms_and_deviations():
     deck = [page() for _ in range(5)] + [page(title_y=80), page(body_font=22)]
-    norms = layout_report.deck_norms(deck)
+    norms = checks.deck_norms(deck)
     assert norms['titles'] == [{'tag': 'h1', 'font': 70, 'pages': 7, 'x_anchor': 'left', 'x': 62,
                                 'y_anchor': 'top', 'y': 58}]
     assert norms['columns'] == [62, 112] and norms['body_font'] == 35 and norms['text_fonts'] == [35]
     assert norms['title_gap'] == 30 and norms['words'] == 30
-    assert layout_report.analyse(deck[0], norms=norms)['deviations'] == []
-    deviations = layout_report.analyse(deck[5], norms=norms)['deviations']
+    assert checks.analyse(deck[0], norms=norms)['deviations'] == []
+    deviations = checks.analyse(deck[5], norms=norms)['deviations']
     assert deviations == [{'kind': 'title_position', 'id': 1, 'value': [62, 80], 'norm': [62, 58],
                            'anchor': ['left', 'top']}]
-    deviations = layout_report.analyse(deck[6], norms=norms)['deviations']
+    deviations = checks.analyse(deck[6], norms=norms)['deviations']
     assert deviations == [{'kind': 'text_font', 'id': 2, 'value': 22, 'norm': [35]}]
-    assert 'TEXT FONT #2: text at 22 px' in layout_report.page_markdown('p', 's', deck[6])
-    assert 'page title `h1` 70 px (7 pages): left x 62, top y 58' in layout_report.norms_markdown(norms)
+    assert 'TEXT FONT #2: text at 22 px' in markdown.page_markdown('p', 's', deck[6])
+    assert 'page title `h1` 70 px (7 pages): left x 62, top y 58' in markdown.norms_markdown(norms)
 
 
 def test_centered_titles_of_various_lengths():
@@ -241,7 +234,7 @@ def test_centered_titles_of_various_lengths():
         t = block(1, 960 - w // 2, 500, w, 90, kind='title', font_size=91, ink=[text(960 - w // 2, 500, w, 90)])
         t['signature'] = 'h1 "Section"'
         deck.append({'area': AREA, 'blocks': [t]})
-    norms = layout_report.deck_norms(deck)
+    norms = checks.deck_norms(deck)
     assert [(t['x_anchor'], t['x']) for t in norms['titles']] == [('center', 960)]
 
 
@@ -250,23 +243,23 @@ def test_density_and_warnings():
                     text={'words': 70, 'formulas': 2, 'code_lines': 0, 'items': 3, 'min_font': 35}),
               block(2, 0, 200, 500, 200, kind='code', ink=[paint(0, 200, 500, 200), text(10, 210, 300, 20)],
                     text={'words': 0, 'formulas': 0, 'code_lines': 8, 'items': 0, 'min_font': 17})]
-    d = layout_report.density(blocks, AREA)
+    d = checks.density(blocks, AREA)
     assert (d['words'], d['formulas'], d['code_lines'], d['items'], d['text_lines'], d['min_font']) == \
         (70, 2, 8, 3, 2, 17)
-    assert layout_report.find_density_warnings(d, max_words=60, min_font=20) == [
+    assert checks.find_density_warnings(d, max_words=60, min_font=20) == [
         {'kind': 'words', 'value': 70, 'limit': 60}, {'kind': 'min_font', 'value': 17, 'limit': 20}]
     layout = {'area': AREA, 'blocks': blocks}
-    analysis = layout_report.analyse(layout, limits={'max_words': 60, 'min_font': 20})
-    assert layout_report.count_warnings(analysis) == 2
-    md = layout_report.page_markdown('p', 's', layout)
+    analysis = checks.analyse(layout, limits={'max_words': 60, 'min_font': 20})
+    assert checks.count_warnings(analysis) == 2
+    md = markdown.page_markdown('p', 's', layout)
     assert 'DENSE: 70 words' in md and 'SMALL FONT: 17 px' in md and '## Density' in md
 
 
 def test_contact_sheets():
-    analysis = layout_report.analyse({'area': AREA, 'blocks': [block(1, 0, 0, 100, 100),
+    analysis = checks.analyse({'area': AREA, 'blocks': [block(1, 0, 0, 100, 100),
                                                                 block(2, 50, 50, 100, 100)]})
     rows = [(f'p{i}', f'dir/p{i}', analysis) for i in range(20)]
-    sheets = layout_report.contact_sheets_html(rows, {'w': 1920, 'h': 1080}, columns=4, rows_per_sheet=4)
+    sheets = markdown.contact_sheets_html(rows, {'w': 1920, 'h': 1080}, columns=4, rows_per_sheet=4)
     assert len(sheets) == 2 and sheets[0].count('<figure>') == 16 and sheets[1].count('<figure>') == 4
     assert '<img src="dir/p16/render.png"><figcaption><b>17</b> p16 <span class="p">P1</span>' in sheets[1]
 
@@ -274,14 +267,14 @@ def test_contact_sheets():
 def test_deck_without_page_titles():
     deck = [{'area': AREA, 'blocks': [block(1, 10, 10, 300, 40, ink=[text(10, 10, 300, 40)],
                                             text={'words': 5, 'min_font': 20})]} for _ in range(4)]
-    norms = layout_report.deck_norms(deck)
+    norms = checks.deck_norms(deck)
     assert norms['titles'] == [] and norms['columns'] == [10]
-    assert layout_report.analyse(deck[0], norms=norms)['deviations'] == []
+    assert checks.analyse(deck[0], norms=norms)['deviations'] == []
 
 
 def test_no_density_warnings_on_scrolling_pages():
     blocks = [block(1, 0, 0, 500, 2000, ink=[text(0, 0, 500, 2000)], text={'words': 900, 'min_font': 14})]
-    analysis = layout_report.analyse({'area': AREA, 'blocks': blocks, 'scrolling': True})
+    analysis = checks.analyse({'area': AREA, 'blocks': blocks, 'scrolling': True})
     assert analysis['dense'] == [] and analysis['density']['words'] == 900
 
 
@@ -298,9 +291,9 @@ def test_short_wrapped_fits_on_one_line_of_the_slide():
         {'tag': 'h2', 'text': 'Title', 'lines': 2, 'first_w': 400, 'last_w': 300,
          'natural_w': 710, 'avail_w': 420, 'x': 150},         # titles: WRAPPED
         {'tag': 'li', 'text': 'Old report', 'lines': 2, 'first_w': 400, 'last_w': 300}])
-    found = layout_report.find_short_wrapped([b], area)
+    found = checks.find_short_wrapped([b], area)
     assert [(w['text'], w['missing']) for w in found] == [('Fits on the slide', 290)]
-    assert layout_report._line_item('p') == 'paragraph' and layout_report._line_item('div.ref') == 'reference'
+    assert checks._line_item('p') == 'paragraph' and checks._line_item('div.ref') == 'reference'
 
 
 def test_text_over_the_navigation_counts_and_a_figure_under_it_does_not():
@@ -311,7 +304,7 @@ def test_text_over_the_navigation_counts_and_a_figure_under_it_does_not():
     figure = block(2, 880, 440, 200, 200, kind='image',
                    ink=[{'x': 880, 'y': 440, 'w': 200, 'h': 200, 't': 'media'}])
     elsewhere = block(3, 0, 0, 100, 100, ink=[{'x': 0, 'y': 0, 'w': 100, 'h': 100, 't': 'text'}])
-    found = layout_report.find_reserved_overlaps([text, figure, elsewhere], nav)
+    found = checks.find_reserved_overlaps([text, figure, elsewhere], nav)
     assert [(f['id'], f['name']) for f in found] == [(1, 'nav')]
 
 
@@ -321,13 +314,13 @@ def test_wrapped_titles_and_items():
         {'tag': 'li', 'text': 'An item', 'lines': 2, 'first_w': 800, 'last_w': 100},
         {'tag': 'li', 'text': 'A paragraph item', 'lines': 2, 'first_w': 800, 'last_w': 600},
         {'tag': 'li', 'text': 'A long item', 'lines': 3, 'first_w': 800, 'last_w': 100}])
-    assert [w['text'] for w in layout_report.find_wrapped([b])] == ['A long title', 'An item']
+    assert [w['text'] for w in checks.find_wrapped([b])] == ['A long title', 'An item']
 
 
 def test_row_of_figures_not_aligned():
     rows = [{'figures': ['a.png', 'b.png', 'c.png'], 'tops': [363, 363, 377], 'bottoms': [500, 500, 500]},
             {'figures': ['d.png', 'e.png'], 'tops': [100, 101], 'bottoms': [200, 300]}]     # 100 px: deliberate
-    found = layout_report.find_row_misalignments([block(1, 0, 0, 10, 10, rows=rows)])
+    found = checks.find_row_misalignments([block(1, 0, 0, 10, 10, rows=rows)])
     assert [(f['edge'], f['spread']) for f in found] == [('top', 14)]
 
 
@@ -335,14 +328,14 @@ def test_figure_small_in_its_box_or_cropped():
     media = [{'src': 'a.png', 'box': {'x': 0, 'y': 0, 'w': 400, 'h': 400}, 'drawn': {'w': 400, 'h': 100, 'fit': 'contain'}},
              {'src': 'b.png', 'box': {'x': 0, 'y': 0, 'w': 400, 'h': 400}, 'drawn': {'w': 600, 'h': 400, 'fit': 'cover'}},
              {'src': 'c.png', 'box': {'x': 0, 'y': 0, 'w': 400, 'h': 400}, 'drawn': {'w': 400, 'h': 380, 'fit': 'contain'}}]
-    found = layout_report.find_fit([block(1, 0, 0, 400, 400, media=media)])
+    found = checks.find_fit([block(1, 0, 0, 400, 400, media=media)])
     assert [(f['src'], f['kind'], f['sides']) for f in found] == [('a.png', 'small', 'top and bottom'),
                                                                   ('b.png', 'cropped', 'left and right')]
 
 
 def test_largest_free_rect():
     blocks = [block(1, 0, 0, 1000, 100), block(2, 0, 100, 400, 400)]
-    free = layout_report.largest_free_rect(blocks, AREA)
+    free = checks.largest_free_rect(blocks, AREA)
     assert (free['x'], free['y'], free['w'], free['h']) == (400, 100, 600, 400)
 
 
@@ -353,11 +346,11 @@ def test_changes_between_two_measures():
     new = {'blocks': [block(1, 0, 0, 100, 50), {**block(2, 0, 120, 100, 80), 'signature': 'img a.png'},
                       {**block(3, 0, 300, 10, 10), 'signature': 'p "new"'}],
            'analysis': {'collisions': [], 'lint': []}}
-    lines = layout_report.layout_changes(old, new)
+    lines = markdown.layout_changes(old, new)
     assert lines[0].startswith('- solved: COLLISION #1 × #2')
     assert lines[1].startswith('- #2 moved by (+0, +20) px, 100×50 -> 100×80 px')
     assert lines[2].startswith('- new block #3')
-    assert layout_report.layout_changes(new, new) == []
+    assert markdown.layout_changes(new, new) == []
 
 
 def test_changes_of_problems_that_repeat():
@@ -366,7 +359,7 @@ def test_changes_of_problems_that_repeat():
     upscaled = lambda n: {'id': n, 'src': 'a.png', 'scale': 2}
     old = {'blocks': [image(1), image(2)], 'analysis': {'upscaled_images': [upscaled(1), upscaled(2)], 'lint': []}}
     new = {'blocks': [image(1), image(2)], 'analysis': {'upscaled_images': [upscaled(1)], 'lint': []}}
-    assert layout_report.layout_changes(old, new) == ['- solved: UPSCALED IMAGE #2: a.png displayed at ×2 (blurry)']
+    assert markdown.layout_changes(old, new) == ['- solved: UPSCALED IMAGE #2: a.png displayed at ×2 (blurry)']
 
 
 def test_collapsed_figure():
@@ -375,9 +368,9 @@ def test_collapsed_figure():
              {'src': 'c.png', 'w': 200, 'h': 100, 'natural_w': 200, 'natural_h': 100},
              {'src': 'd.mp4', 'w': 0, 'h': 0, 'natural_w': 0, 'natural_h': 0},      # not loaded: no size
              {'src': 'e.png', 'w': 900, 'h': 4, 'natural_w': 1000, 'natural_h': 4}]   # a thin rule, as it is
-    found = layout_report.find_collapsed([block(1, 0, 0, 400, 200, media=media)])
+    found = checks.find_collapsed([block(1, 0, 0, 400, 200, media=media)])
     assert [f['src'] for f in found] == ['a.png', 'b.png']
-    assert 'COLLAPSED FIGURE #1: a.png drawn at 0 × 0 px' in '\n'.join(layout_report.problem_lines({'collapsed': found}))
+    assert 'COLLAPSED FIGURE #1: a.png drawn at 0 × 0 px' in '\n'.join(markdown.problem_lines({'collapsed': found}))
 
 
 def test_svg_overflow_and_labels():
@@ -385,18 +378,18 @@ def test_svg_overflow_and_labels():
             'labels': [{'text': 'translation', 'over': 'line'}]},
            {'src': 'ok.svg', 'overflow': {'left': 0, 'top': 0, 'right': 3, 'bottom': 0}, 'labels': []}]
     blocks = [block(1, 0, 0, 400, 200, svg=svg)]
-    overflow = layout_report.find_svg_overflow(blocks)
+    overflow = checks.find_svg_overflow(blocks)
     assert overflow == [{'id': 1, 'src': 'fig.svg', 'left': 92, 'top': 0, 'right': 2, 'bottom': 0}]
-    assert '(92 px left, 2 px right): cut when shown' in layout_report.problem_lines({'svg_overflow': overflow})[0]
-    assert layout_report.find_svg_labels(blocks) == [{'id': 1, 'src': 'fig.svg', 'texts': ['translation'],
+    assert '(92 px left, 2 px right): cut when shown' in markdown.problem_lines({'svg_overflow': overflow})[0]
+    assert checks.find_svg_labels(blocks) == [{'id': 1, 'src': 'fig.svg', 'texts': ['translation'],
                                                       'count': 1, 'over': 'line'}]
     many = [block(1, 0, 0, 400, 200, svg=[{'src': 'plot.svg', 'overflow': None,
                                           'labels': [{'text': f'l{k}', 'over': 'line'} for k in range(40)]}])]
-    lines = layout_report.page_markdown('p', 's', {'area': AREA, 'blocks': [], 'analysis': {
-        'occupancy': 0, 'free_bottom': 0, 'gaps': [], 'svg_labels': layout_report.find_svg_labels(many)}})
+    lines = markdown.page_markdown('p', 's', {'area': AREA, 'blocks': [], 'analysis': {
+        'occupancy': 0, 'free_bottom': 0, 'gaps': [], 'svg_labels': checks.find_svg_labels(many)}})
     assert lines.count('SVG LABEL') == 1 and '"l0", "l1", "l2" and 37 more are drawn across a line' in lines
-    analysis = {'svg_overflow': overflow, 'svg_labels': layout_report.find_svg_labels(blocks)}
-    assert layout_report.count_problems(analysis) == 1 and layout_report.count_warnings(analysis) == 1
+    analysis = {'svg_overflow': overflow, 'svg_labels': checks.find_svg_labels(blocks)}
+    assert checks.count_problems(analysis) == 1 and checks.count_warnings(analysis) == 1
 
 
 def test_a_root_that_does_not_match_the_theme_is_reported():
@@ -407,15 +400,15 @@ def test_a_root_that_does_not_match_the_theme_is_reported():
     page = {'name': 'a.html'}
 
     one_block = [(page, 'a/layout.json', {'root': 'body', 'blocks': [{'id': 1}]})]
-    layout_report._warn_degenerate_root(one_block, {'root': 'body'}, log)
+    measure.warn_degenerate_root(one_block, {'root': 'body'}, log)
     assert len(warnings) == 1
     assert "single block (root: 'body')" in warnings[0] and 'main-content-centered' in warnings[0]
 
     warnings.clear()                      # a measured page with real blocks: nothing to say
-    layout_report._warn_degenerate_root(
+    measure.warn_degenerate_root(
         [(page, 'a/layout.json', {'root': '#main', 'blocks': [{'id': 1}, {'id': 2}]})],
         {'root': '#main'}, log)
-    layout_report._warn_degenerate_root([], {'root': 'body'}, log)
+    measure.warn_degenerate_root([], {'root': 'body'}, log)
     assert warnings == []
 
 
@@ -424,19 +417,19 @@ def test_canvas_bounds_are_candidates_not_proof_of_occluded_text():
                    ink=[{'x': 0, 'y': 0, 'w': 800, 'h': 400, 't': 'media'}])
     label = block(2, 20, 20, 100, 30, ink=[{'x': 20, 'y': 20, 'w': 100, 'h': 30, 't': 'text'}],
                   hidden_text=[{'by': 1, 'x': 20, 'y': 20, 'w': 100, 'h': 30, 'samples': 10, 'total': 10}])
-    result = layout_report.analyse({'blocks': [canvas, label], 'area': AREA})
+    result = checks.analyse({'blocks': [canvas, label], 'area': AREA})
     assert not result['hidden_text'] and not result['collisions']
     assert result['canvas_overlaps'][0]['kind'] == 'hidden_text'
-    assert layout_report.count_problems(result) == 0
-    assert layout_report.count_warnings(result) >= 1
+    assert checks.count_problems(result) == 0
+    assert checks.count_warnings(result) >= 1
 
 
 def test_jobs_option():
-    assert layout_report._jobs({'jobs': 3}) == 3
-    assert 1 <= layout_report._jobs({'jobs': 'auto'}) <= 6 and layout_report._jobs({}) >= 1
+    assert jobs({'jobs': 3}) == 3
+    assert 1 <= jobs({'jobs': 'auto'}) <= 6 and jobs({}) >= 1
     for bad in (0, -2, 'four', True, 1.5):
         with pytest.raises(ValueError):
-            layout_report._jobs({'jobs': bad})
+            jobs({'jobs': bad})
 
 
 def test_a_block_over_a_navigation_of_several_parts_is_reported_once():
@@ -446,7 +439,7 @@ def test_a_block_over_a_navigation_of_several_parts_is_reported_once():
     nav = [{'x': 1630 + 40 * k, 'y': 990, 'w': 30, 'h': 40, 'name': 'nav'} for k in range(5)]
     banner = block(1, 0, 0, 1920, 1080,
                    ink=[{'x': 0, 'y': 0, 'w': 1920, 'h': 1080, 't': 'text'}])
-    found = layout_report.find_reserved_overlaps([banner], nav)
+    found = checks.find_reserved_overlaps([banner], nav)
     assert len(found) == 1
     assert found[0]['id'] == 1 and found[0]['name'] == 'nav'
     assert (found[0]['x0'], found[0]['x1']) == (1630, 1820)      # over all the parts
@@ -461,9 +454,9 @@ def test_an_intentional_overlay_is_measured_against_the_page():
     ordinary = block(2, 0, 0, 1920, 1080, position='fixed')
     spilling = block(3, -50, 0, 2020, 1080, position='fixed', intentional=True)
 
-    found = layout_report.find_out_of_area([full_bleed, ordinary, spilling], usable,
-                                           page=layout_report._page_rect(page))
+    found = checks.find_out_of_area([full_bleed, ordinary, spilling], usable,
+                                           page=checks._page_rect(page))
     assert [f['id'] for f in found] == [2, 3]
     assert found[1] == {'id': 3, 'left': 50, 'right': 50}
     # without the size of the page, every block is compared with the usable area
-    assert [f['id'] for f in layout_report.find_out_of_area([full_bleed], usable)] == [1]
+    assert [f['id'] for f in checks.find_out_of_area([full_bleed], usable)] == [1]

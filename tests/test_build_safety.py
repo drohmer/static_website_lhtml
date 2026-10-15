@@ -13,6 +13,7 @@ import yaml
 from lib.build_output import staged_site
 from lib.configuration import layout_output_directory, ConfigError
 from lib.development import snapshot
+from lib.layout import measure
 from plugins import layout_report
 
 REPO = Path(__file__).resolve().parents[1]
@@ -104,9 +105,9 @@ def test_layout_plugin_validates_even_when_called_directly(tmp_path):
 
 def test_layout_reports_browser_errors(tmp_path):
     failed = Mock(stdout=iter(['progress 0 1 a.html\n']), stderr=iter(['Chrome failed\n']), returncode=1)
-    with patch.object(layout_report.subprocess, 'Popen', return_value=failed):
+    with patch.object(measure.subprocess, 'Popen', return_value=failed):
         with pytest.raises(RuntimeError, match='Chrome failed'):
-            layout_report._run_node('layout_measure.js', [])
+            measure.run_node('layout_measure.js', [])
 
 
 def test_watcher_detects_add_edit_delete(tmp_path):
