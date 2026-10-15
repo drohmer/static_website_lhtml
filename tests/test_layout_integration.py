@@ -288,3 +288,24 @@ def test_a_failed_measurement_keeps_the_report_of_the_previous_build(tmp_path):
     assert sorted(p.relative_to(tmp_path).as_posix()
                   for p in (tmp_path / '.layout').rglob('layout.json')) == reports
     assert (tmp_path / '.layout/summary.md').read_text() == summary
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_a_plugin_that_fails_does_not_take_the_report_with_it(tmp_path):
+    """A build that went wrong is when the report is worth reading. The
+    analysis used to run before the plugin that publishes, so a failing
+    export still left a report; it runs after them now, and a plugin that
+    raises must not suppress it. The build still fails."""
+    source = tmp_path / 'src'
+    source.mkdir()
+    (source / 'a.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
+    broken = tmp_path / 'broken.py'
+    broken.write_text('def post_process(meta):\n    raise RuntimeError("export failed")\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [str(broken)]}))
+    result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert 'export failed' in result.stdout
+    assert (tmp_path / '.layout/pages/a.html/layout.json').is_file(), result.stdout
+    assert (tmp_path / '.layout/summary.md').is_file()

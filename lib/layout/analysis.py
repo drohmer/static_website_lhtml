@@ -748,6 +748,9 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
         'intentional': intentional,
         'background_overlaps': find_background_overlaps(blocks, collisions + intentional, threshold),
         'gaps': vertical_gaps(blocks),  # spacers count as gaps
+        # what occupancy, density and 'free' are measured over: the usable
+        # area, or, on a page that scrolls, the content it holds
+        'measured_height': covered_area['h'],
         'free_bottom': None if scrolling else area['y'] + area['h'] - bottom,
         'occupancy': round(covered, 2),
         'near_aligned': find_near_alignments(blocks, area, norms.get('columns', ())),

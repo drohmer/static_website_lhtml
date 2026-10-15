@@ -95,6 +95,24 @@ def test_a_target_that_does_not_publish_its_site_leaves_the_previous_one(tmp_pat
     assert not (target / 'intermediate.html').exists()
 
 
+def test_a_project_without_the_analysis_is_not_held_to_its_configuration(tmp_path):
+    """--check-config answers for the build it would run. A project that
+    neither asks for the layout analysis nor configures it must not be
+    refused for where its report would have gone: here the sources are the
+    configuration directory, so the default .layout/ sits inside them - a
+    real error for --layout, and none for a build that never measures."""
+    project = tmp_path / 'project'                   # the sources are the project itself
+    project.mkdir()
+    (project / 'index.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
+    config = project / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': '.', 'plugin': [],
+                                      'site_directory': str(tmp_path / 'out')}))
+    assert build(config, '--check-config').returncode == 0
+    assert build(config, '--clean', '--layout').returncode == 0      # removes the site, not the reports
+    refused = build(config, '--layout')
+    assert refused.returncode == 1 and 'Unsafe layout output' in refused.stdout
+
+
 def test_layout_rejects_unsafe_outputs_before_deleting(tmp_path):
     config, source = project(tmp_path)
     (tmp_path / 'alias').symlink_to(source, target_is_directory=True)

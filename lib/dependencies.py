@@ -212,7 +212,8 @@ class BuildStore:
         if not previous.is_file():
             return 'no previous build'
         try:
-            names = [entry['dir'] + entry['filename'] for entry in json.loads(previous.read_text())]
+            names = [entry['dir'] + entry['filename']
+                     for entry in json.loads(previous.read_text(encoding='utf-8'))]
         except (OSError, ValueError):
             return 'the structure of the previous build cannot be read'
         if names != [page.site_html for page in selected]:

@@ -104,10 +104,10 @@ of `plugins/layout_report.py` used no `meta` at all - and because it had no
 legitimate home, three places reached into it by path: a tool inserted two
 entries in `sys.path` and used 12 symbols of it, 4 of them private; the test
 file loaded it by location; the core imported it as a package and took two
-private names from it. Fixed by step 3: the analysis is `lib/layout/`, the
-plugin is 259 lines of hook, and nothing loads it by path any more. The cost
-it illustrates stays in this note because the same trap is set for anything
-else that ends up in `plugins/` without being an extension.
+private names from it. Fixed by step 3: the analysis is `lib/layout/`, and
+nothing loads it by path any more; step 4 then removed the plugin itself.
+The cost it illustrates stays in this note because the same trap is set for
+anything else that ends up in `plugins/` without being an extension.
 
 **Themes depend on plugins, and nothing says so.** All three themes need
 `menu.py` (`{{TOC}}` in `themes/*/js/menu.js`); `webpage-frame` also needs
@@ -256,13 +256,15 @@ own template (its comment says so). The stage survives; the plugin does not.
 
 **`cache_video` is not an extension.** `lhtml/export_html.py:109` hard-codes
 `CACHE_VIDEO_DIR = 'cache_video_codecs/'` and probes the filesystem for it
-when it writes a `<video>`; `plugins/cache_video.py:15` repeats the same
-literal. The plugin does not add content: it changes what a *core* stage
-emits, through a side channel neither side declares, and it must run before
-LHTML for that reason. It belongs in the core as an asset stage with a
-pluggable converter, and the directory name belongs in the contract. (A
-second spelling exists in the repository, `video_codecs/`, used by the
-example assets.)
+when it writes a `<video>`; `plugins/cache_video.py` repeated the same
+literal, and now imports it. The plugin does not add content: it changes
+what a *core* stage emits, through a side channel neither side declares,
+and it must run before LHTML for that reason. It belongs in the core as an
+asset stage with a pluggable converter, and the directory name belongs in
+the contract. What an undeclared name costs was in the repository: the
+example shipped its pre-converted videos under `video_codecs/`, the name
+LHTML used before, so 4.6 MB of them were never read and the example never
+demonstrated the feature. Nothing could have said so.
 
 ### 4.2 Extensions - the plugins, and nothing else
 
@@ -453,7 +455,11 @@ density metrics
 window even when `scrolling` is true, which prints statements such as "free
 space at the bottom: -6440 px" as facts; and `NEAR-ALIGNED` reports offsets
 an author is not allowed to fix, since writing positions by hand is what the
-design vocabulary forbids - it must name the design knob or stay silent.
+design vocabulary forbids - it must name the design knob or stay silent. It
+is also the only check that is not reproducible: two runs of the same
+generator on the same deck disagree on two of the 78 slides, by one finding
+each, because a video frame is measured a pixel apart. A check that flaps
+between runs cannot be diffed, which is what `changes.md` is for.
 
 ### 5.4 Thresholds: named sets, not free numbers
 
@@ -712,7 +718,6 @@ the suite green" is the goal, not a free property.
 - `meta['headings']` is written by `plugins/title_submenu.py` and read by
   nobody: drop it, with its entry in `RUNTIME_KEYS`.
 - `only_pages()` decides the list of pages a second time (section 3.1).
-- Two spellings of one directory, `video_convert/` and `video_codecs/`.
 
 Done: `meta['headings']` is gone with its runtime key; the decision whether
 a build may stay partial is `BuildStore.partial_impossible()`, called from
@@ -721,6 +726,15 @@ codec cache is read from LHTML instead of being repeated, and the example's
 pre-converted videos - 4.6 MB that nothing read, under the directory name
 LHTML used before - are where LHTML looks for them, so the example now
 demonstrates the feature it shipped the files for.
+
+An audit of these commits found three defects in them, now fixed and under
+test: `--check-config` refused a project that neither asks for the layout
+analysis nor configures it, over where its report would have gone (and
+`--clean --layout` with it); a plugin that failed during the post stage
+suppressed the report, which the plugin order used to make impossible and
+which is when the report is worth reading; and the structure of a previous
+build was read with the locale encoding instead of UTF-8, which turned a
+partial build into a silent full one on a machine that is not UTF-8.
 
 Of the three checks known to be wrong (section 5.3), the one that was a
 plain bug is fixed: the density metrics of a scrolling page are measured

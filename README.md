@@ -927,8 +927,10 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q
+python -m pytest tests -q -n auto
 ```
+
+Most tests run a build in a subprocess, so they are slow one after the other and almost free in parallel: `-n auto` (pytest-xdist) takes the suite from about 85 s to 15 s, and about 110 s to 30 s with the browser tests. Drop `-n auto` to read the output of a single test.
 
 Development dependencies are listed separately in `requirements-dev.txt` and share the version lock. The tests require Node.js to validate generated menu JavaScript and the heading reader. The suite covers configuration precedence, validation, path protection, read-only diagnostics, plugin context isolation, generation regressions, and simulated PDF tool failures.
 
@@ -937,6 +939,14 @@ The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and
 ```bash
 LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_integration.py tests/test_development.py -q
 ```
+
+Checking a change against a real deck: a full `--layout` measures every page, which is the slow way. `--only` rebuilds and re-measures the pages named and keeps the reports of the others, so the summary still counts the whole deck:
+
+```bash
+python generate.py -i <deck>/configure.yaml --layout --only <page> --only <other page>
+```
+
+On a deck of 78 slides, four pages measured this way take 11 s against 45 s, and report the same totals. Measuring a *subset deck* instead would not: the table of contents and the deck norms are computed over the slides present, so a shorter deck has a different navigation, and findings that involve it disappear.
 
 The browser and HTTP tests are opt-in locally because they launch Chrome and bind a localhost port. When updating dependencies, update `requirements-lock.txt`, install into a fresh environment, and run both the unit suite and smoke tests before committing. Optional PDF/SASS system tools are not part of the Python lock.
 

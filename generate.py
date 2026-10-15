@@ -644,9 +644,12 @@ def build_once(args):
         context.plugin_paths.extend(paths)
         if plugin_failures:
             sys.exit(1)
-    if meta['analyse_layout'] or args.check_config:
+    if (meta['analyse_layout'] or (args.check_config and meta.get('layout'))) and not args.clean:
         # What the analysis will refuse, refused here: before the build, and
         # with --check-config, which builds nothing (lib/layout_options.py).
+        # A project that neither asks for the analysis nor configures it is
+        # not held to a configuration it does not have, and --clean, which
+        # does not touch the reports, is not held to it either.
         try:
             layout_options.output_directory(meta)
             layout_options.validate(meta, log)
@@ -814,14 +817,18 @@ def generate_site(meta, selected, built):
     # Post-process plugins
     log.title('Post-process', pre='\n')
     log.tic()
-    if not failed and not plugin_failures:
+    post_ran = not failed and not plugin_failures
+    if post_ran:
         plugin_failures += run_plugins(meta, 'post_process', log)
     log.ok_elapsed()
 
     # The layout analysis is part of the generator, not a plugin: it runs
     # once the pages and the theme are in place, and before the dependency
-    # store records what each page used.
-    if meta['analyse_layout'] and not failed and not plugin_failures:
+    # store records what each page used. A plugin that fails during the post
+    # stage does not take it away: a build that went wrong is when the
+    # report is worth reading, and the plugin that used to run after it
+    # could not suppress it either.
+    if meta['analyse_layout'] and post_ran:
         log.title('Layout analysis', pre='\n')
         log.tic()
         layout_build.run(meta)

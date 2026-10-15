@@ -289,7 +289,8 @@ def test_a_scrolling_page_is_measured_over_its_content_not_over_one_window():
     assert analysis['density']['text_area'] == 0.5
     markdown = markdown_report.page_markdown('p', 's', {'area': AREA, 'blocks': blocks,
                                                         'analysis': analysis})
-    assert 'scrolling page: measured over its content' in markdown
+    assert analysis['measured_height'] == 2000           # the content, not the window
+    assert 'measured over its content, y 0..2000' in markdown
     assert 'free space at the bottom' not in markdown
 
     # a slide keeps both: it is one window, and what is left under it is a fact
