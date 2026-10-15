@@ -51,7 +51,8 @@ import traceback
 
 from lib import dependencies
 from lib.configuration import ConfigError
-from lib.layout.analysis import analyse, count_problems, deck_norms
+from lib.layout.analysis import analyse, deck_norms
+from lib.layout.findings import count_problems
 from lib.layout.measure import run_node, warn_degenerate_root, write_contact_sheets
 from lib.layout.report import changes_markdown, layout_changes, page_markdown, summary_markdown
 from lib.layout_options import jobs, options_of, output_directory, validate as validate_options

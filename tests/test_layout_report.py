@@ -3,7 +3,7 @@ no browser needed."""
 
 import pytest
 
-from lib.layout import analysis as checks, measure, report as markdown_report
+from lib.layout import analysis as checks, findings as records, measure, report as markdown_report
 from lib.layout_options import jobs
 
 AREA = {'x': 0, 'y': 0, 'w': 1000, 'h': 500}
@@ -55,7 +55,7 @@ def test_overlap_with_image_background_only_is_a_note():
     assert analysis['collisions'] == []
     assert analysis['background_overlaps'] == [{'image': 1, 'other': 2, 'src': 'tri.png'}]
     md = markdown_report.page_markdown('p', 'src/p/index.html.j2', layout)
-    assert '#2 overlaps only the background' in md
+    assert 'BACKGROUND OVERLAP #2 over #1: only the background' in md
 
 
 def test_out_of_area_sides():
@@ -148,7 +148,7 @@ def test_intentional_overlay():
     layout = {'area': AREA, 'blocks': [image, zoom]}
     analysis = checks.analyse(layout)
     assert analysis['collisions'] == [] and [(c['a'], c['b']) for c in analysis['intentional']] == [(1, 2)]
-    assert checks.count_problems(analysis) == 0
+    assert records.count_problems(analysis) == 0
     assert 'marked as intentional' in markdown_report.page_markdown('p', 's', layout)
 
 
@@ -260,7 +260,7 @@ def test_density_and_warnings():
         {'kind': 'words', 'value': 70, 'limit': 60}, {'kind': 'min_font', 'value': 17, 'limit': 20}]
     layout = {'area': AREA, 'blocks': blocks}
     analysis = checks.analyse(layout, limits={'max_words': 60, 'min_font': 20})
-    assert checks.count_warnings(analysis) == 2
+    assert records.count_warnings(analysis) == 2
     md = markdown_report.page_markdown('p', 's', layout)
     assert 'DENSE: 70 words' in md and 'SMALL FONT: 17 px' in md and '## Density' in md
 
@@ -323,7 +323,7 @@ def test_short_wrapped_fits_on_one_line_of_the_slide():
         {'tag': 'li', 'text': 'Old report', 'lines': 2, 'first_w': 400, 'last_w': 300}])
     found = checks.find_short_wrapped([b], area)
     assert [(w['text'], w['missing']) for w in found] == [('Fits on the slide', 290)]
-    assert checks._line_item('p') == 'paragraph' and checks._line_item('div.ref') == 'reference'
+    assert records._line_item('p') == 'paragraph' and records._line_item('div.ref') == 'reference'
 
 
 def test_text_over_the_navigation_counts_and_a_figure_under_it_does_not():
@@ -419,7 +419,7 @@ def test_svg_overflow_and_labels():
         'occupancy': 0, 'free_bottom': 0, 'gaps': [], 'svg_labels': checks.find_svg_labels(many)}})
     assert lines.count('SVG LABEL') == 1 and '"l0", "l1", "l2" and 37 more are drawn across a line' in lines
     analysis = {'svg_overflow': overflow, 'svg_labels': checks.find_svg_labels(blocks)}
-    assert checks.count_problems(analysis) == 1 and checks.count_warnings(analysis) == 1
+    assert records.count_problems(analysis) == 1 and records.count_warnings(analysis) == 1
 
 
 def test_a_root_that_does_not_match_the_theme_is_reported():
@@ -450,8 +450,8 @@ def test_canvas_bounds_are_candidates_not_proof_of_occluded_text():
     result = checks.analyse({'blocks': [canvas, label], 'area': AREA})
     assert not result['hidden_text'] and not result['collisions']
     assert result['canvas_overlaps'][0]['kind'] == 'hidden_text'
-    assert checks.count_problems(result) == 0
-    assert checks.count_warnings(result) >= 1
+    assert records.count_problems(result) == 0
+    assert records.count_warnings(result) >= 1
 
 
 def test_jobs_option():
@@ -528,16 +528,16 @@ def test_a_finding_says_where_its_blocks_are_written():
     # the line of what is around the block, not of the block
     assert markdown_report.where(page + ':20', page, near=True) == 'near line 20'
 
-    one = markdown_report.with_source('- CLIPPED #1: 10 px of content hidden', sources, page)
-    assert one == '- CLIPPED #1: 10 px of content hidden [line 12]'
-    two = markdown_report.with_source('- HIDDEN TEXT #3 under #2: x 0..9 (100 % of the text of #3)',
-                                      sources, page)
-    assert two.endswith('[#3 no source marker, #2 src/_include/header.j2:4]')
-    # an id repeated in the details is named once, and a finding without an
-    # id (a page-wide one) is left alone
-    assert markdown_report.with_source('- DENSE: 90 words of text (limit 80)', sources, page) \
-        == '- DENSE: 90 words of text (limit 80)'
-    assert markdown_report.with_source('- CLIPPED #4: 10 px', sources, page).endswith('[near line 20]')
+    place = lambda analysis: [markdown_report.located(f, sources, page)
+                              for f in records.findings(analysis)]
+    one = place({'clipped': [{'id': 1, 'w': 10, 'h': 0}]})
+    assert one == ['- CLIPPED #1: 10 px (width) / 0 px (height) of content hidden [line 12]']
+    two = place({'hidden_text': [{'id': 3, 'by': 2, 'x0': 0, 'y0': 0, 'x1': 9, 'y1': 9, 'fraction': 1}]})
+    assert two[0].endswith('[#3 no source marker, #2 src/_include/header.j2:4]')
+    # a finding that names no block (a page-wide one) is left alone
+    assert place({'dense': [{'kind': 'words', 'value': 90, 'limit': 80}]}) \
+        == ['- DENSE: 90 words of text (limit 80)']
+    assert place({'clipped': [{'id': 4, 'w': 10, 'h': 0}]})[0].endswith('[near line 20]')
 
 
 def test_the_report_of_a_page_carries_the_places_of_its_findings():
@@ -556,3 +556,45 @@ def test_the_report_of_a_page_carries_the_places_of_its_findings():
     # line that moves is not a problem that changed
     assert all('[' not in line for line in markdown_report.problem_lines(layout['analysis']))
 
+
+
+def test_every_check_declares_its_severity_and_the_blocks_it_names():
+    """One shape for every finding, and nothing else holds the list of
+    checks: a check that is not declared is not reported, counted or diffed."""
+    keys = [key for key, _, _ in records.CHECKS]
+    assert len(set(keys)) == len(keys)
+    assert set(severity for _, severity, _ in records.CHECKS) <= set(records.SEVERITIES)
+
+    layout = {'area': AREA, 'scrolling': False,
+              'blocks': [block(1, 0, 0, 400, 200, ink=[text(0, 0, 400, 200)]),
+                         block(2, 10, 10, 100, 40, ink=[text(10, 10, 100, 40)])]}
+    analysis = checks.analyse(layout)
+    found = records.findings(analysis)
+    assert found and found is analysis['findings']        # recorded, not recomputed
+    for f in found:
+        assert set(f) == {'key', 'code', 'severity', 'blocks', 'subject', 'detail', 'text', 'data'}
+        assert f['severity'] in records.SEVERITIES
+        assert f['text'].startswith(f['code'])
+        assert all(isinstance(i, int) for i in f['blocks'])
+    assert records.count_problems(analysis) == sum(1 for f in found if f['severity'] == 'problem')
+
+
+def test_the_diff_of_two_builds_reads_the_codes_not_the_sentences():
+    """A wording change must not read as a problem that appeared: the diff
+    compares the code of a finding and the signatures of its blocks."""
+    def measured(width):
+        layout = {'area': AREA, 'scrolling': False,
+                  'blocks': [block(1, 0, 0, width, 40, kind='image',
+                                   media=[{'src': 'a.png', 'w': width, 'h': 40,
+                                           'natural_w': 50, 'natural_h': 20}],
+                                   ink=[paint(0, 0, width, 40)])]}
+        checks.analyse(layout)
+        return layout
+
+    old, new = measured(400), measured(400)
+    assert [f['code'] for f in new['analysis']['findings']] == ['UPSCALED IMAGE']
+    assert markdown_report.layout_changes(old, new) == []
+    # the same problem said differently is still the same problem
+    for f in new['analysis']['findings']:
+        f['text'] = f['text'].replace('displayed at', 'shown at')
+    assert markdown_report.layout_changes(old, new) == []

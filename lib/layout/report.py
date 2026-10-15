@@ -4,17 +4,13 @@ the deck, changes.md between two builds, and the HTML of the contact sheets.
 Text in, text out: nothing here writes a file (lib/layout/measure.py does).
 """
 import os
-import re
 
-from lib.layout.analysis import count_problems, count_warnings, _line_item, _rect
+from lib.layout.analysis import _rect
+from lib.layout.findings import count_problems, count_warnings, findings
 
 
 def _md_cell(text):
     return str(text).replace('|', '\\|').replace('\n', ' ')
-
-
-def _zone(o):
-    return f"x {o['x0']}..{o['x1']}, y {o['y0']}..{o['y1']}"
 
 
 def where(source, page_source, near=False):
@@ -36,60 +32,25 @@ def where(source, page_source, near=False):
     return f'near {place}' if near else place
 
 
-def with_source(line, sources, page_source):
-    """A finding, followed by where the blocks it names are written. The ids
-    are those of its subject, before the colon: '#2 under #3', not the ones
-    repeated in the details. `sources`: {block id: (source, near)}."""
-    found, seen = [], set()
-    for ident in re.findall(r'#(\w+)', line.split(':', 1)[0]):
-        if ident not in seen:
-            seen.add(ident)
-            found.append(ident)
-    if not found or sources is None:
+def located(finding, sources=None, page_source=None):
+    """A finding as a line of Markdown, followed by where the blocks it
+    names are written. `sources`: {block id: (source, near)}."""
+    line = '- ' + finding['text']
+    places = dict.fromkeys(str(b) for b in finding['blocks'])
+    if not places or sources is None:
         return line
-    places = []
-    for ident in found:
+    for ident in places:
         source, near = sources.get(ident) or (None, False)
-        places.append(where(source, page_source, near))
-    if len(found) > 1:
-        places = [f'#{ident} {place}' for ident, place in zip(found, places)]
-    return f"{line} [{', '.join(places)}]"
+        places[ident] = where(source, page_source, near)
+    shown = [f'#{i} {place}' for i, place in places.items()] if len(places) > 1 \
+        else list(places.values())
+    return f"{line} [{', '.join(shown)}]"
 
 
 def problem_lines(analysis, sources=None, page_source=None):
-    """The problems of a page, one Markdown line each: '- KIND #id ...: details'.
-    With `sources` ({block id: 'file:line'}), each line says where the blocks
-    it names are written."""
-    problems = []
-    for h in analysis.get('hidden_text', []):
-        problems.append(f"- HIDDEN TEXT #{h['id']} under #{h['by']}: {_zone(h)} "
-                        f"({round(100 * h['fraction'])} % of the text of #{h['id']} is covered)")
-    for c in analysis.get('collisions', []):
-        problems.append(f"- COLLISION #{c['a']} × #{c['b']}: {_zone(c)} ({c['area']} px² of drawn content)")
-    for o in analysis.get('out_of_area', []):
-        sides = ', '.join(f'{v} px {k}' for k, v in o.items() if k != 'id')
-        problems.append(f"- OUT OF AREA #{o['id']}: {sides}")
-    for c in analysis.get('clipped', []):
-        problems.append(f"- CLIPPED #{c['id']}: {c['w']} px (width) / {c['h']} px (height) of content hidden")
-    for u in analysis.get('upscaled_images', []):
-        problems.append(f"- UPSCALED IMAGE #{u['id']}: {u['src']} displayed at ×{u['scale']} (blurry)")
-    for r in analysis.get('reserved', []):
-        problems.append(f"- RESERVED AREA #{r['id']}: text over the {r['name']} of the theme "
-                        f"(x {r['x0']}..{r['x1']}, y {r['y0']}..{r['y1']})")
-    for c in analysis.get('collapsed', []):
-        problems.append(f"- COLLAPSED FIGURE #{c['id']}: {c['src']} drawn at {c['w']} × {c['h']} px (invisible)")
-    for o in analysis.get('svg_overflow', []):
-        sides = ', '.join(f'{o[k]} px {k}' for k in ('left', 'top', 'right', 'bottom') if o.get(k, 0) > 0)
-        problems.append(f"- SVG OVERFLOW #{o['id']}: {o['src']} draws beyond its viewBox ({sides}): cut when shown")
-    for c in analysis.get('internal_collisions', []):
-        problems.append(f"- INTERNAL COLLISION #{c['a']} × #{c['b']}: {_zone(c)}")
-    for c in analysis.get('internal_clipped', []):
-        problems.append(f"- INTERNAL CLIPPED #{c['id']}: {c['w']} px width / {c['h']} px height")
-    for c in analysis.get('internal_overflow', []):
-        problems.append(f"- COLUMN OVERFLOW #{c['id']} outside #{c['parent']}: " +
-                        ', '.join(f"{c[k]} px {k}" for k in ('left', 'right') if k in c))
-    problems += [f"- INTERACTIVE STATE {e['kind']}: {e['message']}" for e in analysis.get('interactive_errors', [])]
-    return [with_source(line, sources, page_source) for line in problems]
+    """The problems of a page, one Markdown line each."""
+    return [located(f, sources, page_source) for f in findings(analysis)
+            if f['severity'] == 'problem']
 
 
 def page_markdown(name, source, layout):
@@ -126,62 +87,16 @@ def page_markdown(name, source, layout):
     # opened at the line instead of being searched for a signature.
     sources = {str(b['id']): (b.get('source'), bool(b.get('source_near')))
                for b in layout.get('blocks', []) + layout.get('subblocks', [])}
-    locate = lambda line: with_source(line, sources, source)
+    by_severity = {}
+    for finding in findings(analysis):
+        by_severity.setdefault(finding['severity'], []).append(located(finding, sources, source))
 
-    problems = problem_lines(analysis, sources, source)
-    lines += ['', '## Problems', ''] + (problems or ['None.'])
-
-    warnings = [f"- TIGHT #{t['a']} × #{t['b']}: line box of text overlapping by {t['y1'] - t['y0']} px "
-                f"({_zone(t)}); the glyphs probably do not touch, but the spacing is tight"
-                for t in analysis.get('tight', [])]
-    warnings += [f"- INTERNAL TIGHT #{t['a']} × #{t['b']}: {_zone(t)}; inspect text spacing"
-                 for t in analysis.get('internal_tight', [])]
-    warnings += [f"- NEAR-ALIGNED #{n['id']}: {n['edge']} at {n['axis']} {n['value']}, "
-                 f"{abs(n['delta'])} px {_direction(n)} the {n['ref_label']} ({n['axis']} {n['ref']})"
-                 for n in analysis.get('near_aligned', [])]
-    for w in analysis.get('wrapped', []):
-        what = _line_item(w['tag'])
-        tail = '' if what == 'title' else f", the last one {w['last_w']} px wide (first {w['first_w']} px)"
-        warnings.append(f"- WRAPPED #{w['id']}: {what} \"{w['text']}\" on {w['lines']} lines{tail}")
-    for w in analysis.get('short_wrapped', []):
-        warnings.append(f"- SHORT WRAPPED #{w['id']}: {_line_item(w['tag'])} \"{w['text']}\" on {w['lines']} lines, "
-                        f"{w['natural_w']} px on one line for {w['avail_w']} px available (+{w['missing']} px); "
-                        f"it would fit on one line of the slide")
-    for r in analysis.get('rows', []):
-        values = ', '.join(f'{f} {v}' for f, v in zip(r['figures'], r['values']))
-        warnings.append(f"- ROW #{r['id']}: the {r['edge']}s of the figures side by side differ by "
-                        f"{r['spread']} px ({values})")
-    for f in analysis.get('fit', []):
-        warnings.append(f"- {'CROPPED' if f['kind'] == 'cropped' else 'SMALL IN ITS BOX'} #{f['id']}: {f['src']} "
-                        + (f"{round(100 * f['part'])} % cut ({f['sides']})" if f['kind'] == 'cropped'
-                           else f"drawn on {round(100 * f['part'])} % of its box (empty {f['sides']})"))
-    for f in analysis.get('svg_labels', []):
-        texts = ', '.join(f'"{t}"' for t in f['texts']) + (f" and {f['count'] - len(f['texts'])} more"
-                                                          if f['count'] > len(f['texts']) else '')
-        what = 'is' if f['count'] == 1 else 'are'
-        warnings.append(f"- SVG LABEL #{f['id']}: in {f['src']}, {texts} {what} drawn across a {f['over']} "
-                        f"(move it, or give it a halo: paint-order=\"stroke\" stroke=\"white\")")
-    dense_text = {'words': 'words of text', 'min_font': 'px: smallest font size'}
-    warnings += [f"- {'SMALL FONT' if d['kind'] == 'min_font' else 'DENSE'}: {d['value']} {dense_text[d['kind']]} "
-                 f"({'minimum' if d['kind'] == 'min_font' else 'limit'} {d['limit']})"
-                 for d in analysis.get('dense', [])]
-    warnings += [f"- DESIGN {d['kind']} #{d['id']} ({d['role']}): {d['value']} vs {d['limit']}; {d['advice']}"
-                 for d in analysis.get('role_design', [])]
-    warnings += [f"- CANVAS OVERLAP {_zone(d)}: {d['reason']}" for d in analysis.get('canvas_overlaps', [])]
-    if warnings:
-        lines += ['', '## Warnings', ''] + [locate(line) for line in warnings]
-
-    deviations = [_deviation_text(d) for d in analysis.get('deviations', [])]
-    if deviations:
-        lines += ['', '## Differences with the rest of the deck', ''] + [locate(line) for line in deviations]
-
-    notes = [f"- #{c['a']} × #{c['b']} overlap ({_zone(c)}): marked as intentional (class overlay)"
-             for c in analysis.get('intentional', [])]
-    notes += [f"- #{o['other']} overlaps only the background (uniform or transparent) of image "
-              f"{o['src']} in #{o['image']}: not visible, but the image box is reserved there"
-              for o in analysis.get('background_overlaps', [])]
-    if notes:
-        lines += ['', '## Notes', ''] + [locate(line) for line in notes]
+    lines += ['', '## Problems', ''] + (by_severity.get('problem') or ['None.'])
+    for severity, heading in (('warning', 'Warnings'),
+                              ('deviation', 'Differences with the rest of the deck'),
+                              ('note', 'Notes')):
+        if by_severity.get(severity):
+            lines += ['', '## ' + heading, ''] + by_severity[severity]
 
     if 'density' in analysis:
         d = analysis['density']
@@ -208,24 +123,6 @@ def page_markdown(name, source, layout):
         for change in layout['freshness'].get('changes', []):
             lines.append(f"- {change['kind']}: {change.get('path') or 'page parameters or metadata'}")
     return '\n'.join(lines) + '\n'
-
-
-def _direction(n):
-    if n['axis'] == 'x':
-        return 'right of' if n['delta'] > 0 else 'left of'
-    return 'below' if n['delta'] > 0 else 'above'
-
-
-def _deviation_text(d):
-    if d['kind'] == 'title_position':
-        return (f"- TITLE POSITION #{d['id']}: {d['anchor'][0]} x {d['value'][0]}, {d['anchor'][1]} y "
-                f"{d['value'][1]}; usual {d['norm'][0]}, {d['norm'][1]}")
-    if d['kind'] == 'title_variant':
-        return f"- TITLE VARIANT #{d['id']}: {d['value']}; usual page titles: {d['norm']}"
-    if d['kind'] == 'title_gap':
-        return f"- TITLE GAP #{d['id']}: {d['value']} px below the title; usual {d['norm']} px"
-    return (f"- TEXT FONT #{d['id']}: text at {d['value']} px; usual text sizes "
-            f"{', '.join(map(str, d['norm']))} px")
 
 
 def norms_markdown(norms):
@@ -296,16 +193,18 @@ An overlap is intentional when one of the blocks has the class `overlay`
 
 
 def _problems_by_key(layout):
-    """{(kind, signatures of its blocks): [line]} of the problems of a measure
-    (the ids of the blocks change from a measure to the next, not their
-    signature; identical blocks have the same key: one line each)."""
+    """{(code, signatures of its blocks): [text]} of the problems of a measure.
+    The ids of the blocks change from a measure to the next, their signature
+    does not, so identical blocks share a key: one entry each. The finding
+    gives its code and its blocks, so a change of wording does not change
+    what two builds are compared on."""
     signature = {b['id']: b['signature'] for b in layout.get('blocks', [])}
     found = {}
-    for line in problem_lines(layout.get('analysis') or {}):
-        head = line.split(':', 1)[0]
-        kind = re.match(r'- ([A-Z][A-Z ]*?) #', head)
-        key = (kind.group(1) if kind else head, tuple(signature.get(int(i)) for i in re.findall(r'#(\d+)', head)))
-        found.setdefault(key, []).append(line)
+    for finding in findings(layout.get('analysis') or {}):
+        if finding['severity'] != 'problem':
+            continue
+        key = (finding['code'], tuple(signature.get(i) for i in finding['blocks']))
+        found.setdefault(key, []).append(finding['text'])
     return found
 
 
@@ -317,8 +216,8 @@ def layout_changes(old, new, threshold=4):
     lines = []
     a, b = old.get('analysis', {}), new.get('analysis', {})
     before, after = _problems_by_key(old), _problems_by_key(new)
-    lines += [f'- new problem: {line[2:]}' for key, found in after.items() for line in found[len(before.get(key, [])):]]
-    lines += [f'- solved: {line[2:]}' for key, found in before.items() for line in found[len(after.get(key, [])):]]
+    lines += [f'- new problem: {text}' for key, found in after.items() for text in found[len(before.get(key, [])):]]
+    lines += [f'- solved: {text}' for key, found in before.items() for text in found[len(after.get(key, [])):]]
     for label, count in (('warnings', count_warnings), ('values written by hand', lambda x: len(x.get('lint', [])))):
         if count(a) != count(b):
             lines.append(f'- {label}: {count(a)} -> {count(b)}')

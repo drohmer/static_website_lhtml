@@ -10,6 +10,7 @@ enough to run them, which is what makes them testable one by one
 Coordinates are in CSS pixels, origin at the top-left corner of the page.
 """
 from lib.design_checks import analyse_design
+from lib.layout.findings import findings
 
 FLOW_POSITIONS = ('static', 'relative', 'sticky')
 
@@ -259,12 +260,6 @@ def find_wrapped(blocks, short=0.3):
 
 def _orphan(w, short=0.3):
     return w['tag'][0] == 'h' or (w['lines'] == 2 and w['last_w'] < short * w['first_w'])
-
-
-def _line_item(tag):
-    if tag[0] == 'h':
-        return 'title'
-    return {'credit': 'credit', 'ref': 'reference'}.get(tag.split('.')[-1], 'paragraph' if tag == 'p' else 'list item')
 
 
 def find_short_wrapped(blocks, area, short=0.3, tolerance=4):
@@ -788,19 +783,9 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
     layout['analysis']['role_design'], layout['design_checks'] = analyse_design(layout, design_rules)
     if layout.get('design_measurement') and layout['design_checks']['enabled']:
         layout['analysis']['dense'] = [d for d in layout['analysis']['dense'] if d['kind'] != 'min_font']
+    # What was found, in one list of one shape: the report and the diff of two
+    # builds are written from it, and so is anything that reads layout.json
+    # instead of the Markdown.
+    layout['analysis']['findings'] = findings(layout['analysis'])
     return layout['analysis']
 
-
-PROBLEM_KEYS = ('collisions', 'hidden_text', 'out_of_area', 'clipped', 'upscaled_images', 'reserved',
-                'collapsed', 'svg_overflow', 'internal_collisions', 'internal_overflow', 'internal_clipped', 'interactive_errors')
-
-
-WARNING_KEYS = ('tight', 'near_aligned', 'dense', 'wrapped', 'short_wrapped', 'rows', 'fit', 'svg_labels', 'internal_tight', 'role_design', 'canvas_overlaps')
-
-
-def count_problems(analysis):
-    return sum(len(analysis.get(k, [])) for k in PROBLEM_KEYS) + analysis.get('nested_problems', 0)
-
-
-def count_warnings(analysis):
-    return sum(len(analysis.get(k, [])) for k in WARNING_KEYS) + analysis.get('nested_warnings', 0)

@@ -245,6 +245,7 @@ static_website_lhtml/
     layout_options.py      # Options of the layout report, checked by --check-config
     layout/
       analysis.py          # What a measured page shows: collisions, overflows, density, deviations
+      findings.py          # The checks: their code, their severity, their sentence
       report.py            # layout.md, summary.md, changes.md and the contact sheets
       measure.py           # Measurement in headless Chrome (Node scripts of plugins/assets/)
       build.py             # The analysis of a build (--layout): which pages, what to keep, where
@@ -701,7 +702,13 @@ Files:
   line of what surrounds it (a block of an included file carries no marker
   of its own), `[no source marker]` for a block nothing names (one a script
   writes); the table writes them `62`, `~62` and `-`
-- `pages/<relative HTML path>/layout.json`: the same data, for scripts
+- `pages/<relative HTML path>/layout.json`: the same data, for scripts.
+  `analysis.findings` is what was found, one shape for every check:
+  `{key, code, severity, blocks, subject, detail, text, data}` - `code` is
+  what the report prints (`HIDDEN TEXT`), `severity` is `problem`,
+  `warning`, `deviation` or `note`, `blocks` the numbers the finding is
+  about, `text` the line of the report, `data` the row the check produced
+  (its measured values). Read it instead of parsing `layout.md`
 - `pages/<relative HTML path>/render.png`: the real render
 - `pages/<relative HTML path>/overlay.png`: the real render with the outlined ink of each block and its number
 - `pages/<relative HTML path>/blocks.png`: the ink of each block as solid rectangles, content hidden
@@ -829,8 +836,9 @@ blocks (`::nl`, `div[height:...]`) are `spacer`s and are ignored.
 
 An overlap can be intentional (zoom inset over an image, annotation placed on
 a figure): add the class `overlay` to one of the blocks, e.g.
-`::(.overlay)[position:fixed; ...]`. The overlap is then listed in the
-`Notes` section instead of the problems (hidden text is still reported).
+`::(.overlay)[position:fixed; ...]`. The overlap is then listed as
+`INTENTIONAL OVERLAP` in the `Notes` section instead of the problems
+(hidden text is still reported).
 
 A block is a top-level element of the page: title, paragraph or bare text,
 list, code block, image, video, math, or a `div::` / `::[...]` with all its

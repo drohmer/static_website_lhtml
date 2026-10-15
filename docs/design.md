@@ -353,11 +353,13 @@ plugin.
 
 - `lib/layout/analysis.py`: pure functions on measured blocks, with the
   checks of `lib/design_checks.py`. No build, no configuration, no `meta`.
-- `lib/layout/vocabulary.py`: the registry of checks - code, severity,
-  default threshold, description, remedy template. The JSON, the Markdown
-  glossary and the documentation are generated from it, so they cannot drift
-  (they already have: the README documents `NEAR-ALIGNED` as "3 to 12 px"
-  while the code uses `aligned=2, near=12`).
+- `lib/layout/findings.py`: the registry of checks - the key of the check in
+  the analysis, its code, its severity, and the sentence it prints. Done.
+  Not in it: the thresholds, which are configuration and are validated where
+  they are read (`lib/layout_options.py`, `lib/design_checks.validate`), and
+  a description per check, which would be a second copy of the README under
+  a promise that it cannot drift. One copy that is read is better than two
+  that are generated.
 - `lib/layout/report.py`: Markdown and contact sheets, rendered **from** the
   data.
 - `lib/layout/measure.py`: the Node runner and the choice of Chrome - the
@@ -382,11 +384,14 @@ and the only field they share is `id`. Every finding carries:
 with the schema version on the document. Three consequences:
 
 - **The JSON is the source of truth and the Markdown is rendered from it.**
-  Today it is the other way round: `_problems_by_key()` regex-parses the
-  prose of `problem_lines()` to build `changes.md`, so a wording change
-  breaks diffing.
+  Done. It used to be the other way round: `_problems_by_key()` regex-parsed
+  the prose of `problem_lines()` to build `changes.md`, so a wording change
+  read as a problem that appeared. The diff now compares the `code` of a
+  finding and the signatures of its `blocks`, and a test changes the wording
+  of a finding to check that the diff stays empty.
 - **Severity moves out of the Python tuples** `PROBLEM_KEYS` / `WARNING_KEYS`
-  and into the data.
+  and into the data. Done, and the two tuples are gone with the two counting
+  functions that read them; `count(analysis, severity)` counts records.
 - **Stable identity, designed and not assumed.** Block ids are positional
   (`b.id = i + 1`) and change at every measure - the code says so itself.
   But the obvious replacement does not work either: a file and a line move as
@@ -395,7 +400,33 @@ with the schema version on the document. Three consequences:
   what survives an edit - the page and its occurrence, the kind of finding,
   and a signature of the element - and it has to be tested against real edits
   before anything depends on it. Until then, a per-page diff is safe;
-  **persistent suppressions are not**, and they wait.
+  **persistent suppressions are not**, and they wait. For the same reason
+  there is no `schema_version` on the document yet: a version is a promise
+  about a shape, and `finding_id` is still missing from this one.
+
+What the record holds: `{key, code, severity, blocks, subject, detail,
+text, data}`. `measured` and `limit` are not fields of it. The 26 checks do
+not measure the same thing - a collision has an area, a near alignment a
+delta and a reference, a wrapped title a number of lines - and giving them
+all two numbers would have meant inventing values. `data` is the row the
+check produced, with the numbers in the shape that check actually has.
+
+What this deletes: the two severity tuples, two counting functions, a regex
+that read codes back out of rendered prose, a second regex that read block
+numbers out of it, and 80 lines of `page_markdown` that built four sections
+by hand. `report.py` goes from 440 lines to 339 and `analysis.py` from 806
+to 791, against 256 for `findings.py`: the whole is 140 lines longer, and
+that is the honest price. The sentences were not duplicated before, they
+were scattered; what is new is the declaration around each of them. Adding
+a check is one builder and one line of `CHECKS`, and nothing else in the
+project holds the list.
+
+Checked against the real deck: the problems, the warnings and the
+differences with the deck are identical, word for word, on all 78 pages.
+The notes changed on purpose - `#1 × #2 overlap (x 15..435, ...)` is now
+`INTENTIONAL OVERLAP #1 × #2: x 15..435, ...` - because a note that carries
+no code was the one finding the reader could not grep for and the diff
+could not key on.
 
 ### 5.2 The source location, and what it is worth
 
@@ -628,15 +659,15 @@ enough to wait for the finding schema.
 
 ```
 lib/            pipeline: pages, deck, design, rendering, headings, assets, index, structure
-lib/layout/     analysis.py, vocabulary.py, report.py, measure.py
+lib/layout/     analysis.py, findings.py, report.py, measure.py, build.py
 lib/targets/    html, pdf: theme, source transforms, deliverables
 lib/analyses/   lint, layout: what they need of the build, what they report
 plugins/        extensions: pre_include, code_include
 themes/         each with its manifest (rendered files, page settings, root, reserved, template)
 ```
 
-`lib/layout/` exists, with three of its four files (`vocabulary.py` is step
-6 of section 10). `tools/` is gone: both scripts it held were dead code.
+`lib/layout/` exists, with all of its files. `tools/` is gone: both scripts
+it held were dead code.
 
 
 ## 7. Scale
@@ -789,7 +820,37 @@ special case comes before what adds a concept.**
    records instead of hiding. What is left of 5.2 is the file: one marker
    carries one path, the page's, so a block from an included file is given
    a line of the page. That needs the marker to carry the identity of the
-   file it came from, and it goes with step 6.
+   file it came from; step 6 did not do it, and it is named below.
+
+6. **The contracts inside `lib/layout/`.** The 18 record shapes of the
+   checks became one: `lib/layout/findings.py` declares, per check, its
+   code, its severity and the sentence it prints, and `findings(analysis)`
+   returns the records. Severity is in the data, `PROBLEM_KEYS` and
+   `WARNING_KEYS` are gone, the four sections of a page report are rendered
+   from the records, and `changes.md` compares codes and block signatures
+   instead of regex-parsing prose. `analyse()` records the list in
+   `layout.json`, so an agent reads what was found instead of parsing
+   Markdown - and a report written from a build read back from disk says
+   what *that* build found.
+
+   Checked on the real deck: the problems, the warnings and the differences
+   with the deck are identical word for word on all 78 pages; the two notes
+   gained a code on purpose (section 5.1).
+
+   Three things named for this step are deliberately not done. `finding_id`:
+   stable identity has to be tested against real edits before anything
+   depends on it (5.1). The `schema_version`, which would promise a shape
+   still missing that field. And the verdict - what the whole report
+   concludes - which waits for both, because a verdict nobody can diff is a
+   sentence, not a contract.
+
+   One more is not done and is not waiting on anything: **one file per
+   page** (5.2). A marker still carries the path of the page it was
+   rendered in, so a block from an included file is given a line of the
+   page, which the report says plainly (`near line 11`, 6 findings of the
+   deck) but cannot resolve. The fix is in `lib/source_map.py` and the
+   Jinja loader, not in the finding schema; it is step 6b, cheap, and it
+   belongs to whoever next opens the source map.
 
 ### Deferred, with a reason: the declared positions (was step 2)
 
@@ -805,12 +866,6 @@ of configuration, not a system.
 
 ### Next
 
-6. **The contracts inside `lib/layout/`**: the vocabulary registry, the
-   finding schema, severity in the data rather than in two Python tuples,
-   the JSON as the source of truth with the Markdown rendered from it, and
-   the verdict. Moving the code and changing its output in one step would
-   have left nothing to compare against - which is why this follows step 3
-   rather than replacing it.
 7. **PDF as a target**: its own theme, its own source transforms, its own
    deliverables, and publication by the explicit list of section 3.2
    instead of `shutil.rmtree(site_dir)`. Deletes the "put `generate_pdf.py`
