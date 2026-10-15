@@ -502,3 +502,43 @@ def test_a_block_fixed_to_the_viewport_is_measured_against_the_page():
     sticky = block(4, 40, 1058, 35, 14, position='sticky')
     assert [f['id'] for f in checks.find_out_of_area([sticky], usable,
                                                      page=checks._page_rect(page))] == [4]
+
+
+def test_a_finding_says_where_its_blocks_are_written():
+    """The agent opens the file at the line instead of searching for a
+    signature. The line alone when the block is written in the source of
+    the page, the file and the line when it comes from another one, and
+    said plainly when nothing marks the block (a block a script writes)."""
+    page = 'src/a/index.html.j2'
+    sources = {'1': page + ':12', '2': 'src/_include/header.j2:4', '3': None}
+    assert markdown_report.where(sources['1'], page) == 'line 12'
+    assert markdown_report.where(sources['2'], page) == 'src/_include/header.j2:4'
+    assert markdown_report.where(sources['3'], page) == 'no source marker'
+
+    one = markdown_report.with_source('- CLIPPED #1: 10 px of content hidden', sources, page)
+    assert one == '- CLIPPED #1: 10 px of content hidden [line 12]'
+    two = markdown_report.with_source('- HIDDEN TEXT #3 under #2: x 0..9 (100 % of the text of #3)',
+                                      sources, page)
+    assert two.endswith('[#3 no source marker, #2 src/_include/header.j2:4]')
+    # an id repeated in the details is named once, and a finding without an
+    # id (a page-wide one) is left alone
+    assert markdown_report.with_source('- DENSE: 90 words of text (limit 80)', sources, page) \
+        == '- DENSE: 90 words of text (limit 80)'
+
+
+def test_the_report_of_a_page_carries_the_places_of_its_findings():
+    page = 'src/a/index.html.j2'
+    layout = {'area': AREA, 'scrolling': False,
+              'blocks': [block(1, 0, 0, 400, 200, source=page + ':7',
+                               media=[{'src': 'a.png', 'w': 400, 'h': 200,
+                                       'natural_w': 200, 'natural_h': 100}]),
+                         block(2, 0, 300, 400, 100)]}          # written by nobody
+    checks.analyse(layout)
+    text = markdown_report.page_markdown('a', page, layout)
+    assert 'UPSCALED IMAGE #1' in text and '[line 7]' in text
+    assert 'Each finding below ends with where its blocks are written.' in text
+
+    # the diff of two builds compares the findings without their places: a
+    # line that moves is not a problem that changed
+    assert all('[' not in line for line in markdown_report.problem_lines(layout['analysis']))
+

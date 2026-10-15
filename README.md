@@ -696,7 +696,10 @@ Files:
 - `pages/<relative HTML path>/layout.md`: one row per top-level block (number, kind, position and
   size of what is actually drawn, margins, CSS position, font size, signature),
   then the problems, warnings, differences with the deck, density and the
-  vertical gaps between blocks
+  vertical gaps between blocks. Each finding ends with where its blocks are
+  written: `[line 62]` in the source of the page, `[other/file.j2:4]` from
+  another file, `[no source marker]` for a block nothing names (one a script
+  writes)
 - `pages/<relative HTML path>/layout.json`: the same data, for scripts
 - `pages/<relative HTML path>/render.png`: the real render
 - `pages/<relative HTML path>/overlay.png`: the real render with the outlined ink of each block and its number

@@ -592,15 +592,19 @@ function extractBlocks(rootSelector, excludeSelector) {
         const text = excerpt(el.innerText);
         if (text) signature += ` "${text}"`;
         if (media.length) signature += ' ' + media.map(m => m.src).join(', ');
-        // line of the source (data-lhtml-src="file:line" of the builds for
-        // development): of the block, else of the first block inside it
-        const marked = el.hasAttribute('data-lhtml-src') ? el : el.querySelector('[data-lhtml-src]');
+        // where the block is written (data-lhtml-src="file:line" of the
+        // builds for development): its own marker, else the first one
+        // inside it - which is where its content starts, not the block, and
+        // the report says so rather than pointing at a line that is not it
+        const own = el.hasAttribute('data-lhtml-src');
+        const marked = own ? el : el.querySelector('[data-lhtml-src]');
         const source = marked ? marked.getAttribute('data-lhtml-src') : null;
         return {
             kind: visual ? kindOf(el) : 'spacer',
             signature,
             dom_id: el.id || null,
             source,
+            source_inside: Boolean(source) && !own,
             stable_id: el.id && source ? `explicit:${source.slice(0, source.lastIndexOf(':'))}:${el.id}`
                 : marked?.getAttribute('data-lhtml-id') || null,
             provenance: marked?.hasAttribute('data-lhtml-provenance')

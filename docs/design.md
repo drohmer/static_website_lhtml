@@ -397,16 +397,28 @@ with the schema version on the document. Three consequences:
   before anything depends on it. Until then, a per-page diff is safe;
   **persistent suppressions are not**, and they wait.
 
-### 5.2 The source location, which already exists and is thrown away
+### 5.2 The source location, which existed and was not used
 
-`lib/source_map.py` writes `data-lhtml-src="<file>:<line>"` on each block.
-`plugins/assets/layout_measure.js:558-560` then keeps only the integer: **the
-file is discarded**, a nested block falls back to its first marked descendant
-with no flag, and text runs - the blocks an author edits most - get nothing
-at all (14 of the 108 blocks of the example's first page). So the report says
-where a problem is *on screen*, not where it is *in the file*, and the agent
-greps by a truncated signature instead. This is the field whose absence costs
-most per iteration, and the machinery already exists.
+`lib/source_map.py` writes `data-lhtml-src="<file>:<line>"` on each block,
+and the measurement keeps it whole: the block carries `source`
+("file:line") and `line`. What was missing was the use: **the findings
+carried none of it**. A report said `HIDDEN TEXT #2 under #3` and the agent
+had to find #2 in a table of a hundred rows, then grep for its signature.
+
+Done: every finding ends with where its blocks are written - `[line 62]` in
+the source of the page, `[other/file.j2:4]` from another file, `[no source
+marker]` when nothing names the block. The diff of two builds keeps
+comparing the findings without their places, so a line that moves is not a
+problem that changed.
+
+Two claims of the earlier draft were wrong, and the measurement says so.
+The file was not discarded. And a block falling back to the marker of a
+descendant - the report pointing at a line that is not the block's - does
+not happen: the flag added to see it counts **0 of the 554** top-level
+blocks of the deck. What is real is the last one: 82 of those 554 carry no
+marker, 74 of them the timer the project injects by script (which nothing
+can mark), and 8 text runs whose recorded text no longer matches what KaTeX
+rendered. 1.4 % of the blocks, not the hole the draft described.
 
 ### 5.3 Precision before container
 
@@ -676,6 +688,11 @@ special case comes before what adds a concept.**
    longer a rule anyone has to know - checked by building the PDF and the
    layout report of the same sources in one run, which produces slides.pdf,
    images/ and the report, and publishes no site.
+5. **The source location in the findings** (section 5.2). Every finding
+   says where the blocks it names are written, so the agent opens a file at
+   a line instead of looking a block number up in a table and grepping for
+   its signature. Writing it meant measuring what the draft had assumed,
+   and two of its three claims were wrong - see 5.2.
 
 ### Deferred, with a reason: the declared positions (was step 2)
 
@@ -691,10 +708,6 @@ of configuration, not a system.
 
 ### Next
 
-5. **The source location in the findings** (section 5.2). One line of
-   `layout_measure.js` throws the file away and keeps the integer. The
-   machinery exists, and this is the field whose absence costs most per
-   iteration of the agent loop.
 6. **The contracts inside `lib/layout/`**: the vocabulary registry, the
    finding schema, severity in the data rather than in two Python tuples,
    the JSON as the source of truth with the Markdown rendered from it, and
@@ -770,5 +783,7 @@ to check it against. They stay in section 5.3.
   4.0)? It is cheap as a build check and belongs to the contract.
 - `position: fixed` now exempts a block from `OUT OF AREA`, on the argument
   that it is laid over the page rather than placed in it. The same argument
-  applies to `RESERVED AREA` and to collisions with the content, where it is
-  *not* applied today. Settle it one way for all three, with the corpus.
+  applies to `RESERVED AREA`, to collisions with the content, and to the
+  design roles - the timer of the real deck is judged as body text and
+  reported as `DESIGN font_min` at 14 px - where it is *not* applied today.
+  Settle it one way for all four, with the corpus.

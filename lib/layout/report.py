@@ -17,8 +17,39 @@ def _zone(o):
     return f"x {o['x0']}..{o['x1']}, y {o['y0']}..{o['y1']}"
 
 
-def problem_lines(analysis):
-    """The problems of a page, one Markdown line each: '- KIND #id ...: details'."""
+def where(source, page_source):
+    """Where a block is written, as a reader of the report needs it: the line
+    alone when it is the source of the page (named in the header), the file
+    and the line when it comes from another one, and said plainly when the
+    block carries no marker - a block written by a script has none, and a
+    silent dash would read as a block nobody can find."""
+    if not source:
+        return 'no source marker'
+    file, _, line = source.rpartition(':')
+    return f'line {line}' if file == page_source else source
+
+
+def with_source(line, sources, page_source):
+    """A finding, followed by where the blocks it names are written. The ids
+    are those of its subject, before the colon: '#2 under #3', not the ones
+    repeated in the details."""
+    found, seen = [], set()
+    for ident in re.findall(r'#(\w+)', line.split(':', 1)[0]):
+        if ident not in seen:
+            seen.add(ident)
+            found.append(ident)
+    if not found or sources is None:
+        return line
+    places = [where(sources.get(ident), page_source) for ident in found]
+    if len(found) > 1:
+        places = [f'#{ident} {place}' for ident, place in zip(found, places)]
+    return f"{line} [{', '.join(places)}]"
+
+
+def problem_lines(analysis, sources=None, page_source=None):
+    """The problems of a page, one Markdown line each: '- KIND #id ...: details'.
+    With `sources` ({block id: 'file:line'}), each line says where the blocks
+    it names are written."""
     problems = []
     for h in analysis.get('hidden_text', []):
         problems.append(f"- HIDDEN TEXT #{h['id']} under #{h['by']}: {_zone(h)} "
@@ -48,7 +79,7 @@ def problem_lines(analysis):
         problems.append(f"- COLUMN OVERFLOW #{c['id']} outside #{c['parent']}: " +
                         ', '.join(f"{c[k]} px {k}" for k in ('left', 'right') if k in c))
     problems += [f"- INTERACTIVE STATE {e['kind']}: {e['message']}" for e in analysis.get('interactive_errors', [])]
-    return problems
+    return [with_source(line, sources, page_source) for line in problems]
 
 
 def page_markdown(name, source, layout):
@@ -66,7 +97,9 @@ def page_markdown(name, source, layout):
              '(text lines, images reduced to their drawn shape, backgrounds, borders). '
              'Overlaps are computed on the ink rectangles themselves (layout.json: "ink"), '
              'so the empty corners of a block do not count. Spacers are empty blocks.', '',
-             'Line: line of the source where the block starts (- for text directly in the page).', '',
+             'Line: line of the source where the block starts (- for a block no marker names, '
+             'a block written by a script for instance). Each finding below ends with where its '
+             'blocks are written.', '',
              '| # | line | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
              '|---|------|------|------|-------|-------------------|----------|------|-----------|']
     for b in layout['blocks']:
@@ -77,7 +110,13 @@ def page_markdown(name, source, layout):
                      f"{' '.join(str(m) for m in b['margin'])} | {b['position']} | {b['font_size']} | "
                      f"{_md_cell(b['signature'])} |")
 
-    problems = problem_lines(analysis)
+    # Where each block is written: the findings carry it, so that a page is
+    # opened at the line instead of being searched for a signature.
+    sources = {str(b['id']): b.get('source')
+               for b in layout.get('blocks', []) + layout.get('subblocks', [])}
+    locate = lambda line: with_source(line, sources, source)
+
+    problems = problem_lines(analysis, sources, source)
     lines += ['', '## Problems', ''] + (problems or ['None.'])
 
     warnings = [f"- TIGHT #{t['a']} × #{t['b']}: line box of text overlapping by {t['y1'] - t['y0']} px "
@@ -118,7 +157,7 @@ def page_markdown(name, source, layout):
                  for d in analysis.get('role_design', [])]
     warnings += [f"- CANVAS OVERLAP {_zone(d)}: {d['reason']}" for d in analysis.get('canvas_overlaps', [])]
     if warnings:
-        lines += ['', '## Warnings', ''] + warnings
+        lines += ['', '## Warnings', ''] + [locate(line) for line in warnings]
 
     deviations = [_deviation_text(d) for d in analysis.get('deviations', [])]
     if deviations:
