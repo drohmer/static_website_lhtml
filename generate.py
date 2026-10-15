@@ -30,9 +30,10 @@ from lib import dependencies
 from lib import source_map
 from lib.tracking import TrackingLoader, lhtml_includes
 from lib import source_scan
+from lib.layout import build as layout_build
 from lib import logger
 from lib import pages
-from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
+from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
 from lib import layout_options
 from lib.build_output import staged_site
 from lib.structure import documents_directory
@@ -63,7 +64,7 @@ def parse_arguments():
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
-                             'of each page in .layout/ (plugin layout_report.py, requires npm install).')
+                             'of each page in .layout/ (lib/layout/, requires npm install).')
     parser.add_argument('--render', metavar='FILE', action='append',
                         help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
                              'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
@@ -130,18 +131,6 @@ def resolve_plugins(meta, log):
         else:
             found.append(full_path)
     return found, missing
-
-
-LAYOUT_PLUGIN = 'plugins/layout_report.py'
-
-
-def add_layout_plugin(meta):
-    """Add the layout report plugin (--layout): after the other plugins, but
-    before generate_pdf, which removes the site directory."""
-    plugins = [p for p in meta['plugin'] if not p.endswith('layout_report.py')]
-    position = next((k for k, p in enumerate(plugins) if p.endswith('generate_pdf.py')), len(plugins))
-    plugins.insert(position, meta['lib_directory'] + LAYOUT_PLUGIN)
-    meta['plugin'] = plugins
 
 
 _plugin_modules = {}     # {path: module} of the build (emptied by generate_site)
@@ -588,9 +577,8 @@ def render_files(meta, files, log):
     of the layout report."""
     from pathlib import Path
     from lib.layout.measure import run_node
-    from lib.layout_options import options_of
     try:
-        output = layout_output_directory(meta) / 'render'
+        output = layout_options.output_directory(meta) / 'render'
     except ConfigError as exc:
         log.error(str(exc))
         sys.exit(1)
@@ -609,7 +597,7 @@ def render_files(meta, files, log):
             sys.exit(1)
         targets[png] = path
         entries.append({'file': str(path), 'png': str(png)})
-    options = options_of(meta)
+    options = layout_options.options_of(meta)
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
         json.dump(entries, fid)
         listing = fid.name
@@ -648,9 +636,7 @@ def build_once(args):
     # data-lhtml-src="file:line" on the blocks (lib/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
-    if args.layout:
-        add_layout_plugin(meta)
-
+    meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lib/layout/build.py)
 
     # Diagnostic mode takes precedence over --clean and never runs plugins.
     if args.check_config or not args.clean:
@@ -658,11 +644,11 @@ def build_once(args):
         context.plugin_paths.extend(paths)
         if plugin_failures:
             sys.exit(1)
-    if any(path.endswith('layout_report.py') for path in context.plugin_paths):
-        # What the report will refuse, refused here: before the build, and
-        # with --check-config, which loads no plugin (lib/layout_options.py).
+    if meta['analyse_layout'] or args.check_config:
+        # What the analysis will refuse, refused here: before the build, and
+        # with --check-config, which builds nothing (lib/layout_options.py).
         try:
-            layout_output_directory(meta)
+            layout_options.output_directory(meta)
             layout_options.validate(meta, log)
         except ConfigError as exc:
             log.error(str(exc))
@@ -831,6 +817,15 @@ def generate_site(meta, selected, built):
     if not failed and not plugin_failures:
         plugin_failures += run_plugins(meta, 'post_process', log)
     log.ok_elapsed()
+
+    # The layout analysis is part of the generator, not a plugin: it runs
+    # once the pages and the theme are in place, and before the dependency
+    # store records what each page used.
+    if meta['analyse_layout'] and not failed and not plugin_failures:
+        log.title('Layout analysis', pre='\n')
+        log.tic()
+        layout_build.run(meta)
+        log.ok_elapsed()
 
     restore_previous_pages(meta, failed)
     log.plain()

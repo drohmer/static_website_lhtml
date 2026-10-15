@@ -1,11 +1,9 @@
-"""Layout report: positions, collisions and overflows of the blocks of each page.
+"""The layout analysis of a build: measure the pages of the site, write the
+report, keep what a previous build measured.
 
-The layout is measured in headless Chrome (assets/layout_measure.js,
-requires `npm install`), then analysed by lib/layout/ (analysis.py: the
-checks; report.py: the markdown; measure.py: the browser). This file is the
-hook that runs them during a build: which pages to measure, what to keep of
-a previous build, where to write. For each page, the report is
-written to <config_dir>/.layout/pages/<relative HTML path>/:
+Run by `--layout` (generate.py), after the pages are built and the themes
+rendered. For each page, the report is written to <config_dir>/.layout/pages/
+<relative HTML path>/:
 
     layout.md    blocks (position, size, signature), detected problems,
                  warnings, differences with the rest of the deck, density
@@ -17,29 +15,33 @@ written to <config_dir>/.layout/pages/<relative HTML path>/:
 
 <config_dir>/.layout/summary.md lists all pages sorted by number of problems,
 with the usual values of the deck (title position, columns, body font size,
-...: also in deck.json), and contact_NN.png shows thumbnails of all pages. Coordinates are in CSS pixels, origin at the top-left corner of
-the page (1920x1080 for slides). One build at a time writes the report
+...: also in deck.json), and contact_NN.png shows thumbnails of all pages.
+Coordinates are in CSS pixels, origin at the top-left corner of the page
+(1920x1080 for slides). One build at a time writes the report
 (lib/report_lock.py).
 
-Options (configure.yaml):
-    plugin_arg:
-      layout_report:
-        root: 'body'         # CSS selector of the content root
-                             # (webpage-frame theme: '#main-content-centered')
-        exclude: 'nav, footer'   # children of the root that are not content
-        width: 1920          # viewport size
-        height: 1080
-        images: true         # write overlay.png / blocks.png
-        threshold: 4         # minimal overlap / overflow (px) reported
-        output: '.layout/'   # output directory, relative to the config directory
-        max_words: 80        # DENSE above this number of words per slide
-        min_font: 20         # SMALL FONT below this font size (px), slides only,
-                             # when design_rules is disabled
-        contact_columns: 4   # thumbnails per row / rows per contact sheet
-        contact_rows: 4
-        design_rules: {...}  # DESIGN checks by role (lib/design_checks.py)
-"""
+The checks themselves are lib/layout/analysis.py, the markdown is
+lib/layout/report.py, and the browser is lib/layout/measure.py. What this
+module decides is everything that depends on the build: which pages to
+measure, what to keep of a previous measure, where to write.
 
+Options (configure.yaml, under `layout:`):
+    layout:
+      root: 'body'         # CSS selector of the content root
+                           # (webpage-frame theme: '#main-content-centered')
+      exclude: 'nav, footer'   # children of the root that are not content
+      width: 1920          # viewport size
+      height: 1080
+      images: true         # write overlay.png / blocks.png
+      threshold: 4         # minimal overlap / overflow (px) reported
+      output: '.layout/'   # output directory, relative to the config directory
+      max_words: 80        # DENSE above this number of words per slide
+      min_font: 20         # SMALL FONT below this font size (px), slides only,
+                           # when design_rules is disabled
+      contact_columns: 4   # thumbnails per row / rows per contact sheet
+      contact_rows: 4
+      design_rules: {...}  # DESIGN checks by role (lib/design_checks.py)
+"""
 import json
 import os
 import shutil
@@ -48,11 +50,11 @@ import time
 import traceback
 
 from lib import dependencies
-from lib.configuration import ConfigError, layout_output_directory
+from lib.configuration import ConfigError
 from lib.layout.analysis import analyse, count_problems, deck_norms
 from lib.layout.measure import run_node, warn_degenerate_root, write_contact_sheets
 from lib.layout.report import changes_markdown, layout_changes, page_markdown, summary_markdown
-from lib.layout_options import jobs, options_of, validate as validate_options
+from lib.layout_options import jobs, options_of, output_directory, validate as validate_options
 from lib.lint import Linter
 from lib.report_lock import report_lock
 from lib.structure import built_pages, structure
@@ -95,20 +97,22 @@ def _same_source(report, page, meta):
     return source == os.path.relpath(page['source'], meta.get('config_directory') or '.')
 
 
-def post_process(meta):
-    # An analysis reports, or reports that it could not run: it never takes
-    # the build down with it. A missing browser used to throw away a site
-    # that had rendered correctly.
-    # What it is asked to do is another matter: a configuration it cannot
-    # make sense of (an unsafe output directory, an option of the wrong
-    # shape) stops the build, before anything is written, so that a typo is
-    # not answered by a report that never comes.
-    output = layout_output_directory(meta)
+def run(meta):
+    """Measure the site and write the report. An analysis reports, or
+    reports that it could not run: it never takes the build down with it. A
+    missing browser used to throw away a site that had rendered
+    correctly.
+
+    What it is asked to do is another matter: a configuration it cannot make
+    sense of (an unsafe output directory, an option of the wrong shape)
+    stops the build, before anything is written, so that a typo is not
+    answered by a report that never comes."""
+    output = output_directory(meta)
     validate_options(meta, meta['log'])
     try:
         # one build at a time writes the reports (another build waits for it)
         with report_lock(output, meta['log']):
-            return _post_process(meta)
+            return _measure_and_report(meta)
     except ConfigError:
         raise
     except Exception as error:
@@ -117,12 +121,12 @@ def post_process(meta):
         meta['log'].debug(traceback.format_exc())
 
 
-def _post_process(meta):
+def _measure_and_report(meta):
     options = options_of(meta)
     meta.setdefault('dependency_contexts', {})
     log = meta['log']
     site_dir = meta['site_directory']
-    output_dir = str(layout_output_directory(meta))
+    output_dir = str(output_directory(meta))
     # --only: the pages built (or, when the pages of the site changed, the full
     # build measures only the pages named); the others keep their report
     requested = meta.get('measure')

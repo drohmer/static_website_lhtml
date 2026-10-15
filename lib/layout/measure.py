@@ -108,5 +108,5 @@ def warn_degenerate_root(measured, options, log):
     used = measured[0][2].get('root') or options['root']
     log.warning(f"Layout report: every page was measured as a single block (root: '{used}'). "
                 f"The root selector probably does not match the theme; the checks on the blocks "
-                f"found nothing. Set plugin_arg: layout_report: root: to the content element of "
+                f"found nothing. Set 'layout: root:' to the content element of "
                 f"the theme (webpage-frame: '#main-content-centered').")

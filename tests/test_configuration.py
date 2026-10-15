@@ -51,15 +51,20 @@ class ConfigurationTests(unittest.TestCase):
         self.write(debug=False)
         self.assertIn('debug: true', self.cli('--check-config', '-d').stdout)
 
-    def test_layout_diagnostic_orders_plugin_before_pdf(self):
+    def test_a_configuration_that_lists_the_layout_report_as_a_plugin_is_refused(self):
+        """It is part of the generator now, selected by --layout: a
+        configuration of the previous version is told what to change,
+        before any build."""
         self.write(plugin=['plugins/generate_pdf.py', 'plugins/layout_report.py'])
         result = self.cli('--check-config', '--layout')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        report = yaml.safe_load(result.stdout)
-        paths = report['plugin_paths']
-        self.assertEqual([Path(path).name for path in paths], ['layout_report.py', 'generate_pdf.py'])
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('--layout', result.stdout)
         self.assertFalse((self.root / '.site').exists())
-        self.assertFalse((self.root / '_layout').exists())
+
+        self.write(plugin=[], plugin_arg={'layout_report': {'root': 'main'}})
+        result = self.cli('--check-config')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("'layout:'", ' '.join(result.stdout.split()))
 
     def test_bad_types_and_yaml_have_actionable_errors(self):
         for key, value in [('source_directory', None), ('site_directory', 3),
@@ -184,7 +189,7 @@ class ReservedKeysAndWatchTests(unittest.TestCase):
         from lib.configuration import Config, RUNTIME_KEYS
         known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
         written = {}
-        for file in [REPO / 'generate.py', *sorted((REPO / 'lib').glob('*.py')),
+        for file in [REPO / 'generate.py', *sorted((REPO / 'lib').rglob('*.py')),
                      *sorted((REPO / 'plugins').glob('*.py'))]:
             for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text()):
                 written.setdefault(match.group(1), file.name)
@@ -263,8 +268,7 @@ class CheckConfigTests(unittest.TestCase):
     def check(self, **report):
         config = self.root / 'configure.yaml'
         config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                          'plugin': ['plugins/layout_report.py'],
-                                          'plugin_arg': {'layout_report': report}}))
+                                          'layout': report}))
         return subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--check-config'],
                               cwd=self.root, capture_output=True, text=True)
 

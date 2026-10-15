@@ -30,6 +30,8 @@ RUNTIME_KEYS = frozenset((
     'source_roots',                 # the sources read by each page (lib/tracking.py)
     'dependency_contexts', 'dependency_store', 'dependency_measure',
     'page_contexts',                # what each page depends on (lib/dependencies.py)
+    'analyse_layout',               # --layout: the build runs the layout analysis (lib/layout/build.py)
+    'publish_site',                 # a target asks for its intermediate site not to be published
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
 ))
@@ -65,6 +67,7 @@ class Config:
     # an author writes in a config.yaml or a deck entry stays out of the site.
     public_page_keys: list[str] = field(default_factory=list)
     plugin_arg: dict = field(default_factory=dict)
+    layout: dict = field(default_factory=dict)      # options of the layout analysis (--layout)
     cache_video_directory: str | None = None
     chrome: str | None = None
     design: dict | str | None = None
@@ -190,7 +193,7 @@ def load_config(filename, debug_override=None):
             raise ConfigError(f"'{key}' must be a boolean (true or false)")
     if type(values['level_print']) is not int or values['level_print'] < 0:
         raise ConfigError("'level_print' must be a non-negative integer")
-    for key in ('keywords', 'plugin_arg'):
+    for key in ('keywords', 'plugin_arg', 'layout'):
         if not isinstance(values[key], dict) or any(not isinstance(k, str) for k in values[key]):
             raise ConfigError(f"'{key}' must be a mapping with string keys")
     for name in sorted({'params', 'page', 'credit', 'credits'} & set(values['keywords'])):
@@ -208,6 +211,17 @@ def load_config(filename, debug_override=None):
     for name in sorted(set(values['public_page_keys']) & set(PRIVATE_KEYS)):
         raise ConfigError(f"'public_page_keys': '{name}' is never written into the site "
                           f"(it is the path of the source on this machine)")
+    # The layout analysis is part of the generator, not a plugin: it is
+    # selected by --layout and configured by 'layout:'. A configuration of
+    # the previous version says so here, before the build, naming the fix.
+    for entry in plugins:
+        if entry.endswith('layout_report.py'):
+            raise ConfigError("'plugin': the layout report is no longer a plugin. Remove "
+                              f"'{entry}' from 'plugin:' and run the build with --layout")
+    if isinstance(values['plugin_arg'], dict) and 'layout_report' in values['plugin_arg']:
+        raise ConfigError("'plugin_arg': the options of the layout report moved to the "
+                          "configuration key 'layout:'. Move the content of "
+                          "'plugin_arg: layout_report:' under 'layout:'")
 
     _chrome_executable(values, path.parent)
 
@@ -250,31 +264,3 @@ def validate_paths(config, config_file, require_inputs=True):
             raise ConfigError(f"Unsafe 'site_directory': deleting '{output}' would remove '{path}'")
     if output.exists() and not output.is_dir():
         raise ConfigError(f"'site_directory' is not a directory: {output}")
-
-
-def layout_output_directory(meta):
-    """Validate the layout output before any build or plugin deletion."""
-    options = meta.get('plugin_arg', {}).get('layout_report') or {}
-    if not isinstance(options, dict):
-        raise ConfigError("'plugin_arg.layout_report' must be a mapping")
-    value = options.get('output', '.layout/')
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError("'plugin_arg.layout_report.output' must be a non-empty path")
-    output = (Path(meta['config_directory']) / Path(value).expanduser()).resolve()
-    for key in ('source_directory', 'theme', 'site_directory', 'published_site_directory', 'cache_video_directory'):
-        if not meta.get(key):
-            continue
-        path = Path(meta[key]).resolve()
-        if path == output or path in output.parents or output in path.parents:
-            raise ConfigError(f"Unsafe layout output '{output}': overlaps '{key}' ({path})")
-    protected = [GENERATOR_DIRECTORY, Path(meta['config_file']),
-                 Path(meta['config_directory']) / 'code',
-                 Path(meta['config_directory']) / 'cache_video_directory']
-    protected += [Path(path) for path in meta.get('plugin_paths', [])]
-    for path in protected:
-        path = path.resolve()
-        if path == output or output in path.parents:
-            raise ConfigError(f"Unsafe layout output '{output}': would remove '{path}'")
-    if output.exists() and not output.is_dir():
-        raise ConfigError(f'Layout output is not a directory: {output}')
-    return output

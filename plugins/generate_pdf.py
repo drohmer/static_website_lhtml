@@ -77,7 +77,7 @@ def post_process(meta):
         meta['log'].keyvalue('info', f"PDF file generated at '{pdf_output}'", indent_level=2)
         meta['log'].keyvalue('info', f"Images generated in '{image_dir}'", indent_level=2)
 
-    # Only clean after every export and publication step succeeded; with
-    # --only the build is made in the site itself, which is kept.
+    # The HTML was an intermediate of this export: it is not published,
+    # unless --debug keeps it, or --only built in the site itself.
     if not meta['debug'] and not meta.get('only'):
-        shutil.rmtree(site_dir)
+        meta['publish_site'] = False

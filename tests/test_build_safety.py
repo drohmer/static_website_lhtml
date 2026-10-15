@@ -11,10 +11,10 @@ import pytest
 import yaml
 
 from lib.build_output import staged_site
-from lib.configuration import layout_output_directory, ConfigError
+from lib.configuration import ConfigError
 from lib.development import snapshot
-from lib.layout import measure
-from plugins import layout_report
+from lib.layout import build as layout_build, measure
+from lib.layout_options import output_directory
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -77,12 +77,30 @@ def test_publish_failure_rolls_back(tmp_path):
     assert not (target / 'new').exists()
 
 
+def test_a_target_that_does_not_publish_its_site_leaves_the_previous_one(tmp_path):
+    """The PDF export renders HTML as an intermediate and publishes
+    slides.pdf instead. It says so (publish_site) rather than deleting the
+    directory other stages may still be reading: the staging site is
+    dropped at publication, and what was published before is untouched."""
+    target = tmp_path / '.site'
+    target.mkdir()
+    (target / 'keep').write_text('old')
+    meta = {'site_directory': str(target), 'debug': False, 'log': Mock()}
+    with staged_site(meta):
+        staging = Path(meta['site_directory'])
+        (staging / 'intermediate.html').write_text('html')
+        meta['publish_site'] = False
+    assert not staging.exists()
+    assert (target / 'keep').read_text() == 'old'
+    assert not (target / 'intermediate.html').exists()
+
+
 def test_layout_rejects_unsafe_outputs_before_deleting(tmp_path):
     config, source = project(tmp_path)
     (tmp_path / 'alias').symlink_to(source, target_is_directory=True)
     for output in ('.', 'src', 'src/report', 'alias', '.site', '.site/report', str(REPO), str(REPO / 'themes')):
         config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
-            'plugin_arg': {'layout_report': {'output': output}}}))
+            'layout': {'output': output}}))
         for flag in ('--check-config', '--layout'):
             result = build(config, '--layout', flag)
             assert result.returncode == 1, (output, result.stdout)
@@ -90,17 +108,17 @@ def test_layout_rejects_unsafe_outputs_before_deleting(tmp_path):
             assert (source / 'index.html.j2').exists()
 
 
-def test_layout_plugin_validates_even_when_called_directly(tmp_path):
+def test_the_layout_analysis_validates_even_when_called_directly(tmp_path):
     config, source = project(tmp_path)
     meta = {'config_file': str(config), 'config_directory': str(tmp_path),
             'source_directory': str(source), 'theme': str(REPO / 'themes'),
             'site_directory': str(tmp_path / '.site'), 'log': Mock(),
-            'plugin_arg': {'layout_report': {'output': 'src'}}}
+            'layout': {'output': 'src'}}
     with pytest.raises(ConfigError):
-        layout_report.post_process(meta)
+        layout_build.run(meta)
     assert (source / 'index.html.j2').exists()
-    meta['plugin_arg']['layout_report']['output'] = 'custom-reports'
-    assert layout_output_directory(meta) == tmp_path / 'custom-reports'
+    meta['layout']['output'] = 'custom-reports'
+    assert output_directory(meta) == tmp_path / 'custom-reports'
 
 
 def test_layout_reports_browser_errors(tmp_path):
@@ -177,11 +195,11 @@ def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
     the build starts (lib/layout_options.py, also used by --check-config)."""
     for bad in ({'design_rules': 42}, {'jobs': 'four'}, {'jobs': 0},
                 {'width': 'wide'}, {'root': ''}, {'images': 'yes'}, {'contact_rows': -1}):
-        config, _ = project(tmp_path, plugin_arg={'layout_report': bad})
+        config, _ = project(tmp_path, layout=bad)
         result = build(config, '--layout')
         assert result.returncode == 1, (bad, result.stdout + result.stderr)
         said = ' '.join(result.stdout.split())      # independent of the terminal width
-        assert 'layout_report' in said and list(bad)[0] in said, (bad, said)
+        assert 'layout' in said and list(bad)[0] in said, (bad, said)
         assert 'Start website generator' not in said, (bad, said)      # refused before the build
         assert not (tmp_path / '.layout').exists(), bad
 
@@ -207,9 +225,9 @@ def test_a_page_that_places_itself_is_not_wrapped_again(tmp_path):
 
 
 def test_an_option_the_analysis_does_not_know_is_reported(tmp_path):
-    """A key of plugin_arg that no option matches is a typo: it was read,
+    """A key of 'layout' that no option matches is a typo: it was read,
     copied and never used, without a word."""
-    config, _ = project(tmp_path, plugin_arg={'layout_report': {'widht': 3000, 'expct': 'x'}})
+    config, _ = project(tmp_path, layout={'widht': 3000, 'expct': 'x'})
     said = ' '.join(build(config, '--layout').stdout.split())
     assert 'unknown: expct, widht' in said, said
 

@@ -215,7 +215,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                 self.assertTrue((self.site / 'index.html').exists())
                 self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
 
-    def test_pdf_success_cleans_only_after_publication(self):
+    def test_pdf_asks_not_to_publish_instead_of_deleting(self):
         self.site.mkdir()
         def run(command, check):
             self.assertTrue(self.site.exists())
@@ -227,10 +227,16 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                 'structure': [{'dir': '', 'filename': 'index.html'}]}
         with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
-            generate_pdf.post_process({**meta, 'only': True})       # --only: built in the site itself
+            partial = {**meta, 'only': True}                        # --only: built in the site itself
+            generate_pdf.post_process(partial)
             self.assertTrue(self.site.exists())
+            self.assertNotIn('publish_site', partial)
             generate_pdf.post_process(meta)
-        self.assertFalse(self.site.exists())
+        # The site it rendered was an intermediate of the export: the export
+        # says so, and the publication step drops it (lib/build_output.py).
+        # It does not delete a directory other stages may still be reading.
+        self.assertTrue(self.site.exists())
+        self.assertFalse(meta['publish_site'])
         self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')
         self.assertEqual((self.root / 'images/slide_000.jpg').read_bytes(), b'export')
 

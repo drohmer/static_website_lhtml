@@ -5,7 +5,8 @@ structure costs, the rules used to decide where each piece belongs, and the
 target they lead to.
 
 Part of it is now built: the point fixes (step 0), the two guarantees under
-test (step 1) and `lib/layout/` (step 3) of the order of work in section 10.
+test (step 1), `lib/layout/` (step 3) and the layout analysis out of the
+plugin list (step 4) of the order of work in section 10.
 Each section says what it has learned since; section 10 is the current
 state and the next step.
 
@@ -67,18 +68,23 @@ which is why these dependencies stayed invisible.
 Facts, each checked against the code (line numbers as of this note).
 
 **The core knows two plugins by their file name, in three places.**
-`generate.py:135-141` (`add_layout_plugin`) inserts `layout_report.py` before
-`generate_pdf.py` by testing `p.endswith(...)`; `generate.py:669` tests the
-same name again to validate the report output directory; a third place is in
-`lib/configuration.py:238-263`, a function dedicated to that one plugin.
-(A fourth is gone: `--render` imported two private symbols of the plugin,
-and now imports `lib.layout.measure` and `lib.layout_options`.)
+`generate.py` (`add_layout_plugin`) inserted `layout_report.py` before
+`generate_pdf.py` by testing `p.endswith(...)`; a second place tested the
+same name again to validate the report output directory; a third was a
+function of `lib/configuration.py` dedicated to that one plugin; a fourth
+imported two private symbols of it for `--render`. All four are gone with
+step 4: the analysis is part of the generator, `--layout` runs it, and the
+configuration names no file.
 
-**A plugin performs the publication step.** `plugins/generate_pdf.py:83`,
-`shutil.rmtree(site_dir)`. `lib/build_output.py:19-20` has to know about it:
-"PDF-only exports may intentionally remove their staging site", followed by
-`if staging.is_dir()`. The ordering constraint documented in the README ("put
-`generate_pdf.py` last") exists only because of this, and nothing checks it.
+**A plugin performed the publication step.** `plugins/generate_pdf.py`,
+`shutil.rmtree(site_dir)`, with `lib/build_output.py` having to know about
+it ("PDF-only exports may intentionally remove their staging site"). The
+ordering constraint documented in the README ("put `generate_pdf.py` last")
+existed only because of this, and nothing checked it. Step 4 needed the
+site to survive its post stage, so the export now says what it publishes
+(`publish_site`) and the publication step drops the intermediate. The rest
+- a target owning its theme, its transforms and its deliverables - is step
+7; what is gone is the deletion of a directory under whatever runs next.
 
 **The order of two plugins silently changes the output.** With `pre_include`
 then `auto_wrap`, the included text lands inside the document; in the reverse
@@ -550,8 +556,11 @@ No compatibility shim. Each removal is an error that names the fix:
 - `plugin:` listing `menu.py`, `title_submenu.py`, `auto_wrap.py`,
   `redirection_first_page.py` or `cache_video.py`: core stages now; the error
   names the option that replaces the entry (`index:`, `title_id:`, ...).
-- `plugin:` listing `layout_report.py` or `generate_pdf.py`: an analysis
-  and a target now, selected by `--layout` / `--pdf` or a `preset:` key.
+- `plugin:` listing `layout_report.py`: an analysis now, selected by
+  `--layout`, with its options under `layout:` instead of `plugin_arg:
+  layout_report:`. Both spellings are refused by name, with the change to
+  make (done). `generate_pdf.py` follows at step 7, as a target selected by
+  `--pdf` or a `preset:` key.
 - Any plugin reading an internal key of `meta` that is no longer passed, or
   rewriting a page file outside a declared position.
 - Page settings reaching the theme: a theme declares what it receives;
@@ -643,6 +652,21 @@ special case comes before what adds a concept.**
    the generator five months old: same 82 files, same paths, and it builds
    both with the current theme and with its own. The theme contract has not
    moved in practice, which is worth knowing before step 8 rewrites it.
+4. **The layout analysis is no longer a plugin.** `--layout` runs
+   `lib/layout/build.py` from the core, at the point in the build the plugin
+   occupied. Four special cases are gone with it: `add_layout_plugin` and
+   its insertion before `generate_pdf.py`, a second test on the same file
+   name, the function of `lib/configuration.py` written for that one plugin,
+   and the import of two of its private symbols by `--render`. The options
+   are the configuration key `layout:`; a configuration of the previous
+   version is refused by `--check-config` with the change to make, named.
+
+   It needed one thing from the PDF export: the site had to survive the post
+   stage. `generate_pdf` asked for its intermediate HTML not to be published
+   instead of deleting the directory, so "put `generate_pdf.py` last" is no
+   longer a rule anyone has to know - checked by building the PDF and the
+   layout report of the same sources in one run, which produces slides.pdf,
+   images/ and the report, and publishes no site.
 
 ### Deferred, with a reason: the declared positions (was step 2)
 
@@ -658,14 +682,6 @@ of configuration, not a system.
 
 ### Next
 
-4. **The layout analysis stops being a plugin.** `--layout` calls
-   `lib/layout/` from the core, at the position it occupies today. Deletes
-   `add_layout_plugin`, the second file-name test of `generate.py`, and the
-   function of `lib/configuration.py` dedicated to one plugin. Breaking:
-   `plugin:` listing `layout_report.py` becomes an error naming `--layout`.
-   This is the smallest remaining step that deletes more than it adds, and
-   step 3 is what makes it possible: the code it would have had to import
-   from a plugin is already in `lib/`.
 5. **The source location in the findings** (section 5.2). One line of
    `layout_measure.js` throws the file away and keeps the integer. The
    machinery exists, and this is the field whose absence costs most per

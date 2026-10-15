@@ -27,7 +27,7 @@ flat project without a deck; the rest waits for those separators to be
 normalised, and for the CI to cover it.
 
 **Optional**, each unlocking one feature and needed only for it:
-- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. Put `generate_pdf.py` last in the plugin list: after the export, it removes the site directory (kept with `-d`).
+- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `slides.pdf` and `images/`, and the site directory is not published (kept with `-d`, and kept as it is with `--only`).
 - **Layout report** (`--layout`, `--render`): Node.js and `npm install` in
   this directory. If `npm install` leaves no Chrome behind (recent npm
   versions skip that step), run `npx puppeteer browsers install chrome`; a
@@ -246,6 +246,7 @@ static_website_lhtml/
       analysis.py          # What a measured page shows: collisions, overflows, density, deviations
       report.py            # layout.md, summary.md, changes.md and the contact sheets
       measure.py           # Measurement in headless Chrome (Node scripts of plugins/assets/)
+      build.py             # The analysis of a build (--layout): which pages, what to keep, where
     structure.py           # Pages of the site for plugins (structure, built_pages),
                            #   what may be published, and .structure/ of a project
   plugins/
@@ -257,7 +258,6 @@ static_website_lhtml/
     code_include.py        # Include code from external repos
     cache_video.py         # Video codec conversion and caching
     generate_pdf.py        # PDF/image generation (requires puppeteer)
-    layout_report.py       # Hook of the layout report during a build (--layout; the analysis is lib/layout/)
     assets/                # Node scripts of the PDF export and of the layout report
     video_convert/         # Video conversion utilities (ffmpeg)
   tests/                   # pytest suite
@@ -652,8 +652,7 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
 | `cache_video.py` | pre | Converts and caches videos in multiple codecs |
-| `layout_report.py` | post | Layout report of each page (`--layout`, requires `npm install`); the analysis itself is `lib/layout/` |
-| `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation; put it last) |
+| `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation) |
 
 ## Layout Report (LLM-assisted slide layout)
 
@@ -873,8 +872,7 @@ check the new report".
 Options (`configure.yaml`):
 
 ```yaml
-plugin_arg:
-  layout_report:
+layout:
     root: 'body'                # content root ('#main-content-centered' for webpage-frame)
     exclude: 'nav, footer'      # children of the root that are not content
     width: 1920                 # viewport size

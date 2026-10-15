@@ -17,26 +17,26 @@ FIELDS = {role: set(values) for role, values in DEFAULTS.items()}
 def validate(spec):
     """Fail early on typos; None disables one check and enabled:false disables all."""
     if not isinstance(spec, dict) or set(spec) - {'enabled', 'roles', 'layouts'}:
-        raise ValueError('layout_report.design_rules: expected enabled, roles and layouts mappings')
+        raise ValueError('layout.design_rules: expected enabled, roles and layouts mappings')
     if 'enabled' in spec and not isinstance(spec['enabled'], bool):
-        raise ValueError('layout_report.design_rules.enabled must be boolean')
+        raise ValueError('layout.design_rules.enabled must be boolean')
     def roles(values):
         if not isinstance(values, dict) or set(values) - set(ROLES):
-            raise ValueError('layout_report.design_rules: unknown role or invalid roles mapping')
+            raise ValueError('layout.design_rules: unknown role or invalid roles mapping')
         for role, rules in values.items():
             if not isinstance(rules, dict) or set(rules) - FIELDS[role]:
-                raise ValueError(f'layout_report.design_rules: invalid checks for {role}')
+                raise ValueError(f'layout.design_rules: invalid checks for {role}')
             for key, value in rules.items():
                 if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
                                           or not math.isfinite(value) or value <= 0):
-                    raise ValueError(f'layout_report.design_rules: {role}.{key} must be positive or null')
+                    raise ValueError(f'layout.design_rules: {role}.{key} must be positive or null')
     roles(spec.get('roles', {}))
     layouts = spec.get('layouts', {})
     if not isinstance(layouts, dict):
-        raise ValueError('layout_report.design_rules.layouts must be a mapping')
+        raise ValueError('layout.design_rules.layouts must be a mapping')
     for name, values in layouts.items():
         if not isinstance(name, str):
-            raise ValueError('layout_report.design_rules: layout names must be strings')
+            raise ValueError('layout.design_rules: layout names must be strings')
         roles(values)
     return spec
 

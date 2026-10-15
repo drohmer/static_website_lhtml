@@ -1,11 +1,12 @@
-"""Options of the layout report, and their validation.
+"""Options of the layout analysis, and their validation.
 
-They live here, and not in the plugin that reads them, so that the generator
-can check a configuration without loading any plugin: `--check-config`
-answers for what the build will refuse, and it refuses it before the build
-rather than after it.
+They live here, and not in the module that reads them, so that
+`--check-config` answers for what the build will refuse, and refuses it
+before the build rather than after it.
 """
-from lib.configuration import ConfigError
+from pathlib import Path
+
+from lib.configuration import GENERATOR_DIRECTORY, ConfigError
 
 DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
             'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
@@ -29,7 +30,7 @@ def jobs(options):
     if value in (None, 'auto'):
         return max(1, min(MAX_JOBS, (os.cpu_count() or 2) // 2))
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ConfigError(f"layout_report: jobs must be 'auto' or a positive integer, not {value!r}")
+        raise ConfigError(f"layout: jobs must be 'auto' or a positive integer, not {value!r}")
     return value
 
 
@@ -38,8 +39,8 @@ def options_of(meta):
     gives. The design rules are validated by lib/design_checks.py."""
     from lib.design_checks import validate as validate_design_rules
     options = dict(DEFAULTS)
-    options.update((meta.get('plugin_arg') or {}).get('layout_report') or {})
-    options['chrome'] = meta.get('chrome')      # configuration key, not a plugin_arg
+    options.update(meta.get('layout') or {})
+    options['chrome'] = meta.get('chrome')      # its own configuration key
     try:
         validate_design_rules(options.get('design_rules', {}))
     except ValueError as error:
@@ -52,23 +53,51 @@ def validate(meta, log=None):
     sense of stops the build (ConfigError, naming the key); a key it does
     not know is a typo, reported as a warning - it would otherwise be read,
     copied and never used."""
-    given = (meta.get('plugin_arg') or {}).get('layout_report') or {}
+    given = meta.get('layout') or {}
     if not isinstance(given, dict):
-        raise ConfigError("'plugin_arg.layout_report' must be a mapping")
+        raise ConfigError("'layout' must be a mapping")
     unknown = sorted(set(given) - set(DEFAULTS) - set(OTHER_OPTIONS))
     if unknown and log is not None:
-        log.warning(f"layout_report: option(s) ignored, unknown: {', '.join(unknown)}")
+        log.warning(f"layout: option(s) ignored, unknown: {', '.join(unknown)}")
     options = options_of(meta)
     jobs(options)
     for key in TEXT_OPTIONS:
         if not isinstance(options[key], str) or not options[key].strip():
-            raise ConfigError(f"layout_report: '{key}' must be a non-empty string, not {options[key]!r}")
+            raise ConfigError(f"layout: '{key}' must be a non-empty string, not {options[key]!r}")
     for key in COUNT_OPTIONS:
         if isinstance(options[key], bool) or not isinstance(options[key], int) or options[key] <= 0:
-            raise ConfigError(f"layout_report: '{key}' must be a positive integer, not {options[key]!r}")
+            raise ConfigError(f"layout: '{key}' must be a positive integer, not {options[key]!r}")
     if not isinstance(options['images'], bool):
-        raise ConfigError(f"layout_report: 'images' must be a boolean, not {options['images']!r}")
+        raise ConfigError(f"layout: 'images' must be a boolean, not {options['images']!r}")
     for key, kind in OTHER_OPTIONS.items():
         if key in given and not isinstance(given[key], kind):
-            raise ConfigError(f"layout_report: '{key}' must be a mapping, not {given[key]!r}")
+            raise ConfigError(f"layout: '{key}' must be a mapping, not {given[key]!r}")
     return options
+
+
+def output_directory(meta):
+    """Validate the layout output before any build or deletion."""
+    options = meta.get('layout') or {}
+    if not isinstance(options, dict):
+        raise ConfigError("'layout' must be a mapping")
+    value = options.get('output', DEFAULTS['output'])
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("'layout.output' must be a non-empty path")
+    output = (Path(meta['config_directory']) / Path(value).expanduser()).resolve()
+    for key in ('source_directory', 'theme', 'site_directory', 'published_site_directory', 'cache_video_directory'):
+        if not meta.get(key):
+            continue
+        path = Path(meta[key]).resolve()
+        if path == output or path in output.parents or output in path.parents:
+            raise ConfigError(f"Unsafe layout output '{output}': overlaps '{key}' ({path})")
+    protected = [GENERATOR_DIRECTORY, Path(meta['config_file']),
+                 Path(meta['config_directory']) / 'code',
+                 Path(meta['config_directory']) / 'cache_video_directory']
+    protected += [Path(path) for path in meta.get('plugin_paths', [])]
+    for path in protected:
+        path = path.resolve()
+        if path == output or output in path.parents:
+            raise ConfigError(f"Unsafe layout output '{output}': would remove '{path}'")
+    if output.exists() and not output.is_dir():
+        raise ConfigError(f'Layout output is not a directory: {output}')
+    return output
