@@ -176,6 +176,7 @@ Optional keys:
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
+| `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
 | `chrome` | Chrome executable run by the Node scripts (layout report, PDF export, `--render`), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
 | `title_id` | Give the headings IDs and write their summary (`title_id.json`) with `plugins/title_submenu.py` (default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
