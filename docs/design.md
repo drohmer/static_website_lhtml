@@ -397,28 +397,46 @@ with the schema version on the document. Three consequences:
   before anything depends on it. Until then, a per-page diff is safe;
   **persistent suppressions are not**, and they wait.
 
-### 5.2 The source location, which existed and was not used
+### 5.2 The source location, and what it is worth
 
 `lib/source_map.py` writes `data-lhtml-src="<file>:<line>"` on each block,
-and the measurement keeps it whole: the block carries `source`
-("file:line") and `line`. What was missing was the use: **the findings
-carried none of it**. A report said `HIDDEN TEXT #2 under #3` and the agent
-had to find #2 in a table of a hundred rows, then grep for its signature.
+and the measurement keeps it whole. What was missing was the use: **the
+findings carried none of it**. A report said `HIDDEN TEXT #2 under #3` and
+the agent had to find #2 in a table of a hundred rows, then grep for its
+signature.
 
-Done: every finding ends with where its blocks are written - `[line 62]` in
-the source of the page, `[other/file.j2:4]` from another file, `[no source
-marker]` when nothing names the block. The diff of two builds keeps
-comparing the findings without their places, so a line that moves is not a
-problem that changed.
+Done: every finding ends with where its blocks are written, and the diff of
+two builds keeps comparing findings without their places, so a line that
+moves is not a problem that changed.
 
-Two claims of the earlier draft were wrong, and the measurement says so.
-The file was not discarded. And a block falling back to the marker of a
-descendant - the report pointing at a line that is not the block's - does
-not happen: the flag added to see it counts **0 of the 554** top-level
-blocks of the deck. What is real is the last one: 82 of those 554 carry no
-marker, 74 of them the timer the project injects by script (which nothing
-can mark), and 8 text runs whose recorded text no longer matches what KaTeX
-rendered. 1.4 % of the blocks, not the hole the draft described.
+Writing it meant measuring what an earlier draft had assumed, and the draft
+was wrong twice. The file was not discarded. And the fallback it feared - a
+block taking the marker of a descendant - happens 0 times in the 554
+top-level blocks of the real deck. What is true is sharper, and it is the
+reason this section is not finished:
+
+- **The line is not always the line of the block.** The build marks the
+  lines of the page template and of nothing else. A block that comes from
+  an included file has no marker of its own and takes the line of the
+  marker before it - a line of the page, holding another block. Saying
+  "line 11" there sends a reader to the wrong place, so it does not: the
+  build records which of the two cases it is (`data-lhtml-near`), and the
+  report writes `near line 11` and `~11` in the table. 6 findings of the
+  deck are in that case, and 1188 of its 1660 sub-blocks, which take the
+  marker of the element around them.
+- **One file per page.** `apply()` stamps the page's own path on every
+  marker it writes, so `file` is always the page's. The `other/file.j2:4`
+  form the report knows how to write cannot come from a build today. Giving
+  a marker the identity of the file it came from is the real fix - the
+  Jinja loader knows the name of every template it reads - and it belongs
+  with the finding schema of 5.1, not before it.
+- **A bare text run gets nothing.** Not because of KaTeX, as a first
+  reading of the deck suggested, but because `apply()` writes an attribute
+  on a tag and a text run is not one: 10 of the 108 blocks of the example's
+  first page, 8 of the 554 of the deck (which also has one list coming from
+  a `code::` block, a zone the source map deliberately never marks). The
+  deck's other 74 unmarked blocks are the timer it injects by script, which
+  no marker can reach.
 
 ### 5.3 Precision before container
 
@@ -691,8 +709,12 @@ special case comes before what adds a concept.**
 5. **The source location in the findings** (section 5.2). Every finding
    says where the blocks it names are written, so the agent opens a file at
    a line instead of looking a block number up in a table and grepping for
-   its signature. Writing it meant measuring what the draft had assumed,
-   and two of its three claims were wrong - see 5.2.
+   its signature - and says `near line 11` where that line is the one of
+   what surrounds the block rather than its own, which the build now
+   records instead of hiding. What is left of 5.2 is the file: one marker
+   carries one path, the page's, so a block from an included file is given
+   a line of the page. That needs the marker to carry the identity of the
+   file it came from, and it goes with step 6.
 
 ### Deferred, with a reason: the declared positions (was step 2)
 

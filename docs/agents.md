@@ -144,9 +144,12 @@ stands for a figure that does not exist yet.
 `layout.md` gives one row per top-level block: number, the line of the source
 where it starts, kind, position and size of what is drawn, font, and a
 signature. Every finding ends with where its blocks are written, in square
-brackets: `[line 62]` in the source of the page, `[other/file.j2:4]` when
-the block comes from another file, `[no source marker]` when nothing names
-it (a block a script writes). Open that line rather than searching for the
+brackets: `[line 62]`, the line of the block in the source of the page;
+`[near line 62]`, the line of what surrounds it, when the block itself
+carries no marker (the content of an included file, an element inside a
+marked block) - look around that line; `[no source marker]` when nothing
+names it at all (a block a script writes). The table says the same with
+`62`, `~62` and `-`. Open that line rather than searching for the
 signature. An element in `position: fixed`/`absolute` inside a block is a
 block of its own (`in #n`): its overlaps with the text of its block are
 reported.

@@ -40,6 +40,7 @@ from lib import source_scan
 OPEN, CLOSE = '', ''
 MARKER = re.compile(f'{OPEN}(\\d+){CLOSE}')
 ATTRIBUTE = 'data-lhtml-src'
+NEAR = 'data-lhtml-near'        # the line is the one before the block, not its own
 
 CLOSER = re.compile(r'^\s*::(?:[\w-]*\[-\])?\s*$')
 JINJA_LINE = re.compile(r'^\s*(\{%.*%\}|\{#.*#\})\s*$')
@@ -224,9 +225,13 @@ def _content(root):
 
 
 def block_lines(html):
-    """{offset of the start tag of a block: line}: the blocks of the content
-    with the line of their first marker, else of the marker right after them
-    on their line, else of the marker just before them."""
+    """{offset of the start tag of a block: (line, exact)}: the blocks of the
+    content with the line of their first marker, else of the marker right
+    after them on their line - both the line of the block itself, `exact` -
+    else of the marker just before them, which is the line of what comes
+    before, not of the block. A block of an included file has no marker of
+    its own and takes that last case: the line is a landmark, not its
+    position, and the report must not state it as one."""
     tree = _Tree(whole=not re.search(r'<body[\s>]', html, re.IGNORECASE))
     tree.feed_text(html)
     if tree.root is None:
@@ -236,12 +241,13 @@ def block_lines(html):
     for item in _content(tree.root).items:
         if isinstance(item, _After) and previous is not None:
             if previous.first is None:          # its own line, rather than a marker before it
-                lines[previous.offset] = int(item)
+                lines[previous.offset] = (int(item), True)
         elif isinstance(item, int):
             pending = item
         else:
             if item.first is not None or pending is not None:
-                lines[item.offset] = item.first if item.first is not None else pending
+                lines[item.offset] = ((item.first, True) if item.first is not None
+                                      else (pending, False))
             pending, previous = None, item
             continue
         previous = None
@@ -269,7 +275,9 @@ def source_label(src, config_directory, source_directory=None):
 
 def apply(html, source):
     """The HTML of a page with data-lhtml-src="<source>:<line>" on the blocks
-    of its content, and without markers."""
+    of its content, and without markers. A block whose line is the one of a
+    marker before it, not of a marker of its own, also gets
+    data-lhtml-near: the line is where to look, not where it is."""
     if OPEN not in html:
         return html
     try:
@@ -281,5 +289,7 @@ def apply(html, source):
         name_end = re.compile(r'<[A-Za-z][\w-]*').match(html, offset)
         if name_end:
             insert = name_end.end()
-            html = html[:insert] + f' {ATTRIBUTE}="{attribute}:{lines[offset]}"' + html[insert:]
+            line, exact = lines[offset]
+            near = '' if exact else f' {NEAR}="1"'
+            html = html[:insert] + f' {ATTRIBUTE}="{attribute}:{line}"{near}' + html[insert:]
     return strip(html)

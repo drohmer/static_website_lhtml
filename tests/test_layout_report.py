@@ -510,10 +510,13 @@ def test_a_finding_says_where_its_blocks_are_written():
     the page, the file and the line when it comes from another one, and
     said plainly when nothing marks the block (a block a script writes)."""
     page = 'src/a/index.html.j2'
-    sources = {'1': page + ':12', '2': 'src/_include/header.j2:4', '3': None}
-    assert markdown_report.where(sources['1'], page) == 'line 12'
-    assert markdown_report.where(sources['2'], page) == 'src/_include/header.j2:4'
-    assert markdown_report.where(sources['3'], page) == 'no source marker'
+    sources = {'1': (page + ':12', False), '2': ('src/_include/header.j2:4', False),
+               '3': (None, False), '4': (page + ':20', True)}
+    assert markdown_report.where(page + ':12', page) == 'line 12'
+    assert markdown_report.where('src/_include/header.j2:4', page) == 'src/_include/header.j2:4'
+    assert markdown_report.where(None, page) == 'no source marker'
+    # the line of what is around the block, not of the block
+    assert markdown_report.where(page + ':20', page, near=True) == 'near line 20'
 
     one = markdown_report.with_source('- CLIPPED #1: 10 px of content hidden', sources, page)
     assert one == '- CLIPPED #1: 10 px of content hidden [line 12]'
@@ -524,6 +527,7 @@ def test_a_finding_says_where_its_blocks_are_written():
     # id (a page-wide one) is left alone
     assert markdown_report.with_source('- DENSE: 90 words of text (limit 80)', sources, page) \
         == '- DENSE: 90 words of text (limit 80)'
+    assert markdown_report.with_source('- CLIPPED #4: 10 px', sources, page).endswith('[near line 20]')
 
 
 def test_the_report_of_a_page_carries_the_places_of_its_findings():
@@ -536,7 +540,7 @@ def test_the_report_of_a_page_carries_the_places_of_its_findings():
     checks.analyse(layout)
     text = markdown_report.page_markdown('a', page, layout)
     assert 'UPSCALED IMAGE #1' in text and '[line 7]' in text
-    assert 'Each finding below ends with where its blocks are written.' in text
+    assert 'Each finding below ends with where its blocks are written' in text
 
     # the diff of two builds compares the findings without their places: a
     # line that moves is not a problem that changed

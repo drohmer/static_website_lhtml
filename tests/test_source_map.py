@@ -145,6 +145,26 @@ class SourceMapTests(unittest.TestCase):
         self.assertEqual(source_map.add_markers(page, TAGS).split('\n')[0], '=(.x) ')
         self.assertEqual(source_map.strip(run(source_map.add_markers(page, TAGS))), run(page))
 
+    def test_a_block_with_no_marker_of_its_own_says_so(self):
+        """The build marks the lines of the page template and of nothing
+        else, so a block that comes from an included file takes the line of
+        the marker before it: a line of the page, holding another block.
+        It is marked as a landmark (data-lhtml-near), because a report that
+        states it as the position of the block sends its reader to another
+        block."""
+        page = 'Une ligne de texte de la page\n{% include "inc.j2" %}\n'
+        rendered = run(source_map.add_markers(page, TAGS)).replace(
+            '{% include "inc.j2" %}', '<p>venu du fichier inclus</p>')
+        result = source_map.apply('<body>' + rendered + '</body>', 's')
+        self.assertIn('<p data-lhtml-src="s:1" data-lhtml-near="1">', result)
+        self.assertNotIn(source_map.OPEN, result)
+
+        # a block holding the marker of its own line keeps it plain
+        own = source_map.apply('<body>' + run(source_map.add_markers(
+            'div::(.x)\ntexte\n::\n', TAGS)) + '</body>', 's')
+        self.assertIn('<div data-lhtml-src="s:1" class="x">', own)
+        self.assertNotIn('data-lhtml-near', own)
+
     def test_without_markers(self):
         self.assertEqual(source_map.apply('<body><p>x</p></body>', 'a'), '<body><p>x</p></body>')
 

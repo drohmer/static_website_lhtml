@@ -599,12 +599,16 @@ function extractBlocks(rootSelector, excludeSelector) {
         const own = el.hasAttribute('data-lhtml-src');
         const marked = own ? el : el.querySelector('[data-lhtml-src]');
         const source = marked ? marked.getAttribute('data-lhtml-src') : null;
+        // the line is a landmark, not the position of the block: it belongs
+        // to the marker before it (an included file brings no marker), or
+        // the block takes the marker of a block inside it
+        const source_near = Boolean(source) && (!own || marked.hasAttribute('data-lhtml-near'));
         return {
             kind: visual ? kindOf(el) : 'spacer',
             signature,
             dom_id: el.id || null,
             source,
-            source_inside: Boolean(source) && !own,
+            source_near,
             stable_id: el.id && source ? `explicit:${source.slice(0, source.lastIndexOf(':'))}:${el.id}`
                 : marked?.getAttribute('data-lhtml-id') || null,
             provenance: marked?.hasAttribute('data-lhtml-provenance')
@@ -751,7 +755,7 @@ function extractBlocks(rootSelector, excludeSelector) {
             }
             b.design_lines = ys.length;
         }
-        b.source_precision = direct ? 'direct' : 'inherited';
+        b.source_near = Boolean(b.source) && (!direct || origin.hasAttribute('data-lhtml-near'));
         b.id = n.id; b.parent = n.parent?.id || null; b.owner = n.owner; b.role = n.role;
         b.intentional = !!n.el.closest('.overlay');
         b.legacy_block = ownerOfInternal(n.el).id;

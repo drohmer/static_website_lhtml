@@ -17,22 +17,29 @@ def _zone(o):
     return f"x {o['x0']}..{o['x1']}, y {o['y0']}..{o['y1']}"
 
 
-def where(source, page_source):
+def where(source, page_source, near=False):
     """Where a block is written, as a reader of the report needs it: the line
     alone when it is the source of the page (named in the header), the file
     and the line when it comes from another one, and said plainly when the
     block carries no marker - a block written by a script has none, and a
-    silent dash would read as a block nobody can find."""
+    silent dash would read as a block nobody can find.
+
+    `near`: the line is a landmark, not the position of the block. The
+    build marks the lines of the page it renders, and nothing else: a block
+    that comes from an included file, or that holds the marker of a block
+    inside it, takes the line of what is around it. Saying 'line 11' there
+    sends a reader to another block, so it says 'near line 11'."""
     if not source:
         return 'no source marker'
     file, _, line = source.rpartition(':')
-    return f'line {line}' if file == page_source else source
+    place = f'line {line}' if file == page_source else source
+    return f'near {place}' if near else place
 
 
 def with_source(line, sources, page_source):
     """A finding, followed by where the blocks it names are written. The ids
     are those of its subject, before the colon: '#2 under #3', not the ones
-    repeated in the details."""
+    repeated in the details. `sources`: {block id: (source, near)}."""
     found, seen = [], set()
     for ident in re.findall(r'#(\w+)', line.split(':', 1)[0]):
         if ident not in seen:
@@ -40,7 +47,10 @@ def with_source(line, sources, page_source):
             found.append(ident)
     if not found or sources is None:
         return line
-    places = [where(sources.get(ident), page_source) for ident in found]
+    places = []
+    for ident in found:
+        source, near = sources.get(ident) or (None, False)
+        places.append(where(source, page_source, near))
     if len(found) > 1:
         places = [f'#{ident} {place}' for ident, place in zip(found, places)]
     return f"{line} [{', '.join(places)}]"
@@ -97,22 +107,24 @@ def page_markdown(name, source, layout):
              '(text lines, images reduced to their drawn shape, backgrounds, borders). '
              'Overlaps are computed on the ink rectangles themselves (layout.json: "ink"), '
              'so the empty corners of a block do not count. Spacers are empty blocks.', '',
-             'Line: line of the source where the block starts (- for a block no marker names, '
-             'a block written by a script for instance). Each finding below ends with where its '
-             'blocks are written.', '',
+             'Line: line of the source where the block starts; `~n`, the line of what is around '
+             'it, when the block itself is not marked (content of an included file); `-` when '
+             'nothing marks it (a block a script writes). Each finding below ends with where its '
+             'blocks are written, in the same three forms.', '',
              '| # | line | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
              '|---|------|------|------|-------|-------------------|----------|------|-----------|']
     for b in layout['blocks']:
         x0, y0, x1, y1 = _rect(b)
         kind = b['kind'] + (' (overlay)' if b.get('intentional') else '') \
             + (f" in #{b['inside']}" if b.get('inside') else '')
-        lines.append(f"| {b['id']} | {b.get('line') or '-'} | {kind} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
+        line_cell = f"~{b['line']}" if b.get('line') and b.get('source_near') else (b.get('line') or '-')
+        lines.append(f"| {b['id']} | {line_cell} | {kind} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
                      f"{' '.join(str(m) for m in b['margin'])} | {b['position']} | {b['font_size']} | "
                      f"{_md_cell(b['signature'])} |")
 
     # Where each block is written: the findings carry it, so that a page is
     # opened at the line instead of being searched for a signature.
-    sources = {str(b['id']): b.get('source')
+    sources = {str(b['id']): (b.get('source'), bool(b.get('source_near')))
                for b in layout.get('blocks', []) + layout.get('subblocks', [])}
     locate = lambda line: with_source(line, sources, source)
 
@@ -161,7 +173,7 @@ def page_markdown(name, source, layout):
 
     deviations = [_deviation_text(d) for d in analysis.get('deviations', [])]
     if deviations:
-        lines += ['', '## Differences with the rest of the deck', ''] + deviations
+        lines += ['', '## Differences with the rest of the deck', ''] + [locate(line) for line in deviations]
 
     notes = [f"- #{c['a']} × #{c['b']} overlap ({_zone(c)}): marked as intentional (class overlay)"
              for c in analysis.get('intentional', [])]
@@ -169,7 +181,7 @@ def page_markdown(name, source, layout):
               f"{o['src']} in #{o['image']}: not visible, but the image box is reserved there"
               for o in analysis.get('background_overlaps', [])]
     if notes:
-        lines += ['', '## Notes', ''] + notes
+        lines += ['', '## Notes', ''] + [locate(line) for line in notes]
 
     if 'density' in analysis:
         d = analysis['density']
