@@ -183,6 +183,16 @@ def test_near_alignment_of_frames_and_text_left_edges():
     assert [(n['id'], n['edge'], n['ref_label'], n['delta']) for n in near] == [(3, 'left', 'deck column', 7)]
 
 
+def test_a_block_laid_over_the_page_is_not_in_the_grid_of_the_content():
+    # a timer and a page number sit against the page, not in the column grid
+    para = block(1, 100, 100, 700, 200, ink=[paint(100, 100, 700, 200)])
+    timer = block(2, 100, 350, 694, 300, ink=[paint(100, 350, 694, 300)], intentional=True)
+    number = block(3, 100, 700, 694, 40, ink=[paint(100, 700, 694, 40)], position='fixed')
+    assert checks.find_near_alignments([para, timer, number], AREA) == []
+    # the same block placed in the content is still compared
+    assert [n['id'] for n in checks.find_near_alignments([para, dict(timer, intentional=False)], AREA)] == [1]
+
+
 def test_ragged_text_edges_and_line_boxes_are_not_compared():
     # right end of left-aligned text, left end of centered text, top of line boxes
     a = block(1, 100, 100, 400, 40, ink=[text(100, 100, 400, 40)])

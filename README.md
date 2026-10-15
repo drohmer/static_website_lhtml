@@ -757,6 +757,9 @@ Warnings:
   meaningful are compared: edges of images filling their box and of
   backgrounds/borders, the aligned side of text (left, right or center,
   from `text-align`); tops and bottoms only between blocks side by side.
+  A block laid over the page (the same overlay as `OUT OF AREA`) takes no
+  part on either side: it is positioned against the page, not in the grid
+  of the content.
 - `DENSE` (more than `max_words` words of text) and `SMALL FONT` (text
   smaller than `min_font` px, only when `design_rules.enabled` is false), on
   slides only.
@@ -779,7 +782,10 @@ Warnings:
   lines, caption larger than the body or far from its figure, tiny figure. The
   role comes from the element: `.credit`, `.legende`, `figcaption` are
   captions, `.source`, `.reference` references; `data-lhtml-role` sets it
-  (`decorative` exempts an ornament). These checks replace `SMALL FONT`
+  (`decorative` exempts an ornament). Inside a block laid over the page (the
+  same overlay as `OUT OF AREA`) the role is not guessed: it is `decorative`,
+  so a timer, a page number or a watermark is not judged as content. Write
+  `data-lhtml-role` on it to have it judged. These checks replace `SMALL FONT`
   unless `design_rules.enabled` is false.
 - `CANVAS OVERLAP`: text over a canvas or an animated demo. The box of a
   canvas does not say which pixels are drawn: look at the render.

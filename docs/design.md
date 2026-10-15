@@ -480,6 +480,33 @@ trace is a layout report that changes by 75 findings for no stated reason.
 The same run shows why findings need a cause (section 5.1): 21 `OUT OF AREA`
 are one layout repeated over seven slides of a series.
 
+**Fourth rule, same argument, on the warnings.** The problems were down to
+8, but the deck still printed **203 warnings**, and 163 of them (80 %) were
+on a block laid over the page - the timer, the full-bleed figures. For
+`DESIGN` it was 83 out of 83: not one design warning was about content. The
+rule is the one already written for `OUT OF AREA`, applied twice more.
+
+`NEAR-ALIGNED` leaves an overlay out on both sides: it is positioned against
+the page, not in the grid of the content, so neither is it misaligned with
+the content nor the content with it.
+
+For `DESIGN` there was nothing to exempt - there was a default to correct.
+The role of a block is guessed from the shape of its content (`.katex` is a
+formula, `h1` a title, the rest body text), and those guesses judge the
+typography of content. Inside an overlay we stop guessing: the role is
+`decorative`, which the vocabulary already defines and already leaves
+unchecked. An author who wants a timer judged writes `data-lhtml-role` on
+it. No exemption mechanism, no new value: one branch earlier in a chain that
+already existed.
+
+The deck goes from **203 warnings to 45**, all on content, with the 8
+problems unchanged. The dividing line this settles: a check that compares a
+block with the **layout rules of the content** (usable area, grid,
+typographic scale) does not apply to an overlay; a check that compares
+**pixels with pixels** - collisions, hidden text, `RESERVED AREA` - applies
+to everything that is drawn. A timer erased by a full-bleed figure is a real
+problem, and it is one of the 8.
+
 Known defects to settle on the way, beyond the three already fixed:
 `WRAPPED` fires on any list item whose second line is under 30 % of the
 first, which is a property of ragged-right text rather than a defect; the
@@ -851,9 +878,8 @@ to check it against. They stay in section 5.3.
   every page degrades silently (section 5.3). Is that a build check, a
   layout finding, or part of the theme's injection-point contract (section
   4.0)? It is cheap as a build check and belongs to the contract.
-- `position: fixed` now exempts a block from `OUT OF AREA`, on the argument
-  that it is laid over the page rather than placed in it. The same argument
-  applies to `RESERVED AREA`, to collisions with the content, and to the
-  design roles - the timer of the real deck is judged as body text and
-  reported as `DESIGN font_min` at 14 px - where it is *not* applied today.
-  Settle it one way for all four, with the corpus.
+- ~~`position: fixed` and the other checks.~~ Settled (section 5.3): a check
+  against the layout rules of the content (`OUT OF AREA`, `NEAR-ALIGNED`,
+  the design roles) does not apply to an overlay; a check of pixels against
+  pixels (collisions, hidden text, `RESERVED AREA`) applies to everything
+  drawn.

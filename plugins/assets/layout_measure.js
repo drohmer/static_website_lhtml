@@ -740,7 +740,12 @@ function extractBlocks(rootSelector, excludeSelector) {
         }
         const declared = n.el.closest('[data-lhtml-role]')?.getAttribute('data-lhtml-role');
         const roles = ['title', 'heading', 'body', 'caption', 'reference', 'code', 'formula', 'figure', 'decorative'];
+        // Inside an overlay we do not guess the role. The guesses below read the
+        // shape of the content to judge its typography, and a timer, a page
+        // number or a watermark is not content: it is drawn over it. An author
+        // who wants one judged writes data-lhtml-role on it.
         b.design_role = roles.includes(declared) ? declared
+            : n.el.closest('.overlay') || b.position === 'fixed' ? 'decorative'
             : n.el.closest('.katex') ? 'formula' : n.el.closest('pre, .code') ? 'code'
             : n.el.closest('.source, .reference') ? 'reference'
             : n.el.closest('.credit, .legende, figcaption') ? 'caption'

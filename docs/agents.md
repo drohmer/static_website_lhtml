@@ -170,9 +170,14 @@ reported.
 
 **Warnings** should be checked:
 - `TIGHT`: lines too close to another block.
-- `NEAR-ALIGNED`: edges a few pixels apart; align them exactly or move them clearly.
+- `NEAR-ALIGNED`: edges a few pixels apart; align them exactly or move them
+  clearly. A block laid over the page (see `OUT OF AREA`) is left out: it is
+  positioned against the page, not in the grid of the content.
 - `DENSE`: too many words.
-- `SMALL FONT`: text too small.
+- `SMALL FONT`: text too small for its role (body, caption, code...). Inside
+  a block laid over the page (see `OUT OF AREA`) the role is not guessed:
+  a timer or a page number is decorative and is not judged. Write
+  `data-lhtml-role` on it to have it judged.
 - `WRAPPED`: a title on several lines, or an item with a few words on its
   second line: shorten it, or give it more width.
 - `SHORT WRAPPED`: text on several lines that would fit on one line of the

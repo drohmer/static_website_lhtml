@@ -463,7 +463,11 @@ def find_near_alignments(blocks, area, grid=(), aligned=2, near=12):
     so is a whole axis when the block is centered on a reference (blocks of
     different sizes centered together). Otherwise, the closest reference
     within `near` px of an edge is reported, once per pair of blocks and
-    axis: {id, axis, edge, value, ref, ref_label, delta}."""
+    axis: {id, axis, edge, value, ref, ref_label, delta}.
+    An overlay (_overlay) is left out on both sides: it is positioned against
+    the page, not in the grid of the content, so neither is it misaligned with
+    the content nor is the content misaligned with it."""
+    blocks = [b for b in blocks if not _overlay(b)]
     edges = {b['id']: _precise_edges(b) for b in blocks}
     rects = {b['id']: _align_rect(b) for b in blocks}
     area_refs = {'left': [(area['x'], 'area left')] + [(g, 'deck column') for g in grid],

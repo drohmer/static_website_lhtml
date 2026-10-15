@@ -59,6 +59,33 @@ def test_nested_fixed_element_lines_and_changes(tmp_path):
 
 
 @pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_the_design_rules_do_not_judge_the_typography_of_an_overlay(tmp_path):
+    source = tmp_path / 'src'
+    source.mkdir()
+    # the same 10 px text three times: in the content, in an overlay, in an overlay given a role
+    (source / 'index.html.j2').write_text(
+        "= Title\n\ndiv::[font-size:10px;]\nsmall text in the content\n::\n"
+        "div::(.overlay)[font-size:10px; position:absolute; top:400px; left:100px;]\n"
+        "small text of a timer\n::\n"
+        "div::(.overlay)[font-size:10px; position:absolute; top:500px; left:100px;]"
+        "{data-lhtml-role=body}\nsmall text asked to be judged\n::\n")
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
+                                      'theme': str(REPO / 'themes/slides')}))
+    result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                            capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stdout + result.stderr
+    layout = json.loads((tmp_path / '.layout/pages/index.html/layout.json').read_text())
+    roles = {b['design_role'] for b in layout['subblocks']
+             if 'timer' in ((b.get('text') or {}).get('excerpt') or b.get('signature') or '')}
+    assert roles == {'decorative'}
+    judged = [f['id'] for f in layout['analysis']['role_design'] if f['kind'] == 'font_min']
+    texts = {b['id']: b.get('signature') or '' for b in layout['subblocks']}
+    found = ' '.join(texts.get(i, '') for i in judged)
+    assert 'in the content' in found and 'asked to be judged' in found and 'timer' not in found
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
 def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
     import zlib
     import struct
