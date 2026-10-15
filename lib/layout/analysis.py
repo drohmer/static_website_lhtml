@@ -121,16 +121,24 @@ def find_background_overlaps(blocks, collisions, threshold=4):
     return result
 
 
+def _overlay(block):
+    """A block laid over the content rather than placed in it: marked as an
+    intentional overlay (class 'overlay'), or fixed to the viewport. A
+    timer, a page number, a watermark or a full-bleed figure is positioned
+    against the page on purpose, so the margins the content keeps do not
+    apply to it."""
+    return bool(block.get('intentional')) or block.get('position') == 'fixed'
+
+
 def find_out_of_area(blocks, area, threshold=4, scrolling=False, page=None):
     """Blocks extending beyond the usable area: {id, left, top, right, bottom} in px.
     On a scrolling page (web page, not a slide), the bottom side is not checked.
-    A block marked as an intentional overlay (class 'overlay') is compared
-    with the whole page when it is known: a full-bleed figure covers the
-    slide on purpose, while one that spills past the page is still
-    reported."""
+    An overlay (_overlay) is compared with the whole page when it is known:
+    it covers the slide, or sits in its margin, on purpose - while one that
+    spills past the page itself is still reported."""
     result = []
     for b in blocks:
-        bounds = page if page and b.get('intentional') else area
+        bounds = page if page and _overlay(b) else area
         ax0, ay0 = bounds['x'], bounds['y']
         ax1, ay1 = bounds['x'] + bounds['w'], bounds['y'] + bounds['h']
         x0, y0, x1, y1 = _rect(b)

@@ -713,10 +713,13 @@ Detected problems:
   of another block is visible on top of the text)
 - `COLLISION`: the drawn content of two blocks overlaps (text on text, text
   on the drawn part of an image, images, backgrounds)
-- `OUT OF AREA`: block beyond the usable area. A block marked as an
-  intentional overlay (class `overlay`) is compared with the whole page
-  instead: a full-bleed figure covers the slide on purpose, one that
-  spills past the page is still reported
+- `OUT OF AREA`: block beyond the usable area. A block laid over the page
+  rather than placed in the content is compared with the whole page
+  instead - one marked as an intentional overlay (class `overlay`), or one
+  fixed to the viewport (`position: fixed`: a timer, a page number, a
+  source line in the margin). A full-bleed figure covers the slide on
+  purpose and a fixed note sits in the margin on purpose; either one is
+  still reported when it spills past the page itself
 - `CLIPPED`: content cut by `overflow`
 - `UPSCALED IMAGE`: bitmap or video drawn more than 1.25× its native size,
   hence blurry (vector images such as SVG are ignored)

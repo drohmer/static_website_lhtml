@@ -451,12 +451,34 @@ def test_an_intentional_overlay_is_measured_against_the_page():
     page = {'viewport': {'w': 1920, 'h': 1080}}
     usable = {'x': 32, 'y': 32, 'w': 1856, 'h': 1016}
     full_bleed = block(1, 0, 0, 1920, 1080, position='fixed', intentional=True)
-    ordinary = block(2, 0, 0, 1920, 1080, position='fixed')
+    in_the_flow = block(2, 0, 0, 1920, 1080)            # placed in the content, not over it
     spilling = block(3, -50, 0, 2020, 1080, position='fixed', intentional=True)
 
-    found = checks.find_out_of_area([full_bleed, ordinary, spilling], usable,
+    found = checks.find_out_of_area([full_bleed, in_the_flow, spilling], usable,
                                            page=checks._page_rect(page))
     assert [f['id'] for f in found] == [2, 3]
     assert found[1] == {'id': 3, 'left': 50, 'right': 50}
     # without the size of the page, every block is compared with the usable area
     assert [f['id'] for f in checks.find_out_of_area([full_bleed], usable)] == [1]
+
+
+def test_a_block_fixed_to_the_viewport_is_measured_against_the_page():
+    """A timer, a page number or a watermark is fixed to the viewport: it is
+    laid over the page, in the margin the content keeps free, and saying so
+    once per slide says nothing. What is still reported: the same block when
+    it leaves the page, and a block of the content at the same place."""
+    page = {'viewport': {'w': 1920, 'h': 1080}}
+    usable = {'x': 32, 'y': 32, 'w': 1856, 'h': 1016}   # content stops at y 1048
+    timer = block(1, 40, 1058, 35, 14, position='fixed')
+    off_the_page = block(2, 40, 1074, 35, 14, position='fixed')
+    in_the_flow = block(3, 40, 1058, 35, 14)
+
+    found = checks.find_out_of_area([timer, off_the_page, in_the_flow], usable,
+                                    page=checks._page_rect(page))
+    assert [f['id'] for f in found] == [2, 3]
+    assert found[0] == {'id': 2, 'bottom': 8}           # past the page itself
+    assert found[1] == {'id': 3, 'bottom': 24}          # past the usable area
+    # a sticky block stays part of the flow: the usable area applies to it
+    sticky = block(4, 40, 1058, 35, 14, position='sticky')
+    assert [f['id'] for f in checks.find_out_of_area([sticky], usable,
+                                                     page=checks._page_rect(page))] == [4]
