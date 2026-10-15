@@ -92,12 +92,15 @@ order it lands before `<!DOCTYPE html>`, outside the document, which puts the
 browser in quirks mode. No error, no warning. Pinned by
 `tests/test_plugin_order.py`.
 
-**The plugin contract is wide.** The nine plugins touch 16 keys of `meta`
-directly (15 read, plus `headings`, which `title_submenu` writes), about 20
-counting what `lib.structure` and `layout_output_directory(meta)` read on
-their behalf. Several are internal build state: `loaded_design`, `measure`,
-`published_site_directory`, `plugin_paths`, `config_file`. And `headings` is
-written by a plugin and read by nobody: dead runtime state to drop.
+**The plugin contract is wide.** The nine plugins touched 16 keys of `meta`
+directly, about 20 counting what `lib.structure` and the layout output
+validation read on their behalf, and several were internal build state:
+`loaded_design`, `measure`, `published_site_directory`, `plugin_paths`,
+`config_file`. Two of them are gone (`headings` was written by a plugin and
+read by nobody; the layout keys left with the plugin), and the eight that
+remain touch 12 keys, of which one is written: `publish_site`, the PDF
+export saying what it publishes. The surface shrank with the plugins that
+left, not because the contract was narrowed - that is section 4.2.
 
 **The analysis code was trapped inside a plugin** - 1161 of the 1516 lines
 of `plugins/layout_report.py` used no `meta` at all - and because it had no

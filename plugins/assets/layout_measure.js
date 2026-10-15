@@ -16,11 +16,6 @@ const path = require('path');
 const puppeteer = require('puppeteer');
 const {launchBrowser} = require('./chrome');
 const {localFrames} = require('./frames');
-// interactive states: agent extension, loaded only for the pages that enable them
-let interactiveModule = null;
-function interactive() {
-    return interactiveModule ||= require(path.join(__dirname, '..', '..', 'agent', 'assets', 'interactive_states'));
-}
 const args = require('minimist')(process.argv.slice(2));
 
 const pages = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
@@ -1083,7 +1078,6 @@ async function waitForContent(page) {
         message: request.failure()?.errorText || 'Request failed'}));
     page.on('response', response => { if (response.status() >= 400) events.push({type: 'http',
         url: response.url(), status: response.status()}); });
-    let clockScript = null;
     async function ready() {
         let timer;
         try {
@@ -1111,26 +1105,11 @@ async function waitForContent(page) {
         layout.render_health = {status: errors.length ? 'incomplete' : 'ready', errors, unchecked: health.unchecked};
         return layout;
     }
-    async function snapshot(out, withFrames) {
+    async function snapshot(out) {
         fs.mkdirSync(out, {recursive: true});
         await page.evaluate(() => document.getElementById('__layout_overlay')?.remove());
-        const frames = withFrames ? (await localFrames(page)).filter(f => f !== page.mainFrame()) : [];
-        const layout = await measure(page.mainFrame(), frames.map(f => f.url()));
-        layout.frame_layouts = [];
+        const layout = await measure(page.mainFrame(), []);
         if (withImages) await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'render.png'), clip: {x: 0, y: 0, width, height}});
-        for (const [i, frame] of frames.entries()) {
-            const handle = await frame.frameElement();
-            const box = await handle.boundingBox();
-            const origin = await handle.evaluate(el => el.closest('[data-lhtml-src]')?.getAttribute('data-lhtml-src') || null);
-            await loadSvgImages(frame);
-            const inner = await measure(frame, []);
-            inner.source = frame.url();
-            const id = 'f' + (i + 1), folder = path.join(out, 'frames', id);
-            fs.mkdirSync(folder, {recursive: true});
-            if (withImages) await handle.screenshot({optimizeForSpeed: true, path: path.join(folder, 'render.png')});
-            await handle.dispose();
-            layout.frame_layouts.push({id, url: frame.url(), box, origin, layout: inner});
-        }
         if (withImages && images !== 'render') {
             const clip = {x: 0, y: 0, width, height};
             await page.evaluate(drawOverlay, layout.subblocks, PALETTE, false);
@@ -1151,11 +1130,6 @@ async function waitForContent(page) {
         resources = new Set();
         try {
             fs.mkdirSync(entry.out, {recursive: true});
-            if (clockScript) { await page.removeScriptToEvaluateOnNewDocument(clockScript.identifier); clockScript = null; }
-            if (entry.interactive?.enabled) clockScript = await page.evaluateOnNewDocument(interactive().installClock);
-            // outputs of a previous --verify (agent extension): written again by --verify only
-            for (const name of ['states', 'frames', 'issues', 'verification.json', 'changes.json'])
-                fs.rmSync(path.join(entry.out, name), {recursive: true, force: true});
             // pages with streaming media (autoplay videos, iframes) never become
             // idle: wait for the load event, then for a short network idle
             await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 60000});
@@ -1166,42 +1140,7 @@ async function waitForContent(page) {
             await ready();
             await freezeMedia(page);
             await loadSvgImages(page);
-            const options = entry.interactive || {enabled: false};
-            // --verify (agent extension) measures the local frames, with or without interactive states
-            const withFrames = entry.interactive !== undefined;
-            if (withFrames) {
-                for (const frame of await localFrames(page)) {
-                    if (frame !== page.mainFrame()) await freezeMedia(frame);
-                }
-            }
-            if (options.enabled) await interactive().advance(page, 0);
-            const layout = await snapshot(entry.out, withFrames);
-            if (options.enabled) {
-                const discovery = await interactive().discover(page, options);
-                layout.interactive = {...discovery, enabled: true, states: [], exhaustive: false,
-                    capabilities: {raf_clock: true, css_timeline: true, video_seek: true, gif_frames: true,
-                        native_timers: false, random_seed: false, canvas_semantics: false}};
-                delete layout.interactive.plans;
-                for (const plan of discovery.plans) {
-                    const out = path.join(entry.out, 'states', plan.name);
-                    const state = {id: plan.name, plan, journal: [], status: 'failed'};
-                    try {
-                        events = [];
-                        await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 30000});
-                        await ready();
-                        for (const frame of await localFrames(page)) await freezeMedia(frame);
-                        await interactive().advance(page, 0);
-                        state.journal = await interactive().apply(page, plan, state.journal, ready);
-                        await loadSvgImages(page);
-                        state.layout = await snapshot(out, true);
-                        state.status = 'measured';
-                    } catch (error) {
-                        state.error = {type: 'interactive_state', message: error.message};
-                        state.render_health = {status: 'failed', errors: [state.error], unchecked: []};
-                    }
-                    layout.interactive.states.push(state);
-                }
-            }
+            const layout = await snapshot(entry.out);
             layout.resources = [...resources].filter(url => !url.startsWith('data:'));
             fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
 

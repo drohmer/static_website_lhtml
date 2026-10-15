@@ -150,7 +150,11 @@ reported.
 **Problems** must be fixed:
 - `HIDDEN TEXT`: text covered by another block.
 - `COLLISION`: drawn contents overlapping.
-- `OUT OF AREA`: a block beyond the slide frame.
+- `OUT OF AREA`: a block beyond the slide frame. A block laid over the page
+  rather than placed in the content - the class `overlay`, or
+  `position: fixed` (a timer, a page number, a source line in the margin) -
+  is compared with the whole slide instead, and reported only if it leaves
+  it.
 - `CLIPPED`: content cut by `overflow`.
 - `UPSCALED IMAGE`: a bitmap or video enlarged above 1.25×, so it looks blurry.
 - `RESERVED AREA`: content over the navigation of the theme.
@@ -183,9 +187,12 @@ section gives the largest free area of the slide.
 
 After an edit, `.layout/changes.md` lists the problems that appeared or were
 solved, and the blocks that moved, changed size, appeared or disappeared:
-check that only the intended blocks changed. The
-renders are reproducible (videos and GIFs at their first frame), so a change
-there is a real change.
+check that only the intended blocks changed. The renders are reproducible
+(videos and GIFs at their first frame), so a change there is a real change -
+with one exception measured on a deck of 78 slides: `NEAR-ALIGNED` differs
+on one or two slides between two runs of the same sources, because a video
+frame is measured a pixel apart. A problem that appears or is solved is
+real; a `NEAR-ALIGNED` that flickers is not.
 
 An intended overlap (an inset over a figure) takes the class `overlay`.
 
@@ -211,12 +218,3 @@ A slide is done when:
   crowded.
 
 Report what was changed and any value kept by hand, with the reason.
-
-## Structured verification (optional)
-
-If the generator has its agent extension (directory `agent/` of
-static_website_lhtml), `--verify` replaces `--layout`: the same report, plus a
-`verification.json` per page with a status (`pass`, `issues`, `incomplete`,
-`failed`), crops of each problem, the interactive states of the demos and a
-queue of the problems grouped by source line. Its procedure is in
-`agent/README.md`. A `pass` never replaces looking at `render.png`.
