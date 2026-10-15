@@ -902,8 +902,17 @@ async function freezeMedia(page) {
         // first frame; a video already at 0 sends no 'seeked'
         await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
             v.autoplay = false;
+            // Ask for the data, then pause. Measured on a deck of 78 slides,
+            // 21 videos, six tabs measuring in parallel: without this line,
+            // 10 of them are measured without their dimensions whatever the
+            // budget below; with it and a 10 s budget, 9 to 12; with both,
+            // none. A video without its dimensions has no size of its own,
+            // so the browser gives it its default box, 300 px wide, and
+            // every check of that page runs on a rectangle the slide never
+            // shows.
+            if (v.readyState === 0) { v.preload = 'auto'; v.load(); }
             v.pause();
-            const timer = setTimeout(resolve, 10000);
+            const timer = setTimeout(resolve, 30000);
             const done = () => { clearTimeout(timer); resolve(); };
             v.addEventListener('error', done, {once: true});
             const first = () => {
@@ -1101,6 +1110,13 @@ async function waitForContent(page) {
             fonts: [...document.fonts].filter(f => f.status === 'error').map(f => ({type: 'font', family: f.family})),
             math: [...document.querySelectorAll('.katex-error')].map(e => ({type: 'math', message: e.getAttribute('title') || e.textContent})),
             video: [...document.querySelectorAll('video')].filter(v => v.error).map(v => ({type: 'video', url: v.src, message: v.error.message})),
+            // a video whose dimensions never arrived: its box is the default
+            // of the browser, not the one of the slide
+            sizeless: [...document.querySelectorAll('video')].filter(v => !v.error && !v.videoWidth)
+                .map(v => ({type: 'video', url: v.currentSrc || v.src,
+                            message: 'measured without its dimensions (not loaded, readyState '
+                                     + v.readyState + ', networkState ' + v.networkState + '): the box of '
+                                     + 'this video, and the blocks around it, are not those of the slide'})),
             clock: (window.__lhtmlVerificationClock?.errors || []).map(message => ({type: 'javascript', message})),
             unchecked: [...document.querySelectorAll('iframe, canvas')]
                 .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 &&
@@ -1108,7 +1124,8 @@ async function waitForContent(page) {
                 .map(e => ({type: e.tagName.toLowerCase(), url: e.src || null,
                     reason: e.tagName === 'CANVAS' ? 'Raster geometry captured; canvas semantics are not verified' : 'Frame inaccessible or not sampled'}))
         }), checkedFrames);
-        const errors = [...events, ...health.images, ...health.fonts, ...health.math, ...health.video, ...health.clock];
+        const errors = [...events, ...health.images, ...health.fonts, ...health.math, ...health.video,
+                        ...health.sizeless, ...health.clock];
         layout.media_samples = await frame.evaluate(() => window.__lhtmlMediaSamples || []);
         layout.render_health = {status: errors.length ? 'incomplete' : 'ready', errors, unchecked: health.unchecked};
         return layout;

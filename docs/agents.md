@@ -195,11 +195,15 @@ section gives the largest free area of the slide.
 After an edit, `.layout/changes.md` lists the problems that appeared or were
 solved, and the blocks that moved, changed size, appeared or disappeared:
 check that only the intended blocks changed. The renders are reproducible
-(videos and GIFs at their first frame), so a change there is a real change -
-with one exception measured on a deck of 78 slides: `NEAR-ALIGNED` differs
-on one or two slides between two runs of the same sources, because a video
-frame is measured a pixel apart. A problem that appears or is solved is
-real; a `NEAR-ALIGNED` that flickers is not.
+(videos and GIFs at their first frame), so a change there is a real change.
+One exception remains, measured on a deck of 78 slides: on the pages
+holding several videos, `NEAR-ALIGNED` can differ by one finding between
+two runs of the same sources. A problem that appears or is solved is real;
+a `NEAR-ALIGNED` that flickers on a page full of videos is not. If a page
+says its measure is incomplete (`Report validity`), read that first: a
+video measured before it loaded has the default box of the browser, and
+every check of that page is then computed on a rectangle the slide never
+shows.
 
 An intended overlap (an inset over a figure) takes the class `overlay`.
 

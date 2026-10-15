@@ -489,10 +489,13 @@ window even when `scrolling` is true, which prints statements such as "free
 space at the bottom: -6440 px" as facts; and `NEAR-ALIGNED` reports offsets
 an author is not allowed to fix, since writing positions by hand is what the
 design vocabulary forbids - it must name the design knob or stay silent. It
-is also the only check that is not reproducible: two runs of the same
-generator on the same deck disagree on two of the 78 slides, by one finding
-each, because a video frame is measured a pixel apart. A check that flaps
-between runs cannot be diffed, which is what `changes.md` is for.
+is also the only check seen to be irreproducible: two runs of the same
+generator on the same deck disagreed on two of the 78 slides, by one
+finding each. Most of that was not the check: the videos of those slides
+were measured before they had loaded (see 5.7), so the blocks around them
+had the wrong width. With the measurement fixed, one page of the ten that
+hold videos still flickers by one finding. A check that flaps between runs
+cannot be diffed, which is what `changes.md` is for.
 
 ### 5.4 Thresholds: named sets, not free numbers
 
@@ -548,6 +551,51 @@ legitimate mode - and the schema must name the two tiers and which fields are
 absent in the degraded one, or it will be designed for the weaker one and the
 fields that make the report actionable will be optional everywhere.
 
+
+### 5.7 A measurement that did not happen must not read as one that did
+
+The report is only worth its measurement, and the measurement was not
+deterministic. On a deck of 78 slides, between 9 and 15 of its 21 videos
+were measured **without their dimensions**, and which ones changed at every
+run. A `<video>` whose metadata has not arrived has no size of its own, so
+the browser gives it its default box, 300 px wide: the block holding two
+videos was measured 670 px wide instead of 1772, and every geometric check
+of that slide - collisions, overflows, alignment, fit - ran on a rectangle
+the slide never shows. `render_health` said `ready`.
+
+Two causes, and the deck answered which: a video paused before it has
+asked for its data may never fetch it, and `freezeMedia` waited only 10 s
+for metadata before giving up silently. Measured on the same deck, six tabs
+in parallel, 21 videos:
+
+| asking for the data | budget | measured without dimensions |
+|---|---|---|
+| no | 10 s | 9 to 15, a different set each run |
+| yes | 10 s | 9 to 12 |
+| no | 30 s | 10 |
+| yes | 30 s | **0** |
+
+Neither alone is enough, and the pair costs nothing: 53 s for the deck
+either way, because the wait of one tab overlaps the work of the others.
+`jobs: 1` also loses none - at 117 s instead of 53. Two Chrome flags
+against background media suspension were tried on the way and changed
+nothing; they are not in the code.
+
+Two things follow for the architecture, beyond the number:
+
+- **A measurement that could not be taken is a finding, not a silence.** A
+  video without its dimensions is now recorded in `render_health`, with its
+  state, and the page says its measure is incomplete. The verdict of 5.5
+  has to carry this: "nothing found" and "measured on a box that is not the
+  one of the slide" cannot read alike.
+- **The fast loop cannot see this class of defect.** `--only` on four pages
+  loaded those videos every time; it took the full deck, several times, to
+  see it. A check that only appears under the real workload needs the real
+  workload, and the reference corpus of 5.3 is where it belongs.
+
+What remains: with the budget raised, one of the ten pages holding videos
+still differs by one `NEAR-ALIGNED` between two runs. Known, and small
+enough to wait for the finding schema.
 
 ## 6. Module layout
 
@@ -684,7 +732,7 @@ special case comes before what adds a concept.**
    changes it on its own - the random name of the staging directory, the
    order in which the browser reports the resources it loaded, and the PNG
    renders. One page did differ, and it differs between two runs of the
-   *same* generator as well (a video frame measured a pixel apart): the run
+   *same* generator as well (a video measured before it had loaded, 5.7): the run
    before the move and a second run after it agree exactly.
 
    A second check, on a course website of 31 pages written against a copy of

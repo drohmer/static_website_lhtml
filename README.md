@@ -793,7 +793,11 @@ formulas, lines of code, list items, lines of text, smallest font size, the
 parts of the area covered by text and images, and the largest free area.
 
 Renders are reproducible: videos are measured at their first frame, animated
-GIFs at their first image, CSS animations stopped. `changes.md` lists what
+GIFs at their first image, CSS animations stopped. A page whose media could
+not be measured says so (`Report validity`, and `render_health` in
+`layout.json`): a video measured before it loaded has the default box of the
+browser, not the one of the slide, so the checks of that page are computed
+on a rectangle it never shows. `changes.md` lists what
 changed since the previous report for the pages measured again: the problems
 that appeared or were solved, the counts of warnings and of values written
 by hand, the blocks moved or resized (matched by their signature), added or
