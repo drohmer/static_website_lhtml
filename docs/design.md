@@ -1,8 +1,13 @@
 # Architecture: core, themes, extensions, targets
 
-Design note for the next major version. Nothing here is implemented yet. It
-records what the current structure costs, the rules used to decide where each
-piece belongs, and the target they lead to.
+Design note for the next major version. It records what the current
+structure costs, the rules used to decide where each piece belongs, and the
+target they lead to.
+
+Part of it is now built: the point fixes (step 0), the two guarantees under
+test (step 1) and `lib/layout/` (step 3) of the order of work in section 10.
+Each section says what it has learned since; section 10 is the current
+state and the next step.
 
 **Compatibility is not a constraint.** This is a major version: a
 configuration of the previous one may stop working, provided the generator
@@ -62,12 +67,12 @@ which is why these dependencies stayed invisible.
 Facts, each checked against the code (line numbers as of this note).
 
 **The core knows two plugins by their file name, in three places.**
-`generate.py:134-140` (`add_layout_plugin`) inserts `layout_report.py` before
-`generate_pdf.py` by testing `p.endswith(...)`; `generate.py:639` tests the
-same name again to validate the report output directory; `generate.py:569`
-imports two private symbols of the plugin, `from plugins.layout_report import
-_options, _run_node`, for `--render`. A fourth place is in
+`generate.py:135-141` (`add_layout_plugin`) inserts `layout_report.py` before
+`generate_pdf.py` by testing `p.endswith(...)`; `generate.py:669` tests the
+same name again to validate the report output directory; a third place is in
 `lib/configuration.py:238-263`, a function dedicated to that one plugin.
+(A fourth is gone: `--render` imported two private symbols of the plugin,
+and now imports `lib.layout.measure` and `lib.layout_options`.)
 
 **A plugin performs the publication step.** `plugins/generate_pdf.py:83`,
 `shutil.rmtree(site_dir)`. `lib/build_output.py:19-20` has to know about it:
@@ -88,17 +93,15 @@ their behalf. Several are internal build state: `loaded_design`, `measure`,
 `published_site_directory`, `plugin_paths`, `config_file`. And `headings` is
 written by a plugin and read by nobody: dead runtime state to drop.
 
-**The analysis code is trapped inside a plugin**, and the merge of
-`split-agent` made it larger rather than less trapped: of the 1516 lines of
-`plugins/layout_report.py`, lines 70 to 1230 - analysis, alignment and
-density, Markdown rendering, 1161 lines - still use no `meta` at all, and
-their single tie to `lib` is `analyse_design` from `lib/design_checks.py`,
-which is itself a pure analysis module and belongs in the same place. Only
-the last 285 lines are plugin glue. Because that code has no legitimate home,
-three places reach into it by path: `tools/style_profile.py:36-39` inserts
-two entries in `sys.path` and uses 12 symbols, 4 of them private;
-`tests/test_layout_report.py:10` loads the file by location; the core imports
-it as a package.
+**The analysis code was trapped inside a plugin** - 1161 of the 1516 lines
+of `plugins/layout_report.py` used no `meta` at all - and because it had no
+legitimate home, three places reached into it by path: a tool inserted two
+entries in `sys.path` and used 12 symbols of it, 4 of them private; the test
+file loaded it by location; the core imported it as a package and took two
+private names from it. Fixed by step 3: the analysis is `lib/layout/`, the
+plugin is 259 lines of hook, and nothing loads it by path any more. The cost
+it illustrates stays in this note because the same trap is set for anything
+else that ends up in `plugins/` without being an extension.
 
 **Themes depend on plugins, and nothing says so.** All three themes need
 `menu.py` (`{{TOC}}` in `themes/*/js/menu.js`); `webpage-frame` also needs
@@ -160,11 +163,14 @@ or anything untracked - it returns to a full build and says so. Checked: a
 `--only a` after editing a file of the theme prints "shared inputs changed or
 untracked; full build". The conservative fallback is the right one.
 
-What is left is the part that makes it a guarantee rather than a behaviour:
+The property is now pinned from outside:
+`test_a_partial_build_gives_the_same_site_as_a_full_one` builds the same
+sources fully and partially and compares a fingerprint of the whole site,
+rather than testing the fingerprints of the dependency system. It fails when
+the widening is disabled - checked by disabling it.
 
-- it is not pinned as a property. A test should state it from outside - the
-  same sources, built fully and partially, give the same site - rather than
-  test the fingerprints;
+What is left:
+
 - `only_pages()` keeps its own check (the list of pages), so two mechanisms
   decide the same thing in two places;
 - `restore_previous_pages()` restores the HTML bytes of a page that failed,
@@ -249,8 +255,8 @@ literal. The plugin does not add content: it changes what a *core* stage
 emits, through a side channel neither side declares, and it must run before
 LHTML for that reason. It belongs in the core as an asset stage with a
 pluggable converter, and the directory name belongs in the contract. (A
-second spelling exists in the repository, `video_codecs/`, used by
-`tools/process_video.py` and by the example assets.)
+second spelling exists in the repository, `video_codecs/`, used by the
+example assets.)
 
 ### 4.2 Extensions - the plugins, and nothing else
 
@@ -345,9 +351,10 @@ plugin.
   data.
 - `lib/layout/measure.py`: the Node runner and the choice of Chrome - the
   configured one, else `PUPPETEER_EXECUTABLE_PATH`, else the one puppeteer
-  downloaded, else an installed Chrome, saying which it took. This one is
-  done (`plugins/assets/chrome.js`) and only has to move: a measurement must
-  not fail because a browser was not downloaded next to the generator.
+  downloaded, else an installed Chrome, saying which it took
+  (`plugins/assets/chrome.js`). Done. The Node scripts themselves still sit
+  in `plugins/assets/`, with those of the PDF export; they move when the
+  targets do.
 
 ### 5.1 Findings as first-class objects
 
@@ -403,16 +410,31 @@ brought it to 40, and about 35 of those had one cause: the full-bleed
 images, declared `position: fixed` over the whole slide with the class
 `overlay`, were measured against the usable area (the inside of the slide
 frame) and against the navigation they pass under, although the class was
-already honoured for collisions. Two rules settled it - an intentional
-overlay is compared with the page, and `RESERVED AREA` counts text only -
-and the deck now reports **6 problems**, each one actionable: three texts
-covered at 100 % (one of them an image credit), two images displayed at
-twice their size, and one block over the usable area that is not declared as
-an overlay.
+already honoured for collisions. Two rules settled it: an intentional
+overlay is compared with the page, and `RESERVED AREA` counts text only.
 
-109 to 6 on the same slides, with no check removed: that is the difference
-between a report an agent reads and one it learns to ignore, and none of it
-was visible on the three pages of the example site.
+**Then a third rule, and the reason the corpus has to be the real one.**
+With the deck's own configuration the report stood at **83 problems**, and
+75 of them were one element: a timer fixed at the bottom left of every
+slide, 21 px below the usable area, stated once per slide. A block
+`position: fixed` is positioned against the viewport, not placed in the
+content, so the margins the content keeps do not apply to it - the same
+argument as the `overlay` class, which it does not need to carry. With that
+rule the deck reports **8 problems**: four texts covered at 100 %, two
+images displayed at twice their size, one block over a reserved area, one
+collision. 109 to 8 on the same slides, with no check removed.
+
+The 75 were invisible for a while because the corpus was measured through a
+*copy* of the deck's configuration, rewritten to run from elsewhere: in the
+copy, `jsAbs` - a list of URL of the site - had been turned into a
+filesystem path, the timer script never loaded, and the slides measured
+clean. A reference corpus is the project's own configuration, run in the
+project's own directory. A copy measures a different site, and it does it
+silently.
+
+Which is itself a finding about the product: if a script a deck depends on
+stops loading, nothing says so. The 78 slides degrade quietly, and the only
+trace is a layout report that changes by 75 findings for no stated reason.
 
 The same run shows why findings need a cause (section 5.1): 21 `OUT OF AREA`
 are one layout repeated over seven slides of a series.
@@ -491,8 +513,10 @@ lib/targets/    html, pdf: theme, source transforms, deliverables
 lib/analyses/   lint, layout: what they need of the build, what they report
 plugins/        extensions: pre_include, code_include
 themes/         each with its manifest (rendered files, page settings, root, reserved, template)
-tools/          outside the build: style_profile (on top of lib/layout), process_video
 ```
+
+`lib/layout/` exists, with three of its four files (`vocabulary.py` is step
+6 of section 10). `tools/` is gone: both scripts it held were dead code.
 
 
 ## 7. Scale
@@ -501,10 +525,9 @@ Nothing here is urgent at three pages; all of it is cheap to decide now and
 expensive to retrofit.
 
 - **The measurement is parallel since `split-agent`**: `jobs` tabs of one
-  browser, `auto` being half the processors and at most six. What remains is
-  that `tools/style_profile.py` shards the same work its own way, across
-  processes: two implementations of one idea, which the extraction into
-  `lib/layout/measure.py` should reduce to one.
+  browser, `auto` being half the processors and at most six. The second
+  implementation of that idea (a tool sharding the same work across
+  processes) is gone with the tool.
 - **Unbounded process fan-out**: `generate_pdf.py:63` uses a bare
   `ThreadPoolExecutor()`, each task spawning node, Chrome, `pdftoppm` and
   `magick`; `cache_video.py` starts one process per video and codec, all at
@@ -584,39 +607,100 @@ design defect found early:
 
 Guarantees before structure: what the build promises is decided first,
 because it constrains where the components may go. Then the code moves, one
-property at a time, never two at once.
+property at a time, never two at once. A third rule earned on the way, and
+it reordered the second half of this list: **at equal value, what deletes a
+special case comes before what adds a concept.**
 
-0. **Two point fixes first**, because they cost a day of work each time they
-   bite and need none of the rest: a measurement finds a Chrome instead of
+### Done
+
+0. **Two point fixes**, because they cost a day of work each time they bite
+   and need none of the rest: a measurement finds a Chrome instead of
    failing, an analysis that fails leaves the build alone, and `src`, the
-   private settings and the authoring documents stop being published. Done,
-   including the documents of the project, which now live in `.structure/`.
-1. **The guarantees of section 3, on paper and under test**: when a partial
-   build widens itself, and what a build publishes. These are observable
-   from outside, so they can be pinned by tests before any file moves - and
-   they are what makes the rest a gain in reliability rather than a
-   reorganisation.
-2. **The declared positions** of the stages and extensions, and what a
-   target may change. The pinning tests of `tests/test_plugin_order.py` are
-   rewritten to assert declared positions.
-3. **`lib/layout/` as a pure extraction, with no change of behaviour**: the
-   same output, byte for byte, from a module that no longer lives in a
-   plugin. It depends on nothing else - 996 of the 1271 lines already have no
-   tie to the build - and it removes the `sys.path` hacks.
-   `tools/style_profile.py` and `tests/test_layout_report.py` are migrated as
-   part of this step: both load the plugin by path today.
-4. **Then, and only then, the new contracts inside it**: the vocabulary
-   registry, the finding schema, the source location, the verdict. Moving the
-   code and changing its output in one step would leave nothing to compare
-   against.
-5. **Targets and analyses**: `layout` and `pdf` out of the plugin list.
-6. **The theme manifest**, then the stages that depend on it: `menu`,
-   `auto_wrap`, `title_submenu`, `index`, the video cache.
-7. **The extension transformation contract** (section 4.2), once the engine
+   private settings and the authoring documents stop being published - the
+   documents of a project now live in `.structure/`.
+1. **The guarantees of section 3, under test.** A partial build and a full
+   build of the same sources give the same site, pinned on a fingerprint of
+   the whole site and checked to fail when the widening is disabled; what a
+   build publishes is pinned by the privacy tests of
+   `tests/test_build_safety.py`. Observable from outside, so they hold while
+   the components move.
+3. **`lib/layout/` as a pure extraction.** `plugins/layout_report.py` went
+   from 1522 lines to 259 (the hook: which pages to measure, what to keep of
+   a previous build, where to write); `analysis.py`, `report.py` and
+   `measure.py` hold the rest, and `tests/test_layout_report.py` imports
+   them instead of loading a plugin by path.
+
+   What "no change of behaviour" was checked against: the same deck built
+   with the generator before and after the move gives the same findings on
+   all 78 pages. The check has to name what it ignores, because a rebuild
+   changes it on its own - the random name of the staging directory, the
+   order in which the browser reports the resources it loaded, and the PNG
+   renders. One page did differ, and it differs between two runs of the
+   *same* generator as well (a video frame measured a pixel apart): the run
+   before the move and a second run after it agree exactly.
+
+   A second check, on a course website of 31 pages written against a copy of
+   the generator five months old: same 82 files, same paths, and it builds
+   both with the current theme and with its own. The theme contract has not
+   moved in practice, which is worth knowing before step 8 rewrites it.
+
+### Deferred, with a reason: the declared positions (was step 2)
+
+The declared positions of the stages and extensions, and what a target may
+change. Two plugins rewrite the same file today, `pre_include` and
+`auto_wrap`, and their order is already pinned by
+`tests/test_plugin_order.py`. One of the two becomes a core stage at step 8.
+A position registry built for a pair whose second member is leaving is
+machinery that loses its purpose before it serves. The positions are
+declared at step 8, when the theme manifest has emptied `plugins/` down to
+the two real extensions - where ordering two declared extensions is a line
+of configuration, not a system.
+
+### Next
+
+4. **The layout analysis stops being a plugin.** `--layout` calls
+   `lib/layout/` from the core, at the position it occupies today. Deletes
+   `add_layout_plugin`, the second file-name test of `generate.py`, and the
+   function of `lib/configuration.py` dedicated to one plugin. Breaking:
+   `plugin:` listing `layout_report.py` becomes an error naming `--layout`.
+   This is the smallest remaining step that deletes more than it adds, and
+   step 3 is what makes it possible: the code it would have had to import
+   from a plugin is already in `lib/`.
+5. **The source location in the findings** (section 5.2). One line of
+   `layout_measure.js` throws the file away and keeps the integer. The
+   machinery exists, and this is the field whose absence costs most per
+   iteration of the agent loop.
+6. **The contracts inside `lib/layout/`**: the vocabulary registry, the
+   finding schema, severity in the data rather than in two Python tuples,
+   the JSON as the source of truth with the Markdown rendered from it, and
+   the verdict. Moving the code and changing its output in one step would
+   have left nothing to compare against - which is why this follows step 3
+   rather than replacing it.
+7. **PDF as a target**: its own theme, its own source transforms, its own
+   deliverables, and publication by the explicit list of section 3.2
+   instead of `shutil.rmtree(site_dir)`. Deletes the "put `generate_pdf.py`
+   last" rule and the `if staging.is_dir()` of `build_output.py`. Separate
+   from step 4 because it carries the publication contract, which step 4
+   does not touch.
+8. **The theme manifest**, then the stages that depend on it: `menu`,
+   `auto_wrap`, `title_submenu`, `index`, the video cache - and the declared
+   positions of the two extensions that remain.
+9. **The extension transformation contract** (section 4.2), once the engine
    owns the writes everywhere else.
 
-Expect test churn: 13 of the 18 test files mention plugins. "Each step keeps
+Expect test churn: 14 of the 22 test files mention plugins. "Each step keeps
 the suite green" is the goal, not a free property.
+
+### Small debts, cheap, not worth a step of their own
+
+- `meta['headings']` is written by `plugins/title_submenu.py` and read by
+  nobody: drop it, with its entry in `RUNTIME_KEYS`.
+- `only_pages()` decides the list of pages a second time (section 3.1).
+- Two spellings of one directory, `video_convert/` and `video_codecs/`.
+- The layout checks that are known to be wrong (section 5.3): `WRAPPED` on
+  ragged-right text, the density metrics computed against a 1920x1080
+  window on scrolling pages, `NEAR-ALIGNED` naming an offset an author is
+  not allowed to fix by hand.
 
 
 ## 11. Open questions
@@ -634,3 +718,12 @@ the suite green" is the goal, not a free property.
 - How far does the limited context of an extension go (section 4.2)? Reading
   a file of the project, as `pre_include` does, is part of its job; reading
   the generated site is not.
+- A script a project injects into every page (`keywords: jsAbs`) is a URL of
+  the site, and nothing checks that it resolves. When it stops resolving,
+  every page degrades silently (section 5.3). Is that a build check, a
+  layout finding, or part of the theme's injection-point contract (section
+  4.0)? It is cheap as a build check and belongs to the contract.
+- `position: fixed` now exempts a block from `OUT OF AREA`, on the argument
+  that it is laid over the page rather than placed in it. The same argument
+  applies to `RESERVED AREA` and to collisions with the content, where it is
+  *not* applied today. Settle it one way for all three, with the corpus.

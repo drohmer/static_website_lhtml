@@ -17,7 +17,7 @@ from rich.table import Column
 from lib.layout.report import contact_sheets_html
 
 # The Node scripts stay next to those of the PDF export for now; they move
-# when the targets do (step 5 of docs/design.md).
+# when the targets do (step 7 of docs/design.md).
 SCRIPTS = Path(__file__).resolve().parents[2] / 'plugins' / 'assets'
 
 
