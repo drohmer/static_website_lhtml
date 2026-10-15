@@ -718,14 +718,21 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
     norms = norms or {}
     blocks, area = _visible(layout['blocks']), layout['area']
     bottom = max((_rect(b)[3] for b in blocks), default=area['y'])
+    # On a scrolling page the window is not the page: measuring how much of
+    # it is covered over one window height counts the first screenful and
+    # calls it the page. The content that exists is the area to measure, and
+    # the space left under the last block - a question about a slide - has
+    # none: a page continues.
+    scrolling = layout.get('scrolling', False)
+    covered_area = dict(area, h=max(area['h'], bottom - area['y'])) if scrolling else area
     collisions, tight, intentional = find_overlaps(blocks, threshold)
     hidden_text = find_hidden_text(blocks)
     # a collision between a text and the block hiding it is reported once, as hidden text
     hiding = {frozenset((h['id'], h['by'])) for h in hidden_text}
     collisions = [c for c in collisions if frozenset((c['a'], c['b'])) not in hiding]
-    grid = coverage(_ink_rects(blocks), area)          # occupancy, then free area (with the reserved areas)
+    grid = coverage(_ink_rects(blocks), covered_area)   # occupancy, then free area (with the reserved areas)
     covered = _covered_share(grid)
-    coverage(_reserved_rects(layout.get('reserved')), area, rows=grid)
+    coverage(_reserved_rects(layout.get('reserved')), covered_area, rows=grid)
     layout['analysis'] = {
         'reserved': find_reserved_overlaps(blocks, layout.get('reserved'), threshold),
         'collisions': collisions,
@@ -741,15 +748,15 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
         'intentional': intentional,
         'background_overlaps': find_background_overlaps(blocks, collisions + intentional, threshold),
         'gaps': vertical_gaps(blocks),  # spacers count as gaps
-        'free_bottom': area['y'] + area['h'] - bottom,
+        'free_bottom': None if scrolling else area['y'] + area['h'] - bottom,
         'occupancy': round(covered, 2),
         'near_aligned': find_near_alignments(blocks, area, norms.get('columns', ())),
-        'density': density(blocks, area),
+        'density': density(blocks, covered_area),
         'wrapped': find_wrapped(blocks),
         'short_wrapped': find_short_wrapped(blocks, area),
         'rows': find_row_misalignments(blocks),
         'fit': find_fit(blocks),
-        'free': _free_rect(grid, area),
+        'free': _free_rect(grid, covered_area),
         'deviations': find_deviations(blocks, norms) if norms else [],
     }
     layout['analysis'].update(find_internal(layout, threshold))

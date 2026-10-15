@@ -85,8 +85,6 @@ def pre_process(meta):
         with open(file_path, 'w', encoding='utf-8') as fid:
             fid.write(file_content)
 
-    meta['headings'] = title_id_summary
-
     with open(summary_path, 'w', encoding='utf-8') as fid:
         json.dump(title_id_summary, fid, indent=4)
 

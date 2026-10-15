@@ -203,7 +203,26 @@ class BuildStore:
         except (OSError, ValueError):
             self.pages = {}
 
+    def partial_impossible(self, meta, selected):
+        """Why this build cannot stay partial, or None. The site of a
+        previous build is what a partial build completes: without it, or
+        when it holds other pages than this build produces, nothing can be
+        kept."""
+        previous = Path(meta['site_directory']) / 'structure/structure.json'
+        if not previous.is_file():
+            return 'no previous build'
+        try:
+            names = [entry['dir'] + entry['filename'] for entry in json.loads(previous.read_text())]
+        except (OSError, ValueError):
+            return 'the structure of the previous build cannot be read'
+        if names != [page.site_html for page in selected]:
+            return 'the pages of the site changed'
+        return None
+
     def expand(self, meta, selected, built):
+        if (reason := self.partial_impossible(meta, selected)):
+            meta['log'].keyvalue('info', f'--only: {reason}, full build', indent_level=1)
+            return None
         requested = set(built)
         affected, global_change = [], False
         for page in selected:

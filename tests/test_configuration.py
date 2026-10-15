@@ -39,7 +39,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(Path(config.site_directory), self.root / '.site')
         context = BuildContext(config, path, SimpleNamespace(), Logger())
         context.meta['keywords']['nested']['value'] = 'changed'
-        context.meta['headings'] = {'runtime': []}
+        context.meta['planned_slides'] = ['runtime']
         self.assertEqual(config.keywords['nested']['value'], 'original')
         self.assertTrue(config.title_id)
         self.write(debug=True)

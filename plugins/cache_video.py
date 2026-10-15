@@ -7,12 +7,16 @@ from multiprocessing import Process
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/video_convert/')
 import video_convert
 
+from lhtml.export_html import CACHE_VIDEO_DIR
+
 from lib.structure import built_pages
 
 
 default_asset_path = 'assets/'
 default_cache_video_directory = 'cache_video_directory/'
-default_cache_name = 'cache_video_codecs/'
+# The directory LHTML probes when it writes a <video>: the same name on both
+# sides, read from the one that defines it rather than repeated here.
+default_cache_name = CACHE_VIDEO_DIR
 executable_video_convert = 'ffpb'
 default_threads = '16'
 

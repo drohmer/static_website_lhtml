@@ -697,10 +697,22 @@ the suite green" is the goal, not a free property.
   nobody: drop it, with its entry in `RUNTIME_KEYS`.
 - `only_pages()` decides the list of pages a second time (section 3.1).
 - Two spellings of one directory, `video_convert/` and `video_codecs/`.
-- The layout checks that are known to be wrong (section 5.3): `WRAPPED` on
-  ragged-right text, the density metrics computed against a 1920x1080
-  window on scrolling pages, `NEAR-ALIGNED` naming an offset an author is
-  not allowed to fix by hand.
+
+Done: `meta['headings']` is gone with its runtime key; the decision whether
+a build may stay partial is `BuildStore.partial_impossible()`, called from
+`expand()`, and `only_pages()` only resolves the pointers; the name of the
+codec cache is read from LHTML instead of being repeated, and the example's
+pre-converted videos - 4.6 MB that nothing read, under the directory name
+LHTML used before - are where LHTML looks for them, so the example now
+demonstrates the feature it shipped the files for.
+
+Of the three checks known to be wrong (section 5.3), the one that was a
+plain bug is fixed: the density metrics of a scrolling page are measured
+over the content that exists, and the space left under the last block -
+which a page that continues does not have - is no longer stated as a
+negative number of pixels. The other two are not small: `WRAPPED` and
+`NEAR-ALIGNED` need a decision about what the check means, and the corpus
+to check it against. They stay in section 5.3.
 
 
 ## 11. Open questions

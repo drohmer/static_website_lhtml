@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,6 +38,15 @@ def setup(tmp_path):
 
 def clear_cache(meta):
     meta.pop('_dependency_hash_cache', None)
+
+
+def previous_site(meta, names):
+    """The structure a previous build left in the site: what a partial build
+    completes, and what BuildStore.expand() requires before keeping a page."""
+    structure = Path(meta['site_directory']) / 'structure'
+    structure.mkdir(exist_ok=True)
+    (structure / 'structure.json').write_text(
+        json.dumps([{'dir': '', 'filename': name} for name in names]))
 
 
 def test_content_change_same_size_mtime_and_new_file(tmp_path):
@@ -90,6 +100,7 @@ def test_rebuild_selection_and_shared_asset_refresh(tmp_path):
                    'b.html': dependencies.make_manifest(meta, {'src': str(b.src), 'dir': '', 'filename': 'b.html'})}
     shared.write_text('new')
     clear_cache(meta)
+    previous_site(meta, ['a.html', 'b.html'])
     assert store.expand(meta, [a, b], [b]) == [a, b]
     (Path(meta['theme']) / 'style.css').write_text('body {color:red}')
     clear_cache(meta)
@@ -102,3 +113,23 @@ def test_staging_paths_and_external_unknown(tmp_path):
     manifest = dependencies.make_manifest(meta, entry)
     assert dependencies.freshness(manifest, meta, entry)['status'] == 'unknown'
     assert not any('.site/' in key for key in manifest['inputs']['files'])
+
+
+def test_a_partial_build_needs_the_site_of_the_previous_one(tmp_path):
+    """Whether a build may stay partial is decided in one place. Without a
+    previous site, or when it holds other pages than this build produces,
+    there is nothing to complete: expand() asks for a full build."""
+    meta, a, entry = setup(tmp_path)
+    store = dependencies.BuildStore(meta)
+    store.pages = {'a.html': dependencies.make_manifest(meta, entry)}
+
+    assert store.partial_impossible(meta, [a]) == 'no previous build'
+    assert store.expand(meta, [a], [a]) is None
+
+    previous_site(meta, ['a.html', 'gone.html'])
+    assert store.partial_impossible(meta, [a]) == 'the pages of the site changed'
+    assert store.expand(meta, [a], [a]) is None
+
+    previous_site(meta, ['a.html'])
+    assert store.partial_impossible(meta, [a]) is None
+    assert store.expand(meta, [a], [a]) == [a]

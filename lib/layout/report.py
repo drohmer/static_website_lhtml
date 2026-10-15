@@ -57,8 +57,9 @@ def page_markdown(name, source, layout):
     lines = [f'# {name}', '',
              f'Source: `{source}`', '',
              f"Usable area: x {area['x']}..{area['x'] + area['w']}, y {area['y']}..{area['y'] + area['h']} "
-             f"({area['w']}×{area['h']} px) · occupancy {round(100 * analysis['occupancy'])} % "
-             f"· free space at the bottom {analysis['free_bottom']} px", '',
+             f"({area['w']}×{area['h']} px) · occupancy {round(100 * analysis['occupancy'])} %"
+             + (f" · free space at the bottom {analysis['free_bottom']} px"
+                if analysis['free_bottom'] is not None else ' · scrolling page: measured over its content'), '',
              'Positions and sizes bound the ink of each block: what is actually drawn '
              '(text lines, images reduced to their drawn shape, backgrounds, borders). '
              'Overlaps are computed on the ink rectangles themselves (layout.json: "ink"), '

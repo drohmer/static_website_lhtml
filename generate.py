@@ -244,18 +244,9 @@ def other_sources(selected):
 
 
 def only_pages(meta, selected, log):
-    """--only: the pages it names, or None for a full build (no previous site,
-    or its pages are not those of this build: a deck or a page changed)."""
+    """--only: the pages its pointers name. Whether the build may stay
+    partial is decided in one place, by the dependency store."""
     built = deck.named_pages(selected, meta['args'].only, other_sources(selected))
-    previous = os.path.join(meta['site_directory'], 'structure/structure.json')
-    if not os.path.isfile(previous):
-        log.keyvalue('info', '--only: no previous build, full build', indent_level=1)
-        return None
-    with open(previous, encoding='utf-8') as fid:
-        names = [entry['dir'] + entry['filename'] for entry in json.load(fid)]
-    if names != [page.site_html for page in selected]:
-        log.keyvalue('info', '--only: the pages of the site changed, full build', indent_level=1)
-        return None
     log.keyvalue('info', f"--only: {', '.join(p.label for p in built)}", indent_level=1)
     return built
 

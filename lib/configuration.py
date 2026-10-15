@@ -30,7 +30,6 @@ RUNTIME_KEYS = frozenset((
     'source_roots',                 # the sources read by each page (lib/tracking.py)
     'dependency_contexts', 'dependency_store', 'dependency_measure',
     'page_contexts',                # what each page depends on (lib/dependencies.py)
-    'headings',                     # {page: [heading]} written by plugins/title_submenu.py
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
 ))
