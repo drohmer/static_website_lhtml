@@ -1010,14 +1010,34 @@ contract (section 4.0 already says the theme selects the PDF variant), so
 doing 7 first would mean inventing a parallel notion of target and
 refolding it one step later.
 
-8b. **The stages that depend on the theme manifest.** Four plugins become
-   core stages: `menu.py` (section 4.1 says why it does not disappear into
-   Jinja), `title_submenu.py`, `cache_video.py`, and
-   `redirection_first_page.py` as the `index:` stage. `auto_wrap.py` reads
-   the manifest since 8a; what remains is for it to stop being a plugin
-   too. Then `plugins/` holds `pre_include` and `code_include`, and the
-   declared positions of those two are a line of configuration - which is
-   the condition the deferred step 2 was waiting for.
+8b. **The stages that depend on the theme manifest.** First two of them:
+   `plugins/menu.py` is `lib/menu.py` and `plugins/title_submenu.py` is
+   `lib/headings.py`, run by the build itself. The manifest grew the key
+   that made it possible: a theme declares `toc: {file, keys}`, so a theme
+   with no menu gets none - which a project could not say, having no way to
+   know. `plugin_arg: menu: keys:` is gone with it; the extra page settings
+   a menu carries belong to the theme that displays them.
+
+   The default `plugin:` list drops from four entries to two, and the
+   example's configuration from three to one. Checked on the example site:
+   the build is byte-identical except the manifest itself, which the theme
+   copy carries into the site.
+
+   Left for 8c: `cache_video.py`, `redirection_first_page.py` as the
+   `index:` stage - which I would make unconditional rather than a key,
+   since a site with no `index.html` is broken and a key nobody sets is not
+   simpler than no key - and `auto_wrap.py`, which reads the manifest since
+   8a but is still a plugin. Then `plugins/` holds `pre_include` and
+   `code_include`, and the declared positions of those two are a line of
+   configuration: the condition the deferred step 2 was waiting for.
+
+   **A project embedding its own copy does not migrate by being rebuilt.**
+   The reference deck vendors the generator *and* the themes
+   (`<project>/static_website_lhtml/`), so its theme has no manifest and
+   its configuration still lists the plugins its own copy still has. Both
+   are consistent, and they migrate together when the copy is synced -
+   which is the point of section 8's last paragraph, now observed rather
+   than predicted.
 
 7. **PDF as a target**: its own theme, its own source transforms, its own
    deliverables. Its publication half is already done (step 4: `generate_pdf`

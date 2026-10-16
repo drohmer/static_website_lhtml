@@ -17,6 +17,13 @@ RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example
 
 
 # Keys of meta set by the generator during a build (never by the configuration)
+# Plugins of the previous version that the build now runs itself: the name of
+# the file, and what it became.
+CORE_STAGES = {
+    'menu.py': "the theme's menu",
+    'title_submenu.py': 'the heading ids (configuration key title_id:)',
+}
+
 RUNTIME_KEYS = frozenset((
     'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory', 'extras',
     'current_directory',
@@ -48,14 +55,12 @@ class Config:
     theme: str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
     # What a bundled theme needs to render a project written in LHTML:
     # auto_wrap puts a source without {% block content %} in the template of
-    # the theme (without it the page is a bare fragment), and the three
-    # others write what the theme reads - the menu ({{TOC}} of
-    # theme/js/menu.js), the summary of the headings (title_id.json) and the
-    # redirection of the first page.
+    # the theme (without it the page is a bare fragment), and
+    # redirection_first_page writes the index of a site that has none. The
+    # menu of the theme and the heading ids are stages of the build
+    # (lib/menu.py, lib/headings.py): a project does not list them.
     plugin: list[str] = field(default_factory=lambda: ['plugins/auto_wrap.py',
-                                                       'plugins/menu.py',
-                                                       'plugins/redirection_first_page.py',
-                                                       'plugins/title_submenu.py'])
+                                                       'plugins/redirection_first_page.py'])
     debug: bool = False
     level_print: int = 0
     title_id: bool = True
@@ -222,6 +227,17 @@ def load_config(filename, debug_override=None):
         raise ConfigError("'plugin_arg': the options of the layout report moved to the "
                           "configuration key 'layout:'. Move the content of "
                           "'plugin_arg: layout_report:' under 'layout:'")
+    # Stages the build always runs: a project does not list them, and cannot
+    # know whether its theme has a menu - the theme declares that (theme.yaml).
+    for entry in plugins:
+        name = entry.rsplit('/', 1)[-1]
+        if name in CORE_STAGES:
+            raise ConfigError(f"'plugin': {CORE_STAGES[name]} is a stage of the build, not a "
+                              f"plugin. Remove '{entry}' from 'plugin:'")
+    if isinstance(values['plugin_arg'], dict) and 'menu' in values['plugin_arg']:
+        raise ConfigError("'plugin_arg': the extra page settings of the menu are declared by "
+                          "the theme. Move the content of 'plugin_arg: menu: keys:' to "
+                          "'toc: keys:' in the theme.yaml of your theme")
 
     _chrome_executable(values, path.parent)
 

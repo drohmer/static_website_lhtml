@@ -31,6 +31,8 @@ from lib import source_map
 from lib.tracking import TrackingLoader, lhtml_includes
 from lib import source_scan
 from lib import theme
+from lib import menu
+from lib import headings
 from lib.layout import build as layout_build
 from lib import logger
 from lib import pages
@@ -792,6 +794,9 @@ def generate_site(meta, selected, built):
                              for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
     log.ok_elapsed()
 
+    # Heading ids and their summary: a core stage (lib/headings.py)
+    headings.run(meta)
+
     # Pre-process plugins
     log.title('Pre-process', pre='\n')
     log.tic()
@@ -832,6 +837,8 @@ def generate_site(meta, selected, built):
     post_ran = not failed and not plugin_failures
     if post_ran:
         plugin_failures += run_plugins(meta, 'post_process', log)
+        # The menu of the theme: a core stage (lib/menu.py)
+        menu.run(meta)
     log.ok_elapsed()
 
     # The layout analysis is part of the generator, not a plugin: it runs

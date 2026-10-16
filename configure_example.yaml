@@ -7,10 +7,11 @@ theme: 'themes/webpage-frame/'  # Omit to use the bundled webpage-frame theme.
 
 # Plugins run in this order. Use [] to disable them.
 # Paths are relative to this file, then to the generator installation.
+# The menu of the theme and the heading ids are stages of the build, not
+# plugins: a project does not list them (the theme declares whether it has a
+# menu, in its theme.yaml).
 plugin:
-  - 'plugins/menu.py'
   - 'plugins/redirection_first_page.py'
-  - 'plugins/title_submenu.py'
 
 # Optional settings (uncomment to override the defaults):
 # debug: false           # --debug takes precedence; also keeps intermediate files.
@@ -30,7 +31,7 @@ plugin:
 # Its reports default to .layout/; override with:
 # layout:
 #     output: '.layout/'
-#     root: '#main-content-centered'   # content element measured; 'body' by default,
-#                                      # which is right for the slides themes. With a
+#     root: '#main-content-centered'   # the theme declares this in its theme.yaml;
+#                                      # set it here only to override what it says. With a
 #                                      # root that does not match the theme, each page
 #                                      # is measured as a single block (the report says so).

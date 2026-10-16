@@ -2,6 +2,8 @@
 # Same slide format as the slides theme, exported page by page.
 template: 'theme/template/base.html'
 content_block: 'content'
+toc:
+  file: 'js/menu.js'   # receives the table of contents ({{TOC}})
 layout:
   root: 'body'
   exclude: 'nav, footer'

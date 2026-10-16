@@ -75,4 +75,4 @@ def test_the_page_is_wrapped_in_the_template_the_theme_declares(tmp_path):
                             capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stdout + result.stderr
     page = (tmp_path / '.site/index.html').read_text()
-    assert '<main>' in page and '<h1>Titre</h1>' in page
+    assert '<main>' in page and '<h1 id="titre_l1">Titre</h1>' in page

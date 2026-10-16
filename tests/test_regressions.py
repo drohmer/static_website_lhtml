@@ -107,7 +107,7 @@ class GeneratorRegressions(unittest.TestCase):
         (self.source / 'b/index.html.j2').write_text(
             "{% set pageTitle = 'L\\'informatique \"graphique\"' %}\n<h1>B</h1>")
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        config['plugin'] = ['plugins/auto_wrap.py']
         self.config.write_text(yaml.safe_dump(config))
         self.build()
         script = self.site / 'theme/js/menu.js'
@@ -134,7 +134,7 @@ class GeneratorRegressions(unittest.TestCase):
 
     def test_each_page_has_its_own_heading_summary(self):
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/title_submenu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         self.page('a.html.j2', 'A')
         self.page('b.html.j2', 'B')

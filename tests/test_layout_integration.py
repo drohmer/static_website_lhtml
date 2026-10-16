@@ -147,7 +147,7 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
         "<p>A short paragraph that wraps in this narrow column</p>\n\n</div>\n")
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
-                                      'plugin': ['plugins/auto_wrap.py', 'plugins/menu.py'],
+                                      'plugin': ['plugins/auto_wrap.py'],
                                       'theme': str(REPO / 'themes/slides')}))
     run = lambda *extra: subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), *extra],
                                         capture_output=True, text=True, timeout=120)
@@ -210,7 +210,7 @@ def test_svg_checks_edge_cases(tmp_path):
     (source / 'inline/assets/a.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="100" height="100"><rect width="10" height="10"/></svg>')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
-                                      'plugin': ['plugins/auto_wrap.py', 'plugins/menu.py'],
+                                      'plugin': ['plugins/auto_wrap.py'],
                                       'theme': str(REPO / 'themes/slides')}))
     start = time.monotonic()
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],

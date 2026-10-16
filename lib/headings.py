@@ -1,3 +1,9 @@
+"""Heading ids and the per-page summary of the headings (title_id.json).
+
+A core stage, not a plugin: every page of a site needs stable ids for its
+headings, and the theme's menu reads the summary. `title_id: false` in the
+configuration turns it off for a project that writes its own ids.
+"""
 import os
 import re
 import json
@@ -34,7 +40,7 @@ def generate_new_id(text, id_storage):
     return text_id
 
 
-def pre_process(meta):
+def run(meta):
     if not meta.get('title_id', True):          # title_id: false in the configuration
         return
     pages = structure(meta)

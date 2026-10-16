@@ -4,6 +4,8 @@
 # a project that did not had its whole page measured as a single block.
 template: 'theme/template/base.html'
 content_block: 'content'
+toc:
+  file: 'js/menu.js'   # receives the table of contents ({{TOC}})
 layout:
   root: '#main-content-centered'
   exclude: 'nav, footer'

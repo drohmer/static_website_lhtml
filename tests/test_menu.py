@@ -7,6 +7,7 @@ duration: ...) stay out of it.
 from pathlib import Path
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -32,9 +33,9 @@ class MenuPublicationTests(unittest.TestCase):
 
     def build(self, **options):
         config = self.root / 'configure.yaml'
+        options.setdefault('theme', str(REPO / 'themes/webpage-frame'))
         config.write_text(yaml.safe_dump({
-            'source_directory': 'src', 'site_directory': 'out',
-            'theme': str(REPO / 'themes/webpage-frame'), **options}))
+            'source_directory': 'src', 'site_directory': 'out', **options}))
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config)],
                                 cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -47,11 +48,32 @@ class MenuPublicationTests(unittest.TestCase):
         self.assertNotIn('draft', text)
         self.assertEqual(sorted(toc[0]), ['hide-toc', 'level', 'path', 'title'])
 
-    def test_a_theme_can_declare_the_keys_it_needs(self):
-        text, toc = self.build(plugin_arg={'menu': {'keys': ['duration']}})
+    def test_a_theme_declares_the_keys_it_needs(self):
+        """The extra keys are the theme's business: a project cannot know
+        what its theme's menu displays (theme.yaml, `toc: keys:`)."""
+        theme = self.root / 'theme'
+        shutil.copytree(REPO / 'themes/webpage-frame', theme)
+        (theme / 'theme.yaml').write_text(yaml.safe_dump(
+            {'toc': {'file': 'js/menu.js', 'keys': ['duration']}}))
+        text, toc = self.build(theme=str(theme))
         self.assertIn('duration', toc[0])
         self.assertEqual(toc[0]['duration'], '5')
         self.assertNotIn(NOTE, text)
+
+    def test_a_theme_with_no_menu_gets_none(self):
+        """A theme that declares no `toc:` has no menu, and the build does
+        not invent one."""
+        theme = self.root / 'bare'
+        shutil.copytree(REPO / 'themes/webpage-frame', theme)
+        (theme / 'theme.yaml').write_text('template: \'theme/template/base.html\'\n')
+        config = self.root / 'configure.yaml'
+        config.write_text(yaml.safe_dump({
+            'source_directory': 'src', 'site_directory': 'bare-out', 'theme': str(theme)}))
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config)],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # the file is copied with the theme, but its placeholder is untouched
+        self.assertIn('{{TOC}}', (self.root / 'bare-out/theme/js/menu.js').read_text())
 
 
 if __name__ == '__main__':

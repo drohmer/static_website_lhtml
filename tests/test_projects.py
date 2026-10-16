@@ -113,7 +113,7 @@ class SiteDiscoveryTests(DeckProjectsTests):
 
     def test_scaffolded_title_with_jinja_and_title_ids(self):
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/title_submenu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         self.build({'slides': [{'path': '07_new', 'title': 'New {{ slide }}'}]}, '--scaffold')
         self.assertIn('New {{ slide }}', (self.site / '07_new/index.html').read_text())

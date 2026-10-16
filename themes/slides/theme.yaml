@@ -2,6 +2,8 @@
 # The design of the slides - tokens, macros, layouts - is in design.yaml.
 template: 'theme/template/base.html'
 content_block: 'content'
+toc:
+  file: 'js/menu.js'   # receives the table of contents ({{TOC}})
 layout:
   root: 'body'            # the slide itself is the content
   exclude: 'nav, footer'  # the navigation of the theme is not

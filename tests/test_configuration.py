@@ -66,6 +66,25 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("'layout:'", ' '.join(result.stdout.split()))
 
+    def test_a_configuration_that_lists_a_core_stage_as_a_plugin_is_refused(self):
+        """The menu of the theme and the heading ids are stages of the build:
+        a configuration of the previous version is told so, before any build."""
+        for entry, expected in (('plugins/menu.py', "theme's menu"),
+                                ('plugins/title_submenu.py', 'heading ids')):
+            self.write(plugin=['plugins/auto_wrap.py', entry])
+            result = self.cli('--check-config')
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            flat = ' '.join(result.stdout.split())
+            self.assertIn(expected, flat)
+            self.assertIn(entry, flat)
+            self.assertFalse((self.root / '.site').exists())
+
+        # the extra keys of the menu are declared by the theme now
+        self.write(plugin=[], plugin_arg={'menu': {'keys': ['duration']}})
+        result = self.cli('--check-config')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('theme.yaml', ' '.join(result.stdout.split()))
+
     def test_bad_types_and_yaml_have_actionable_errors(self):
         for key, value in [('source_directory', None), ('site_directory', 3),
                            ('debug', 'false'), ('level_print', True), ('level_print', -1),

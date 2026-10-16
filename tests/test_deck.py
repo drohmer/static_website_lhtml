@@ -136,7 +136,7 @@ class DeckGenerationTests(unittest.TestCase):
 
     def build(self, deck_value=None, *args):
         config = {'source_directory': 'src', 'site_directory': 'site',
-                  'theme': str(REPO / 'themes/slides'), 'plugin': ['plugins/menu.py']}
+                  'theme': str(REPO / 'themes/slides'), 'plugin': []}
         if deck_value is not None:
             config['deck'] = deck_value
         self.config.write_text(yaml.safe_dump(config))
@@ -206,7 +206,7 @@ class DeckProjectsTests(unittest.TestCase):
         self.config = self.root / 'talk/config.yaml'
         self.config.write_text(yaml.safe_dump({
             'source_directory': 'src', 'site_directory': 'site', 'deck': 'deck.yaml',
-            'theme': str(REPO / 'themes/slides'), 'plugin': ['plugins/menu.py']}))
+            'theme': str(REPO / 'themes/slides'), 'plugin': []}))
 
     def write(self, name, text):
         path = self.root / name
@@ -308,7 +308,7 @@ class DeckBuildRegressionTests(DeckProjectsTests):
     def test_title_with_quotes_and_auto_wrap(self):
         self.write('talk/src/02_raw/index.html.j2', '= Raw\n')
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        config['plugin'] = ['plugins/auto_wrap.py']
         self.config.write_text(yaml.safe_dump(config))
         title = 'L\'animation d\'un "personnage" {{ x }}'
         structure = self.build({'slides': [{'path': '02_raw', 'title': title}]})
@@ -417,7 +417,7 @@ class DeckBuildEdgeCaseTests(DeckProjectsTests):
     def test_emoji_and_date(self):
         self.write('talk/src/02_raw/index.html.j2', '= Party 🎉\n')
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        config['plugin'] = ['plugins/auto_wrap.py']
         self.config.write_text(yaml.safe_dump(config))
         import datetime
         structure = self.build({'slides': ['02_raw', {'path': '01_a', 'title': 'Fête 🎉',

@@ -75,7 +75,7 @@ class OnlyTests(DeckProjectsTests):
 
     def test_titles_in_code_are_not_headings(self):
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/title_submenu.py', 'plugins/menu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         self.write('talk/src/01_a/index.html.j2', "verbatim::[]\n= Not a title\nverbatim::[-]\n" + HEAD
                    + "= A\ncode::[python]\n== x\ncode::[-]\n{% endblock %}\n")
@@ -90,7 +90,7 @@ class OnlyTests(DeckProjectsTests):
 
     def test_only_keeps_the_ids_of_the_titles(self):
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/title_submenu.py', 'plugins/menu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         self.write('talk/src/00_plan/index.html.j2', HEAD + "= Plan\n== Same\n{% endblock %}\n")
         self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n== Same\n{% endblock %}\n")

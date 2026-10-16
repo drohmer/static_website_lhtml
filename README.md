@@ -133,9 +133,7 @@ source_directory: 'example/'           # Source content directory
 site_directory: '.site/'               # Output directory
 theme: 'themes/webpage-frame/'         # Theme directory
 plugin:                                # Plugin list (executed in order)
-  - 'plugins/menu.py'
   - 'plugins/redirection_first_page.py'
-  - 'plugins/title_submenu.py'
 ```
 
 **The site is published; the documents of a project are not.** The site
@@ -151,7 +149,7 @@ page setting in the site declares it with `public_page_keys:`.
 
 Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lib/configuration.py`.
 
-Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is `menu.py`, `redirection_first_page.py` and `title_submenu.py`: what the bundled theme reads (the menu, the redirection of the first page and the summary of the headings of each page). An explicitly configured relative theme path is relative to the YAML file.
+Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is `auto_wrap.py` and `redirection_first_page.py`. The menu of the theme and the heading ids are stages of the build, not plugins: a project does not list them, and the theme declares whether it has a menu (see [Theme](#theme-what-it-declares-about-the-build)). An explicitly configured relative theme path is relative to the YAML file.
 
 Configuration values are type-checked before generating or cleaning. Unknown keys produce warnings (with spelling suggestions) but remain available to custom plugins. Runtime fields such as `log`, `args`, and `plugin_paths` cannot be supplied in YAML. Prefer `plugin_arg` for custom plugin options.
 
@@ -178,7 +176,7 @@ Optional keys:
 | `plugin_arg` | Arguments passed to specific plugins |
 | `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
 | `chrome` | Chrome executable run by the Node scripts (layout report, PDF export, `--render`), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
-| `title_id` | Give the headings IDs and write their summary (`title_id.json`) with `plugins/title_submenu.py` (default: true) |
+| `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lib/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
 
@@ -235,6 +233,8 @@ static_website_lhtml/
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
     theme.py               # What a theme declares about the build (theme.yaml)
+    menu.py                # The table of contents written into the theme's menu
+    headings.py            # Heading ids and their summary (title_id.json)
     lint.py                # Design lint: values written by hand in the pages
     design_checks.py       # Checks of the layout report by role (title, body, caption, figure)
     report_lock.py         # One build at a time writes the layout report
@@ -254,9 +254,7 @@ static_website_lhtml/
                            #   what may be published, and .structure/ of a project
   plugins/
     auto_wrap.py           # Auto-wrap plain HTML in Jinja2 template
-    menu.py                # Generate JS menu from sitemap
     redirection_first_page.py  # Create index.html redirect
-    title_submenu.py       # Extract heading IDs for navigation
     pre_include.py         # Pre-include content into templates
     code_include.py        # Include code from external repos
     cache_video.py         # Video codec conversion and caching
@@ -676,7 +674,7 @@ def post_process(meta):  # After all conversions
 
 Each plugin module is loaded once per build, so it can keep a state from a hook to the next, but not from a build to the next (`--watch` loads it again). The plugins that run after the rendering (`mid_process`) only get the pages generated: a page that failed is no longer in `built_pages`. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets only its own options (`macros`, `line-breaks`...), and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
 
-With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
+With the heading ids (`title_id: true`), each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 
 Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit, skips directory symlink cycles and never enters the site (reached through a link). The generator never writes through a link into the sources or the theme: a symbolic link to a directory is copied into the site as a directory (a linked library of videos is thus copied into each build), and a link to a file is kept only if it is relative and leads to a file of the copy, else the file is copied. A link to a directory containing it is kept only if it is relative and stays in the sources; the site itself is never copied.
 
@@ -687,8 +685,6 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 | Plugin | Hook | Description |
 |--------|------|-------------|
 | `auto_wrap.py` | pre | Wraps plain HTML files in Jinja2 template structure |
-| `title_submenu.py` | pre | Generates IDs for headings, exports navigation JSON |
-| `menu.py` | post | Injects sitemap structure into the JS menu |
 | `redirection_first_page.py` | post | Creates `index.html` redirect to first page |
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
@@ -986,9 +982,10 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 - Light mode (`-l`) was removed: it copied the whole previous site and was not faster than a full build. Use `--only <page>` to regenerate some pages.
 - Deck parameters of a page are read as `params.<name>` (not as top-level variables).
 - `plugins/auto-wrap.py` was renamed `plugins/auto_wrap.py` (the old name keeps working, with a warning).
+- The menu of the theme and the heading ids are no longer plugins: remove `plugins/menu.py` and `plugins/title_submenu.py` from `plugin:`. The build runs them itself, and the theme declares whether it has a menu (`toc:` in its `theme.yaml`). The extra page settings the menu carried move from `plugin_arg: menu: keys:` to `toc: keys:` of the theme. Both old spellings are refused by name.
 - The layout report is no longer a plugin: remove `plugins/layout_report.py` from `plugin:` and run the build with `--layout`. Its options move from `plugin_arg: layout_report:` to the configuration key `layout:`. Both old spellings are refused by name, with the change to make; `--check-config` reports them without building anything.
 - `generate_pdf.py` no longer has to be last in the plugin list: it asks for the HTML it rendered not to be published instead of deleting the site directory, so a stage that runs after it (the layout analysis, another plugin) still has a site to read.
-- Heading anchors generated by `title_submenu.py` keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
+- Heading anchors keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
 
 ## Tests
 

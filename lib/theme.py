@@ -13,11 +13,18 @@ The manifest:
 
     template: 'theme/template/base.html'   # the page is wrapped in it
     content_block: 'content'               # the Jinja block it fills
+    toc:                                   # the theme has a menu
+      file: 'js/menu.js'                   # it receives the table of contents
+      keys: [duration]                     # extra page settings it carries
     layout:                                # what the measurement reads
       root: 'body'                         # CSS selector of the content
       exclude: 'nav, footer'               # children of the root that are not
       width: 1920                          # size of a page, in CSS pixels
       height: 1080
+
+A theme with no `toc:` has no menu, and the build writes none. That is how
+a theme says so - not a switch in a project's configuration, which has no
+way of knowing.
 
 Everything is optional, and a theme with no manifest builds as before.
 What it declares replaces the defaults of the engine, and the `layout:` key
@@ -35,7 +42,9 @@ import yaml
 from lib.configuration import ConfigError
 
 MANIFEST = 'theme.yaml'
-DEFAULTS = {'template': 'theme/template/base.html', 'content_block': 'content', 'layout': {}}
+DEFAULTS = {'template': 'theme/template/base.html', 'content_block': 'content',
+            'toc': None, 'layout': {}}
+TOC_KEYS = ('file', 'keys')
 # The layout keys a theme may declare: the ones that describe the theme, not
 # the preferences of a project (thresholds, output directory, jobs...).
 LAYOUT_KEYS = ('root', 'exclude', 'width', 'height', 'reserved')
@@ -73,6 +82,17 @@ def validate(given, file):
     for key in ('template', 'content_block'):
         if key in given and (not isinstance(given[key], str) or not given[key].strip()):
             raise ConfigError(f'{file}: {key} must be a non-empty string')
+    toc = given.get('toc')
+    if toc is not None:
+        if not isinstance(toc, dict) or set(toc) - set(TOC_KEYS):
+            raise ConfigError(f"{file}: toc must be a mapping of {', '.join(TOC_KEYS)} "
+                              f"(or absent, for a theme with no menu)")
+        if not isinstance(toc.get('file', ''), str) or not toc.get('file', '').strip():
+            raise ConfigError(f'{file}: toc: file must name the theme file that receives '
+                              f'the table of contents')
+        keys = toc.get('keys', [])
+        if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
+            raise ConfigError(f'{file}: toc: keys must be a list of page setting names')
     layout = given.get('layout', {})
     if not isinstance(layout, dict):
         raise ConfigError(f'{file}: layout must be a mapping')
