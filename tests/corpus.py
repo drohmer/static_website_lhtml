@@ -6,11 +6,21 @@ videos), so this script is run by hand before and after a step.
 
     python3 tests/corpus.py snapshot <site_dir> <reference.json>
     python3 tests/corpus.py compare  <reference.json> <site_dir>
+    python3 tests/corpus.py pages    <reference.json> <site_dir>
+    python3 tests/corpus.py volatile <reference.json> <site_dir>
 
 A fingerprint lists every file of the site with its size and its sha256. The
 text files also get a hash of their content once the names a rebuild changes
 on its own are masked (MASKS), so a difference there is a difference of the
 site, not of the run. `compare` exits with 1 when the two sites differ.
+
+Each page of a PDF is also rendered at low resolution, and the render is
+hashed: a missing image, a moved or overlapping block changes it where the
+text does not. A page showing a video changes from one build to the next
+(the frame captured); `volatile`, given a second build of the same sources,
+marks the pages that differ, and `compare` skips them. `pages` adds the
+renders to a reference written before they existed, from a site that is
+still identical to it.
 """
 
 import hashlib
@@ -19,6 +29,7 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 from importlib import metadata
 from pathlib import Path
 
@@ -49,6 +60,20 @@ def pdf_key(path):
         return None
     pages = re.search(r'^Pages:\s+(\d+)', info, re.M)
     return f'pages={pages.group(1) if pages else "?"} text={sha256(text)}'
+
+
+PAGE_DPI = 30
+
+
+def pdf_pages(path):
+    """Hash of each page rendered in grey at PAGE_DPI, or None without poppler."""
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            subprocess.run(['pdftoppm', '-r', str(PAGE_DPI), '-gray', str(path), f'{tmp}/p'],
+                           capture_output=True, check=True)
+        except (OSError, subprocess.CalledProcessError):
+            return None
+        return [sha256(p.read_bytes()) for p in sorted(Path(tmp).iterdir())]
 
 
 def sha256(data):
@@ -82,6 +107,9 @@ def fingerprint(site):
             if pdf:
                 entry['masked'] = pdf
                 entry['masks'] = ['render: pages and text']
+            pages = pdf_pages(path)
+            if pages is not None:
+                entry['pages'] = pages
         elif RENDER_IMAGE.search(rel):
             entry['masked'] = 'render'
             entry['masks'] = ['render: presence']
@@ -110,18 +138,40 @@ def key(entry):
 def snapshot(site, out):
     site = Path(site).resolve()
     reference = {'site': str(site), 'environment': environment(), 'files': fingerprint(site)}
-    Path(out).write_text(json.dumps(reference, indent=1, sort_keys=True) + '\n', encoding='utf-8')
+    save(reference, out)
     total = sum(e['size'] for e in reference['files'].values())
     print(f'{len(reference["files"])} files, {total / 1e6:.1f} MB -> {out}')
 
 
+def differing_pages(before, after):
+    """1-based numbers of the pages whose render differs, volatile ones excepted;
+    [] when either side has no render or the page counts differ (key says so)."""
+    a, b = before.get('pages'), after.get('pages')
+    if a is None or b is None or len(a) != len(b):
+        return []
+    volatile = set(before.get('volatile', []))
+    return [k + 1 for k, (x, y) in enumerate(zip(a, b)) if x != y and k + 1 not in volatile]
+
+
+def load(reference_path):
+    return json.loads(Path(reference_path).read_text(encoding='utf-8'))
+
+
+def save(reference, reference_path):
+    Path(reference_path).write_text(json.dumps(reference, indent=1, sort_keys=True) + '\n', encoding='utf-8')
+
+
 def compare(reference_path, site):
-    reference = json.loads(Path(reference_path).read_text(encoding='utf-8'))
+    reference = load(reference_path)
     before, after = reference['files'], fingerprint(Path(site).resolve())
     removed = sorted(set(before) - set(after))
     added = sorted(set(after) - set(before))
-    changed = sorted(p for p in set(before) & set(after) if key(before[p]) != key(after[p]))
-    for title, paths in (('missing', removed), ('new', added), ('changed', changed)):
+    common = set(before) & set(after)
+    changed = sorted(p for p in common if key(before[p]) != key(after[p]))
+    rendered = sorted((p, differing_pages(before[p], after[p])) for p in common if p not in changed)
+    rendered = [f'{p}  (pages {", ".join(map(str, pages))})' for p, pages in rendered if pages]
+    for title, paths in (('missing', removed), ('new', added), ('changed', changed),
+                         ('rendered differently', rendered)):
         if paths:
             print(f'{title}: {len(paths)}')
             for p in paths[:20]:
@@ -134,9 +184,46 @@ def compare(reference_path, site):
     env_now = environment()
     if env_now != reference['environment']:
         print(f'environment differs: reference {reference["environment"]}, now {env_now}')
-    if removed or added or changed:
+    if removed or added or changed or rendered:
         return 1
-    print(f'identical: {len(after)} files')
+    volatile = sum(len(e.get('volatile', [])) for e in before.values())
+    print(f'identical: {len(after)} files' + (f' ({volatile} volatile pages skipped)' if volatile else ''))
+    return 0
+
+
+def add_pages(reference_path, site):
+    """Adds the renders to a reference, from a site still identical to it."""
+    reference = load(reference_path)
+    site = Path(site).resolve()
+    added = 0
+    for rel, entry in reference['files'].items():
+        if rel.endswith('.pdf') and 'pages' not in entry:
+            path = site / rel
+            if not path.is_file() or pdf_key(path) != entry.get('masked'):
+                print(f'{rel}: missing or different, no render taken')
+                return 1
+            entry['pages'] = pdf_pages(path)
+            added += 1
+    save(reference, reference_path)
+    print(f'renders of {added} PDFs -> {reference_path}')
+    return 0
+
+
+def mark_volatile(reference_path, site):
+    """Marks the pages a second build of the same sources renders differently."""
+    reference = load(reference_path)
+    site = Path(site).resolve()
+    marked = 0
+    for rel, entry in reference['files'].items():
+        if 'pages' not in entry or not (site / rel).is_file():
+            continue
+        pages = differing_pages(entry, {'pages': pdf_pages(site / rel)})
+        if pages:
+            entry['volatile'] = sorted(set(entry.get('volatile', [])) | set(pages))
+            marked += len(pages)
+    save(reference, reference_path)
+    total = sum(len(e.get('volatile', [])) for e in reference['files'].values())
+    print(f'{marked} pages newly volatile, {total} in all -> {reference_path}')
     return 0
 
 
@@ -144,8 +231,9 @@ def main(argv):
     if len(argv) == 4 and argv[1] == 'snapshot':
         snapshot(argv[2], argv[3])
         return 0
-    if len(argv) == 4 and argv[1] == 'compare':
-        return compare(argv[2], argv[3])
+    commands = {'compare': compare, 'pages': add_pages, 'volatile': mark_volatile}
+    if len(argv) == 4 and argv[1] in commands:
+        return commands[argv[1]](argv[2], argv[3])
     print(__doc__)
     return 2
 

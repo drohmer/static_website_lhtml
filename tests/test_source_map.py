@@ -41,9 +41,9 @@ code::[-]
 demo::assets/d.html
 <div
   class="raw">raw</div>
-$$
+\\[
 a < b
-$$
+\\]
 '''
 
 
@@ -97,8 +97,8 @@ class SourceMapTests(unittest.TestCase):
         self.assertEqual(lines[2], 'text' + source_map.marker('s:3'))
 
     def test_empty_list_item_and_comment(self):
-        page = '* a\n* \n* b ::# note\n'
-        self.assertEqual(source_map.add_markers(page, 's', TAGS).split('\n')[1:3], ['* ', '* b ::# note'])
+        page = '* a\n* \n{# note #}\n'
+        self.assertEqual(source_map.add_markers(page, 's', TAGS).split('\n')[1:3], ['* ', '{# note #}'])
         self.assertEqual(source_map.strip(run(source_map.add_markers(page, 's', TAGS))), run(page))
 
     def test_blocks_inside_the_wrapper_of_the_theme(self):

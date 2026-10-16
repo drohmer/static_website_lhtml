@@ -1,9 +1,9 @@
 """Reading of the page sources as LHTML reads them.
 
-LHTML leaves some zones of a page as they are: verbatim and code blocks
+LHTML leaves some zones of a page as they are: code blocks
 (`code::[python]` ... `code::[-]`), Jinja tags, HTML comments, <script> and
-<style>, inline code, the URLs of img::/video::/link::, math and HTML tags;
-it removes the LHTML comments (`::# ...`). The scanners of the generator (the
+<style>, inline code, the URLs of img::/video::/link::, math and HTML tags.
+The scanners of the generator (the
 lint, the source map, the credits and the placeholders) find these zones with
 the regular expressions of LHTML itself, so that they agree with it on what
 is code and what is text.
@@ -17,20 +17,19 @@ import re
 from lhtml import patterns
 
 # kinds of zones, in the order of the groups of patterns.PROTECTED_BLOCKS
-KINDS = ('verbatim', 'code', 'jinja', 'comment', 'raw', 'icode', 'urltag', 'math', 'tag')
-LHTML_COMMENT = 'lhtml_comment'
+KINDS = ('code', 'jinja', 'comment', 'raw', 'icode', 'urltag', 'math', 'tag')
 # zones whose text is not read as LHTML (what the lint and the credits skip)
-NOT_TEXT = frozenset(('verbatim', 'code', 'comment', 'raw', 'icode', 'math', LHTML_COMMENT))
+NOT_TEXT = frozenset(('code', 'comment', 'raw', 'icode', 'math'))
 
 URL_TAGS = frozenset(patterns.URL_TAGS)
 # the value of a tag: a URL, a file (img::a.png(.wide): the class group is not part of it)
 VALUE = patterns.URL_TOKEN
 LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
 # Lines kept before {% extends %} by auto_wrap: blank lines, Jinja comments,
-# {% set name = value %}, {% import %} / {% from ... import %}, LHTML comments;
+# {% set name = value %}, {% import %} / {% from ... import %};
 # one tag per line (`{% set n = 2 %}{% if n %}` stays in the content)
 LEADING_LINE = re.compile(r'[ \t]*(?:\{%-?\s*(?:set\s+[^%\n]*=|import\s|from\s)(?:[^%\n]|%(?!\}))*%\}'
-                          r'|\{#(?:[^#\n]|#(?!\}))*#\}|::#[^\n]*)?[ \t]*(?:\n|\Z)')
+                          r'|\{#(?:[^#\n]|#(?!\}))*#\})?[ \t]*(?:\n|\Z)')
 
 
 @dataclass(frozen=True)
@@ -45,11 +44,10 @@ def zones(text):
     found = []
     for m in patterns.PROTECTED_BLOCKS.finditer(text):
         kind = next(k for k in KINDS if m.group(k) is not None)
+        if kind == 'jinja' and m.group(0).startswith('{#'):
+            kind = 'comment'            # a Jinja comment writes nothing, as an HTML one
         found.append(Zone(m.start(), m.end(), kind))
-    # LHTML comments: removed by LHTML after the zones above were protected
-    free = _blank(text, found, '\x01')
-    found += [Zone(m.start(), m.end(), LHTML_COMMENT) for m in patterns.COMMENT.finditer(free)]
-    return sorted(found, key=lambda z: z.start)
+    return found
 
 
 def _blank(text, selected, fill=' '):

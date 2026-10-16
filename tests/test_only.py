@@ -40,7 +40,7 @@ class OnlyTests(DeckProjectsTests):
 
     def test_only_keeps_the_previous_version_of_a_failed_page(self):
         self.write('talk/src/01_a/index.html.j2',
-                   HEAD + "= A\nverbatim::[]\n* not a list\n= not a title\nverbatim::[-]\n{% endblock %}\n")
+                   HEAD + "= A\ncode::[text]\n* not a list\n= not a title\ncode::[-]\n{% endblock %}\n")
         self.build(self.DECK)
         before = (self.site / '01_a/index.html').read_text()
         self.assertIn('* not a list', before)
@@ -77,7 +77,7 @@ class OnlyTests(DeckProjectsTests):
         config = yaml.safe_load(self.config.read_text())
         config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
-        self.write('talk/src/01_a/index.html.j2', "verbatim::[]\n= Not a title\nverbatim::[-]\n" + HEAD
+        self.write('talk/src/01_a/index.html.j2', "{# = Not a title #}\n" + HEAD
                    + "= A\ncode::[python]\n== x\ncode::[-]\n{% endblock %}\n")
         structure = self.build({'slides': ['01_a']})
         self.assertEqual(structure[0]['title'], 'A')

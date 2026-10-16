@@ -35,7 +35,7 @@ class CreditsTests(unittest.TestCase):
         self.assertEqual(credits.files_used(text), ['assets/a.jpg', 'assets/v.mp4', 'c.png'])
         # a class group, a macro rendering an image; not in code nor in a comment
         text = ('img::e.png(.wide)\nvideoplay::f.mp4(.x)\nfigure::g.jpg\ncode::[md]\nimg::h.png\ncode::[-]\n'
-                '::# img::i.png\n')
+                '{# img::i.png #}\n')
         self.assertEqual(credits.files_used(text, {'figure': {'tag': 'img', 'url': 'src'}}),
                          ['e.png', 'f.mp4', 'g.jpg'])
 

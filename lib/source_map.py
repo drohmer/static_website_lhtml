@@ -85,16 +85,15 @@ def add_markers(text, source, tags=source_scan.value_tags(), marker_for=marker, 
     skipped = source_scan.multiline_lines(text, found) | _value_block_lines(text, found)
     offsets = source_scan.line_offsets(text)
     protected_starts = {text.count('\n', 0, z.start) for z in found
-                        if z.kind in ('code', 'verbatim', 'math', 'raw', 'tag')
+                        if z.kind in ('code', 'math', 'raw', 'tag')
                         and '\n' in text[z.start:z.end]} if mark_protected else set()
-    commented = {text.count('\n', 0, z.start) for z in found if z.kind == source_scan.LHTML_COMMENT}
     out = []
     for index, line in enumerate(text.split('\n')):
         number = index + 1
         if index in protected_starts:
             out.append(marker_for(number) + line)
             continue
-        if (index in skipped or index in commented or not line.strip() or CLOSER.match(line)
+        if (index in skipped or not line.strip() or CLOSER.match(line)
                 or JINJA_LINE.match(line) or EMPTY_ITEM.match(line)):
             out.append(line)
             continue

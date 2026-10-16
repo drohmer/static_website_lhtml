@@ -20,7 +20,7 @@ import unicodedata
 import yaml
 
 from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy, read_text
-from lib import source_scan
+from lib import front_matter, source_scan
 from lib.generator_tool import STRUCTURE_KEYS
 
 TEMPLATE_SUFFIX = '.j2'         # the template of a page index.html is index.html.j2
@@ -116,15 +116,10 @@ class Page:
             ---
             = Title
 
-        LHTML already reads this form and removes it (`process_yaml`); what
-        was missing was the build reading it too, so that a page can say
-        what it is without a Jinja statement ({% set layout = 'stack' %})
-        or a config.yaml sitting next to it for one page out of five."""
-        from lhtml import process_yaml
-        try:
-            return process_yaml(self.text)[1] or {}
-        except Exception:               # malformed YAML: not a front matter
-            return {}
+        A page says what it is without a Jinja statement
+        ({% set layout = 'stack' %}) or a config.yaml sitting next to it for
+        one page out of five (lib/front_matter.py)."""
+        return front_matter.split(self.text)[1]
 
     @cached_property
     def scan(self):

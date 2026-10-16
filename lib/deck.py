@@ -392,7 +392,7 @@ def named_pages(pages, pointers, sources=None):
 def scaffold(entries, source_directory):
     """Create the source of planned slides (DeckResult.missing: entries with a
     title that match no page): <source>/<path>/index.html.j2 with the title and
-    the other metadata as LHTML comments. A directory holding pages, at any
+    the other metadata as Jinja comments. A directory holding pages, at any
     depth, is never modified. Returns the paths."""
     created = []
     for e in entries:
@@ -412,7 +412,7 @@ def scaffold(entries, source_directory):
         lines = [f"= {_raw(title[0])}", '']
         for key, value in e.meta.items():
             if key != 'title':
-                lines += [f'::# {_raw(line)}' for line in f'{key}: {value}'.splitlines()]
+                lines += [f'{{# {line} #}}' for line in f'{key}: {value}'.replace('#}', '# }').splitlines()]
         page.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
         created.append(str(page))
     return created

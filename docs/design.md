@@ -891,10 +891,11 @@ list loses the entries that became core stages, a target replaces the PDF
 plugin, and a page setting that the theme used to receive by accident has to
 be declared. No source of a slide changes, no theme file changes unless it
 is a custom theme, which then gains a manifest. `--check-config` already
-validates and prints the resolved configuration without building: it becomes
-the migration tool, and it must list every change at once rather than fail on
-the first. It is not enough on its own: a project built by a script has no
-configuration to read, which is why the migration is a step (N3).
+validates and prints the resolved configuration without building, and it
+must list every change at once rather than fail on the first. There is no
+migration tool: this is a major version, and a project migrates by hand,
+guided by those errors. The corpus measured what that costs - its five
+copies moved to LHTML 3 with a diff of 266 lines (N1).
 
 This is less brutal than it reads, because a project embeds its own copy of
 the generator (`<project>/static_website_lhtml/`, built by its
@@ -943,7 +944,7 @@ matter, and the layout analysis reports findings of one shape recorded in
 `layout.json` (5.1). What remains is **Next** below, reordered by the
 measure of four real projects (the corpus, just before it): the corpus under
 test first, then what LHTML can delete, a project made of decks and
-targets, the migration tool, and the document tree last.
+targets, and the document tree last.
 
 The checks that matter before and after any step: `python3 -m pytest -q`
 (about two minutes), `LHTML_BROWSER_TEST=1 python3 -m pytest -q
@@ -1198,11 +1199,10 @@ What it changes for the steps below:
   have none, nor any `{% set layout %}`. What they write is `div::` (3494 in
   the corpus), `img::` (1486), `code::`: a layout vocabulary that replaces
   nested `div::` is the larger lever.
-- **Migration is a tool, not a paragraph.** Section 8 counted on a project
-  migrating when its copy is synced; five copies of three vintages will not
-  be synced by hand. A major version
-  needs a command that rewrites a project's configuration, deletes its
-  wrapper, and says what it could not translate.
+- **Migration is by hand.** Five copies of three vintages, two of them
+  built by scripts. A tool that rewrites them was considered and dropped
+  (N3): this is a major version, and the errors of section 8 say what to
+  change.
 
 The LHTML of the GitHub repository (`2.5.1`, 321 tests) is identical to the
 copy under `codes/lhtml/lhtml`, which is not a git checkout: N1 and N5 start
@@ -1212,8 +1212,11 @@ from a clone (`codes/lhtml/repo`).
 
 The order of a review of October 2026 put the interfaces of LHTML first.
 The corpus above reorders it, on the rule of this section - what deletes a
-special case before what adds a concept - and on one it adds: **nothing is
-changed that the corpus cannot check.** The steps are N0..N6; the old
+special case before what adds a concept - and on one it adds: **the
+corpus checks the existing uses, targeted tests define the new
+behaviours.** What a project of the corpus does must give the same site
+after a step; what none of them does yet is defined by a test written
+with the change. The steps are N0..N6; the old
 numbers of the review are given where they help.
 
 LHTML is a separate repository, `github.com/drohmer/lhtml` (the package
@@ -1228,7 +1231,7 @@ paths, and a fingerprint of the HTML once the names a rebuild changes on
 its own are masked (the method of step 3). Two of the five are not built by
 a configuration but by a script; the reference is what the script
 produces, PDF included. This is the guarantee every later step is checked
-against: N2 and N3 must give the same sites, N5 the same HTML. It costs no
+against: N2 must give the same sites, N5 the same HTML. It costs no
 design, and without it "same site" is a claim about one example of three
 pages.
 
@@ -1302,7 +1305,7 @@ gives `lib/video_cache.media(page_directory)` to LHTML, owns
 the 12 browser tests; the example site byte-identical to the previous
 commit, its transcoded variants included.
 
-The corpus cannot be built by this generator before N3, so it was checked
+The corpus cannot be built by this generator before it is migrated (N2), so it was checked
 one level down: every call of `lhtml.run` of the five reference builds is
 recorded (914 calls, `record_calls.sh`) and replayed with LHTML 3 and a
 `media` that does what LHTML 2 did on its own (`replay_calls.py`). 910 give
@@ -1312,6 +1315,134 @@ schematics, which are under the sources; the two C++ headers are outside
 them, in the repository the documentation clones, which is the job of
 `code_include` - N4 decides whether that stays an extension or becomes a
 Jinja function of the core.
+
+Then the copies of the corpus were migrated by hand, as a project will be:
+each vendored generator gives LHTML a `video_sources(page directory)`, the
+talk's generator loses its patch of `include::`, the documentation includes
+its schematics with Jinja and its headers with `code_include` (which learned
+to insert a whole file). 266 lines of diff (`patches/lhtml3.diff` of the
+corpus). Built with LHTML 3, the five sites are identical to their
+references, PDFs included; built with LHTML 2.5.1, the migrated copies still
+are.
+
+The checks were tightened before N2, on a review's findings. The replay no
+longer reads a build directory: LHTML 3's `media` answers with the sources
+LHTML 2 wrote for each video, read back from the HTML recorded, so the test
+of the parser stands on its own; a call that raised and now converts fails
+it. `check_lhtml3.sh` fails when a build fails. A PDF is also compared page
+by page on a low-resolution render, which sees a missing image or a moved
+block where its text does not; the pages that show a video change with the
+frame captured, and a second build of the same sources marks them volatile.
+
+**N1b. LHTML 3 loses what nobody writes**, before 3.0 is released: one
+major version, not two. A survey of the 1333 sources of the corpus counted
+each construct; what has no use goes, and the replay of the 914 calls says
+that no HTML changed:
+
+- mathematics: `\(..\)` (4297 uses) and `\[..\]` (6) stay; `$$..$$`,
+  `$..$` and the one-character `$x$` rule (0) go - the most ambiguous rule
+  of the lexer, before N5;
+- closing a tag: the bare `::` stays; `::name[-]` and `::[-]` (0) go, with
+  the tracking of the names of open tags that only they need (`csc_43043`
+  writes `span::[-]` twice, read as a style `-`: a latent bug of the
+  source, which the removal turns into an error);
+- `::#` comments, `verbatim::[]`, runs of `:::` (0): Jinja comments and
+  `code::` cover them;
+- the YAML front matter of a document (0): the generator strips it before
+  LHTML anyway; LHTML receives its options from its caller only, as N1 made
+  it receive its files;
+- named tags inside inline code (3 `link::`, all in cgp): inline code
+  becomes literal;
+- the unused fields of a macro (`style`, `variant: true` - a variant is a
+  list -, the rendering through `img`/`video`/`link`) and the exports that no caller uses
+  (`insert_in_text`, the `process_*` functions, `analyse_tag`,
+  `read_yaml`, dead constants of `patterns.py`): the public API is `run`.
+
+Kept although unused: `#id`, chained classes, `{attr}` outside a video - a
+regular grammar is simpler than one cut to the uses. So are `video::` and
+`videoplay::`, although the 48 `video::` of the corpus all write
+`{autoplay muted loop controls}`, `videoplay::` and its `{controls}`:
+`video::` is the bare element (a video one starts oneself), `videoplay::` a
+preset, and both go through the `media` resolver, which a video written in
+HTML or by a macro would lose. Decided: both stay, and `videoplay::`
+gains `playsinline` (on an iPhone, an autoplaying video otherwise opens
+full screen).
+
+On the side of the generator, the same survey finds
+`include_head` (declared and documented, read nowhere), `title`/`css`/`js`/
+`line-breaks` in `LHTML_OPTIONS` (no effect on a page the theme wraps), the
+configuration keys `level_print`, `use_tidy`, `title_id`,
+`public_page_keys` (0 uses; `chrome` moves to the PDF target), the `layout`
+page setting next to `{% set layout %}` (0 against 78), and the aliases of
+old names (`plugin_post`, `configure_default.yaml`, `theme_templates`):
+one error per removed form, no alias. And three bugs: `expandable-toc`
+(cgp) is missing from `DISPLAY_KEYS`, csc's script passes a `--light` that
+does not exist, and the refusal of the old plugins misses `auto-wrap.py`.
+
+**W. Windows** (before N2, which rewrites the output paths). Measured on a
+Windows 11 machine, Python 3.14: LHTML passes its 320 tests once its CLI
+writes `\n` (`newline=''`) and reads its grammar as UTF-8. The generator
+fails 50 of 292, for five causes:
+
+- **paths as identifiers**: `os.path.join`/`relpath` (62 calls) build the
+  names of pages, deck pointers and URLs with `\`; a deck says
+  `ext:c\02_v` where it wrote `ext:c/02_v`. A page, a pointer and a URL are
+  POSIX paths (`PurePosixPath`, `as_posix()`); `os.path` is for the disk
+  only. Most of the failures;
+- **encodings**: four reads or writes without `encoding='utf-8'`, and an
+  output to a console in cp1252/cp437 that cannot print every character;
+- **the build lock**: `fcntl` does not exist; `msvcrt.locking` raises
+  `PermissionError` where the code catches `BlockingIOError`;
+- **replacing the site**: `rename` onto an existing directory, or a
+  directory a process still holds open, fails where POSIX succeeds;
+- **symbolic links** need a privilege on Windows: the tests that create one
+  skip without it, and the build copies when it cannot link.
+
+Plus the details of the platform: the first `python` of the `PATH` there is
+Inkscape's (`py -3.14` is the reliable launcher), and Chrome is found by its
+install path. Done when both suites pass there and a project of the corpus
+builds the same site on both systems - a script that runs the suites over
+SSH keeps it so.
+
+**C. What the two commands print.** Today the generator prints a banner,
+six stages with `[OK] 0.0s` whatever they did, paths cut at 80 columns
+(the console of `rich` in a pipe), and no conclusion: neither the number
+of pages, of warnings and errors, nor where the site is. LHTML locates a
+problem by a character offset (`Position 5`), and as a library it reports
+through Python's `warnings`, which name its own line
+(`pipeline.py:218`), not the author's. The rules:
+
+- a problem is one line `file:line:col: level: message`, the line of the
+  **source**, not of the HTML Jinja produced - the markers of the source
+  map already exist and become always on for the messages;
+- the build ends with one line: pages built, warnings, errors, time, and
+  the path of the site; the stages print only with `-v`;
+- a path is never cut; colour only on a terminal;
+- the exit code says whether there was an error; `--strict` makes a
+  warning one;
+- LHTML returns its diagnostics with their positions (line, column), and
+  its CLI prints them in that same format; `--wrapAuto`/`inputFiles`
+  become `--wrap`/`input`.
+
+**M. A page in Markdown.** Possible, and cheaper than it sounds, if the
+generator stops reading LHTML where it only needs the HTML: the headings
+(`lib/headings.py` reads the `=` lines of the source), the assets of a page
+(`source_scan` reads `img::`), the source map and the lint. Once those read
+the HTML a page produces, its markup is a converter the author names by
+the extension of the file - `index.md.j2` through Markdown, `index.html.j2`
+through LHTML - and nothing else: the generator never guesses it from the
+content. Jinja runs first either way, so the themes, the macros of Jinja (`{{ box() }}`), the
+decks and the targets do not change. Two traps: CommonMark reads `\(` as
+an escaped `(` and `_` as emphasis, so the mathematics needs a plugin that
+protects it (`markdown-it-py` with `dollarmath`/`texmath`); and the macros
+of the design (`gap::`) are LHTML's - a Markdown page uses those of Jinja.
+It also settles the boundary of 4.4: what the generator asks of a markup
+(text in, HTML and diagnostics out) is a contract with two implementations,
+which N5 and N6 must keep.
+
+The order: N1b with LHTML 3.0, W before N2, C with N2 (which rewrites the
+command anyway), M after N2 and before N4 - the contract of a markup and
+that of an extension are written together.
 
 **N2. A project is decks, each built to targets** (absorbs the old N2,
 "PDF as a target"). The two slide courses say what the generator lacks:
@@ -1338,16 +1469,11 @@ contract: the explicit list of section 3.2 and the `if staging.is_dir()` of
 `build_output.py`). Done when the scripts of the two courses are deleted and
 N0 gives the same files under the new paths.
 
-**N3. The migration tool.** Section 8 counted on each project migrating by
-hand when its copy is synced; four copies of three vintages, one of them
-with its own fork of LHTML (`csc_43043`, `lib/lhtml/`), will not. A command
-reads a project as it is - `configure.yaml`, or the script that writes one
-- and writes the configuration of N2, lists every change at once, and says
-what it could not translate rather than guess. Before it, the fork is
-diffed against LHTML 2.5: what it changes is either upstreamed or a macro
-of that project. It comes after N2 because the shape it writes is N2's, and
-before N5 because the parser must be compared on the corpus built by the
-current generator, not by four old ones.
+**N3. The migration tool** - *dropped* (2026-10-16). LHTML 3 and the
+generator after N2 are major versions; a project migrates by hand, with
+the errors of section 8. The corpus copies are migrated that way at N2,
+which also gives N5 a corpus built by the current generator rather than by
+four old ones.
 
 **N4. The extension transformation contract** (the old N3, section 4.2),
 once the engine owns the writes everywhere else. Two extensions remain to

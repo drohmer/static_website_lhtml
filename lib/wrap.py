@@ -9,6 +9,7 @@ rule about the order of two plugins (tests/test_plugin_order.py).
 import json
 import re
 
+from lib import front_matter
 from lib.source_scan import leading_settings
 from lib.structure import built_pages, template_path
 from lib.theme import of as theme_manifest
@@ -44,11 +45,7 @@ DOCUMENT = re.compile(r'\A\s*(?:<!doctype\b|<html\b)', re.IGNORECASE)
 
 def strip_front_matter(text):
     """The source without the YAML settings at its top, if it has any."""
-    from lhtml import process_yaml
-    try:
-        return process_yaml(text)[0]
-    except Exception:               # malformed YAML: not a front matter
-        return text
+    return front_matter.split(text)[0]
 
 
 def wrapped(text):

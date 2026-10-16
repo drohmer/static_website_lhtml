@@ -115,7 +115,7 @@ class DeckTests(unittest.TestCase):
             entries = deck.load_deck([{'path': 'a/09_new', 'title': 'New', 'duration': 1}]).entries
             created = deck.scaffold(entries, root)
             self.assertEqual(len(created), 1)
-            self.assertEqual(Path(created[0]).read_text(), '= New\n\n::# duration: 1\n')
+            self.assertEqual(Path(created[0]).read_text(), '= New\n\n{# duration: 1 #}\n')
             Path(created[0]).write_text('= Edited\n')
             self.assertEqual(deck.scaffold(entries, root), [])
             self.assertEqual(Path(created[0]).read_text(), '= Edited\n')
@@ -387,7 +387,7 @@ class DeckEdgeCaseTests(unittest.TestCase):
                                       {'path': 'a/extra.html', 'title': 'Extra'}]).entries
             created = deck.scaffold(entries, root)
             self.assertEqual(Path(created[0]).read_text(),
-                             '= {% raw %}x {{ y }}{% endraw %}\n\n::# notes: l1\n::# l2 **b**\n')
+                             '= {% raw %}x {{ y }}{% endraw %}\n\n{# notes: l1 #}\n{# l2 **b** #}\n')
             self.assertEqual(created[1], str(Path(root) / 'a/extra.html.j2'))
 
     def test_source_containing_the_site(self):

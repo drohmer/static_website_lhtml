@@ -24,6 +24,7 @@ from lib import design
 from lib import feedback
 from lib import figures
 from lib import filesystem
+from lib import front_matter
 from lib import generator_tool
 from lib import lint
 from lib import dependencies
@@ -500,7 +501,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             continue
         log.debug(f'- {html_path}')
         with open(html_path, 'r', encoding='utf-8') as fid:
-            input_html = fid.read()
+            input_html = front_matter.split(fid.read())[0]   # LHTML 3 reads none
 
         options = {k: meta[k] for k in LHTML_OPTIONS if k in meta}
         options['media'] = video_cache.media(meta['site_directory'] + page.site_directory)
