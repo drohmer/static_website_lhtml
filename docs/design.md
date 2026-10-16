@@ -299,6 +299,13 @@ in the same run - which is what makes several targets possible at all. The
 key count goes from about 20 to a handful; the write right goes from
 undeclared to absent, and that is the actual improvement.
 
+**What this contract is not.** An interface over strings is a discipline,
+not a sandbox: an extension is arbitrary Python and reaches the file system
+whenever it wants to. What the contract buys is that an extension no longer
+*has* to, that the ones shipped here can be read and tested as functions,
+and that a write outside it is a deviation someone can point at - not that
+it is impossible.
+
 ### 4.3 Targets, analyses and presets - not "exports after the pipeline"
 
 Calling these exports was wrong, and checkably so. `generate_pdf` has a
@@ -348,13 +355,23 @@ site - which then requires the core to guarantee that a finished site exists.
 ### 4.4 The LHTML boundary, and the document tree
 
 The same argument as 4.2, applied to the markup engine. `lhtml.run(text,
-meta)` promises text in, text out. It reads the file system in three places:
-the includes (`read_source`, recursive), the video variants (`os.path.isdir`
-on `assets/cache_video_codecs/`, and only when the directory is literally
-named `assets`), and through them the project's own conventions. The
-generator passes `current_directory = site_directory + page.site_directory`,
-so the conversion of the markup depends on the state of the half-written
-output directory at the moment of the call.
+meta)` promises text in, text out. It reads the file system in **four**
+places:
+
+- the includes (`read_source`, recursive);
+- the video variants (`os.path.isdir` on `assets/cache_video_codecs/`, and
+  only when the directory is literally named `assets`);
+- the poster of a video (`<name>-poster.jpg`, `export_html.py:131`);
+- the **macro files** the pipeline accepts (`pipeline.py:196` resolves them
+  against `current_directory`, `macros.py:238` opens them).
+
+An earlier draft of this section counted three and named two callbacks as
+the fix; a review counted four. The only read that is not a boundary
+problem is `tag_parser.py:30`, which loads LHTML's own grammar.
+
+The generator passes `current_directory = site_directory +
+page.site_directory`, so the conversion of the markup depends on the state
+of the half-written output directory at the moment of the call.
 
 What that costs is not style. The generator cannot see what LHTML read, so
 it **replaces two module functions at run time** (`lib/tracking.py`:
@@ -367,21 +384,56 @@ videos shipped under the directory name LHTML used before, never read,
 nothing said (5.3).
 
 The boundary: **LHTML does not touch the disk.** Not by purism - it has a
-CLI and must stay usable alone - but through callbacks the caller provides,
-the CLI passing the defaults: `read(filename) -> text` for the includes (the
-hook the patch is asking for, turned into an argument) and
-`media_sources(src) -> [(url, mime)]` for the videos. The `assets`
-convention and the cache directory then live in the theme manifest (4.0).
+CLI and must stay usable alone - but through interfaces the caller
+provides, the CLI passing the defaults.
+
+A source loader, and `read(filename) -> text` is too poor for it. It must
+give the content, the **canonical identity** of the source (the dependency
+store and the provenance of a block both need it: step 6b needed exactly
+that, so that a marker carries the file it is written in), the source to
+resolve a relative path from, and explicit errors with cycles named first.
+A media resolver, covering the poster as well as the variants. And the
+macro files, which neither of those two covers.
+
+The conventions of the cache and of transcoding belong to the **asset
+handling of the generator**, not to the theme manifest: a theme may change
+how a video is presented, but changing the theme must not change the
+identity of the cache. An earlier draft of this section said the opposite,
+while step 8c had already put them on the right side -
+`cache_video_directory:` is a project key and `ASSET_DIRECTORY` lives in
+`lib/video_cache.py`.
+
+`wrap-auto` stays, for LHTML used alone; the generator must turn it off
+explicitly rather than merely never setting it (small debts).
 
 **And the deeper form of it: a document tree.** `lib/source_scan.py` says
 in its own docstring that the lint, the source map, the credits and the
 placeholders find LHTML's zones *with LHTML's own regular expressions*, "so
 that they agree with it on what is code and what is text". Six consumers of
 the generator need LHTML's parse; none can have it, so they rebuild it.
-That is `source_scan.py` (159 lines) and `source_map.py` (327), which
+That is `source_scan.py` (159 lines) and `source_map.py` (328), which
 injects invisible characters into the text, lets them travel through Jinja
 and LHTML, and reads them back out of the HTML - and every rule about where
 a marker may sit on a line so that LHTML still reads that line the same way.
+
+**But the tree deletes much less of that than an earlier draft claimed, and
+the reason matters.** The lint, the credits, the headings and the wrapping
+read the **source**, before Jinja; a tree from `lhtml.parse` is of the text
+**after** Jinja. They are two different documents, so `source_scan.py`
+survives. And the tree does not recover file and line on its own:
+provenance has to be transmitted *through* Jinja - macros, inclusions,
+repetitions - which is exactly what the markers do. Measured on the file:
+
+```
+source_map.py  328 lines
+   ~96  the source side (markers, before Jinja)   -> survive
+  ~164  the rendered side (HTML tree, after LHTML) -> deletable
+source_scan.py 159 lines                           -> survive
+```
+
+So the claim is **~164 lines**, not 486, and only once provenance travels.
+What the tree buys is that nothing re-derives the blocks from the produced
+HTML - not that the two readings of a page become one.
 
 There is nothing to export today: `pipeline.run` is seven text-to-text
 passes over one string (`process_yaml`, `process_include_recursive`,
@@ -389,7 +441,11 @@ passes over one string (`process_yaml`, `process_include_recursive`,
 `process_tag`), with a `ProtectionStores` of placeholders so the passes can
 hide text from each other. The placeholder machinery is the symptom. So a
 structured output is not a format to add; it is the core model to replace,
-and it should be said plainly before anyone calls it cheap.
+and it should be said plainly before anyone calls it cheap. The shape:
+`document = lhtml.parse(source, ...)` and `html = lhtml.render(document,
+...)`, with `lhtml.run(...)` kept as the façade. Raw HTML must stay
+faithful: LHTML nodes, and **opaque fragments** for HTML, code and
+mathematics, with significant whitespace preserved.
 
 **What a probe measured, before committing to it.** The risk was located in
 the ~159 lines that decide which `::` is a tag (`process_tag`,
@@ -418,8 +474,13 @@ rejections and 5 extent rewrites are 16 sites in four families:
   only because protection is a text pass leaving sentinels in the stream.
   A tree never descends into a code node, and the family disappears.
 
-So the risk is bounded: 16 sites, 2 deleted by the tree, 3 where a parser is
-better than the status quo, 11 straightforward ports under existing tests.
+So **one axis of the risk is measured**: 16 sites, 2 deleted by the tree, 3
+where a parser is better than the status quo, 11 straightforward ports under
+existing tests. It is not the whole risk, and the first draft of this
+section said "bounded", which was too strong: nesting, the protected zones,
+the macros, the closing rules and the line breaks interact, and the probe
+touched none of that. A prototype compared against the current engine on
+the tests and the corpora is what would bound it (N4).
 And the test suite is the specification: 196 of its 246 tests call the public
 API and **none** call an internal function, so a change of model that
 preserves the HTML leaves them green.
@@ -771,7 +832,7 @@ themes/         each with its manifest (rendered files, page settings, root, res
 
 `lib/layout/` exists, with all of its files, and `lib/theme.py` with the
 manifest of section 4.0 (step 8a). `lib/targets/` and `lib/analyses/` do
-not exist yet: they are steps 7 and 9. `tools/` is gone: both scripts it
+not exist yet: they are N2 and N3. `tools/` is gone: both scripts it
 held were dead code.
 
 
@@ -809,7 +870,7 @@ No compatibility shim. Each removal is an error that names the fix:
 - `plugin:` listing `layout_report.py`: an analysis now, selected by
   `--layout`, with its options under `layout:` instead of `plugin_arg:
   layout_report:`. Both spellings are refused by name, with the change to
-  make (done). `generate_pdf.py` follows at step 7, as a target selected by
+  make (done). `generate_pdf.py` follows at N2, as a target selected by
   `--pdf` or a `preset:` key.
 - Any plugin reading an internal key of `meta` that is no longer passed, or
   rewriting a page file outside a declared position.
@@ -870,6 +931,24 @@ property at a time, never two at once. A third rule earned on the way, and
 it reordered the second half of this list: **at equal value, what deletes a
 special case comes before what adds a concept.**
 
+**Where this stands, for whoever picks it up.** Steps 0 to 6 and 8 are
+done, and the step 2 that was deferred is settled rather than done. The
+build runs everything a bundled theme needs as a stage of its own
+(`lib/wrap.py`, `lib/headings.py`, `lib/menu.py`, `lib/index_page.py`,
+`lib/video_cache.py`); `plugins/` holds `pre_include`, `code_include` and
+`generate_pdf`, and the default `plugin:` list is empty. A theme declares
+its contract in `theme.yaml` (4.0), a page says what it is in its front
+matter, and the layout analysis reports findings of one shape recorded in
+`layout.json` (5.1). What remains is **Next** below, in the order a review
+of October 2026 recommended: the interfaces of LHTML first, the document
+tree last and treated as a major change.
+
+The checks that matter before and after any step: `python3 -m pytest -q`
+(about two minutes), `LHTML_BROWSER_TEST=1 python3 -m pytest -q
+tests/test_layout_integration.py` for the browser ones, and a build of the
+example site compared byte for byte against the previous commit in a git
+worktree - which is how 8a, 8b and 8c were each checked.
+
 ### Done
 
 0. **Two point fixes**, because they cost a day of work each time they bite
@@ -901,7 +980,7 @@ special case comes before what adds a concept.**
    A second check, on a course website of 31 pages written against a copy of
    the generator five months old: same 82 files, same paths, and it builds
    both with the current theme and with its own. The theme contract has not
-   moved in practice, which is worth knowing before step 8 rewrites it.
+   moved in practice, which is worth knowing before the theme manifest of 8a rewrites it.
 4. **The layout analysis is no longer a plugin.** `--layout` runs
    `lib/layout/build.py` from the core, at the point in the build the plugin
    occupied. Four special cases are gone with it: `add_layout_plugin` and
@@ -988,28 +1067,6 @@ special case comes before what adds a concept.**
    frame was something every project had to know and write down. The deck,
    which did write it down, is unchanged to the finding.
 
-### Deferred, with a reason: the declared positions (was step 2)
-
-The declared positions of the stages and extensions, and what a target may
-change. Two plugins rewrite the same file today, `pre_include` and
-`auto_wrap`, and their order is already pinned by
-`tests/test_plugin_order.py`. One of the two becomes a core stage at step 8.
-A position registry built for a pair whose second member is leaving is
-machinery that loses its purpose before it serves. The positions are
-declared at step 8, when the theme manifest has emptied `plugins/` down to
-the two real extensions - where ordering two declared extensions is a line
-of configuration, not a system.
-
-### Next
-
-**8 comes before 7**, against the order this list was written in, for two
-reasons. The rule of this section: at equal value, what deletes a special
-case comes before what adds a concept - 8 deletes, 7 adds a notion of
-target. And 7 depends on 8: "its own theme" is a declaration of the theme
-contract (section 4.0 already says the theme selects the PDF variant), so
-doing 7 first would mean inventing a parallel notion of target and
-refolding it one step later.
-
 8b. **The stages that depend on the theme manifest.** First two of them:
    `plugins/menu.py` is `lib/menu.py` and `plugins/title_submenu.py` is
    `lib/headings.py`, run by the build itself. The manifest grew the key
@@ -1027,7 +1084,7 @@ refolding it one step later.
    `lib/wrap.py`, `redirection_first_page.py` is `lib/index_page.py` and
    `cache_video.py` is `lib/video_cache.py`. **The default `plugin:` list is
    empty**, and `plugins/` holds `pre_include`, `code_include` and
-   `generate_pdf` - the last of which leaves at step 7.
+   `generate_pdf` - the last of which leaves at N2.
 
    The index is unconditional rather than a key: a site whose root has no
    `index.html` is broken, and a key nobody sets is not simpler than no key.
@@ -1073,14 +1130,94 @@ refolding it one step later.
    which is the point of section 8's last paragraph, now observed rather
    than predicted.
 
-7. **PDF as a target**: its own theme, its own source transforms, its own
-   deliverables. Its publication half is already done (step 4: `generate_pdf`
-   declares `publish_site = False` instead of deleting the site directory,
-   and "put `generate_pdf.py` last" is no longer a rule anyone has to know).
-   What remains of the publication contract here is the explicit list of
-   section 3.2 and the `if staging.is_dir()` of `build_output.py`.
-9. **The extension transformation contract** (section 4.2), once the engine
-   owns the writes everywhere else.
+### Settled without being done: the declared positions (was step 2)
+
+The declared positions of the stages and extensions. Two plugins rewrote
+the same file, `pre_include` and `auto_wrap`, and their order was pinned by
+`tests/test_plugin_order.py`. The note deferred the registry on the grounds
+that machinery built for a pair whose second member is leaving loses its
+purpose before it serves - and that is what happened: `auto_wrap` became
+`lib/wrap.py` at step 8c, the core wraps after the extensions have written,
+and the order that used to break a page is not something a configuration
+can express. **Removing one of the two removed the question the registry
+would have answered.** If a second extension ever needs ordering against a
+first, it is a line of configuration, not a system.
+
+### Next
+
+The order below is the one of a review of October 2026 (architecture and
+code, no deck rebuilt), and it changed the previous one: the interfaces of
+LHTML come first, because every later step either depends on them or is
+made harder by their absence. The steps are renamed N1..N5; the old numbers
+are given where they help, and the references elsewhere in this note were
+renumbered with them.
+
+LHTML is a separate repository, `github.com/drohmer/lhtml` (the package
+source is under `src/lhtml/`, its 246 tests under `test/`). N1 and N4 are
+work in that repository, released before the generator can use them.
+
+**N1. A public source loader and a media resolver in LHTML, and the
+tracking patch deleted.** The generator replaces two module functions of
+LHTML at run time to learn what it read (`lib/tracking.py`), and the
+correctness of `--only` rests on that patch (4.4). The loader is the hook
+the patch is asking for, turned into an argument - but `read(filename) ->
+text` is too poor. It must give:
+
+- the content read;
+- the **canonical identity** of the source, which the dependency store and
+  the provenance of a block both need - step 6b already needed exactly it,
+  since a marker now carries the file it is written in;
+- the source to resolve a relative path from;
+- explicit errors, cycles named first.
+
+The media resolver covers the **video variants and the poster**
+(`<name>-poster.jpg`, `export_html.py:131`), not only the variants. And the
+audit is not finished with those two callbacks: the pipeline also reads
+**macro files** (`pipeline.py:196` resolves them against
+`current_directory`, `macros.py:238` opens them). Four reads, not two.
+
+The conventions of the cache and of transcoding stay in the asset handling
+of the generator, not in the theme manifest: a theme may change how a video
+is presented, but **changing the theme must not change the identity of the
+cache**. Step 8c already placed them there (`cache_video_directory:` is a
+project key, `ASSET_DIRECTORY` lives in `lib/video_cache.py`); what is left
+is for LHTML to stop deciding them on its own.
+
+Practical: the local install of LHTML is a copy, not editable. `pip install
+-e` on the clone first, or every round trip needs a reinstall.
+
+**N2. PDF as a target** (was step 7): its own theme, its own source
+transforms, its own deliverables. Its publication half is already done
+(step 4: `generate_pdf` declares `publish_site = False` instead of deleting
+the site directory, and "put `generate_pdf.py` last" is no longer a rule
+anyone has to know). What remains of the publication contract is the
+explicit list of section 3.2 and the `if staging.is_dir()` of
+`build_output.py`. It takes `generate_pdf.py` out of `plugins/`.
+
+**N3. The extension transformation contract** (was step 9, section 4.2),
+once the engine owns the writes everywhere else. Two extensions remain to
+cover. State in that section what the contract is not: an interface over
+strings is a discipline, not a sandbox - arbitrary Python still reaches the
+file system.
+
+**N4. A prototype of the structured parser**, compared with the current
+engine on the tests and on the corpora. The shape:
+
+```
+document = lhtml.parse(source, ...)
+html     = lhtml.render(document, ...)
+```
+
+with `lhtml.run(...)` kept as the façade. Raw HTML must stay faithful:
+LHTML nodes, and **opaque fragments** for HTML, code and mathematics, with
+significant whitespace preserved.
+
+**N5. The consumers migrated to the tree, one at a time.**
+
+Three expectations of this note were corrected by the review, and 4.4
+carries them: the tree does not recover file and line on its own, the lint
+and the parse do not read the same document, and the ambiguity count of the
+probe measures one axis of the risk rather than bounding it.
 
 Expect test churn: 15 of the 23 test files mention plugins. "Each step keeps
 the suite green" is the goal, not a free property.
@@ -1139,6 +1276,19 @@ which a page that continues does not have - is no longer stated as a
 negative number of pixels. The other two are not small: `WRAPPED` and
 `NEAR-ALIGNED` need a decision about what the check means, and the corpus
 to check it against. They stay in section 5.3.
+
+Open, each one or two lines of work:
+
+- `wrap-auto` is still in `LHTML_OPTIONS` of `generate.py`, so a project
+  can turn it on and have its page wrapped twice, by LHTML and by
+  `lib/wrap.py`. Drop it from the list: the option stays for LHTML used
+  alone (4.4), and the generator refuses to forward it.
+- `theme.yaml` is copied into the published site, as `design.yaml` already
+  is. It is a contract with the build, not content: section 3.2 says build
+  state lives outside the site.
+- The reference deck vendors the generator and the themes, so it migrates
+  only when that copy is synced; until then its configuration is right for
+  the copy it runs, and wrong for this one.
 
 
 ## 11. Open questions
