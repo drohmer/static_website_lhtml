@@ -1,7 +1,7 @@
 'use strict';
 
 // Screenshot contact sheets (HTML pages of slide thumbnails written by
-// layout_report.py) in headless Chrome (puppeteer).
+// lib/layout/) in headless Chrome (puppeteer).
 //
 // Usage:
 //   node layout_contact.js --input=sheets.json [--width=1920]
@@ -11,13 +11,14 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+const {launchBrowser} = require('./chrome');
 const args = require('minimist')(process.argv.slice(2));
 
 const sheets = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
 const width = parseInt(args.width || 1920);
 
 (async () => {
-    const browser = await puppeteer.launch({headless: true, args: ['--allow-file-access-from-files']});
+    const browser = await launchBrowser(puppeteer, args, {headless: true, args: ['--allow-file-access-from-files']});
     const page = await browser.newPage();
     await page.setViewport({width, height: 600});
     let failures = 0;

@@ -16,13 +16,13 @@ def remove_controls(meta, structure):
     for entry in structure:
         filepath = template_path(meta, entry)
 
-        with open(filepath, 'r') as fid:
+        with open(filepath, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
         new_content = re.sub(r'(<video .*?)controls(.*?)>', r'\1\2>', file_content)
         new_content = new_content.replace('{controls}', '')
 
-        with open(filepath, 'w') as fid:
+        with open(filepath, 'w', encoding='utf-8') as fid:
             fid.write(new_content)
 
 
@@ -39,6 +39,7 @@ def post_process(meta):
     site_dir = os.path.abspath(meta['site_directory'])
     output_dir = os.path.dirname(site_dir)
     script = path_current_file + 'assets/template_html_to_pdf.js'
+    chrome = ['--chrome=' + meta['chrome']] if meta.get('chrome') else []
 
     # Stage fresh outputs so a failed export cannot reuse stale PDFs or remove
     # the HTML needed to diagnose/retry the failure.
@@ -49,7 +50,7 @@ def post_process(meta):
             stem = os.path.join(staging, 'slide_' + str(counter).zfill(3))
             pdf_path = stem + '.pdf'
             subprocess.run(['node', script, '--input=' + html_path,
-                            '--output=' + pdf_path], check=True)
+                            '--output=' + pdf_path] + chrome, check=True)
             if not os.path.isfile(pdf_path):
                 raise RuntimeError(f'PDF not generated: {pdf_path}')
             subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf_path, stem], check=True)
@@ -76,7 +77,7 @@ def post_process(meta):
         meta['log'].keyvalue('info', f"PDF file generated at '{pdf_output}'", indent_level=2)
         meta['log'].keyvalue('info', f"Images generated in '{image_dir}'", indent_level=2)
 
-    # Only clean after every export and publication step succeeded; with
-    # --only the build is made in the site itself, which is kept.
+    # The HTML was an intermediate of this export: it is not published,
+    # unless --debug keeps it, or --only built in the site itself.
     if not meta['debug'] and not meta.get('only'):
-        shutil.rmtree(site_dir)
+        meta['publish_site'] = False

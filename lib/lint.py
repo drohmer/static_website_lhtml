@@ -27,6 +27,13 @@ OFFSET_MACROS = ('aside',)                 # their documented offsets: aside::[t
 SPACER = re.compile(r'^\s*(?:div)?::\[\s*height:\s*([\d.]+)px;?\s*\]::?\s*$')
 PX = re.compile(r'^\s*([\d.]+)px\s*$')
 PERCENT = re.compile(r'^\s*([\d.]+)%\s*$')
+# block macros (a line holding only the opener: `name::`, `name::(.c)[style]{attrs}`,
+# or anonymous `::(.c)`), their closers (`::`, `::name`), list items (column 0)
+BLOCK_OPEN = re.compile(r'^\s*(?:([A-Za-z][\w-]*)::((?:\([^()\n]*\))?(?:\{[^{}\n]*\})?(?:\[[^\[\]\n]*\])?)'
+                        r'|::((?:\([^()\n]*\))?(?:\{[^{}\n]*\})?(?:\[[^\[\]\n]*\])?))\s*$')
+BLOCK_CLOSE = re.compile(r'^\s*::(?:([A-Za-z][\w-]*?)-?)?\s*$')
+LIST_ITEM = re.compile(r'^\*+\s')
+SMALL_ITEM = re.compile(r'^\*+\s+(?:-\s+)?(small|tiny)::')
 
 
 @dataclass
@@ -78,6 +85,48 @@ class Linter:
         self.fonts = {name: float(m.group(1)) for name, value in (tokens.get('font') or {}).items()
                       if name in SIZE_MACROS and name in self.macros
                       and isinstance(value, str) and (m := PERCENT.match(value))}
+        # rules of the project (the lint section of the design)
+        lint = design.get('lint') or {}
+        self.empty = {name for name, spec in (design.get('macros') or {}).items() if (spec or {}).get('empty')}
+        self.small_text = bool(lint.get('small_text'))
+        self.rules = [(name, re.compile(rule['pattern']), rule.get('advice') or 'not in the slides')
+                      for name, rule in (lint.get('rules') or {}).items() if rule]
+
+    def _project_rules(self, source):
+        """Findings of the rules of the project: small::/tiny:: on list items (the
+        blocks are followed on the text read as LHTML), and the patterns (on its
+        text only: not code, math, comments, Jinja, HTML tags nor URLs)."""
+        found = []
+        text = source_scan.mask(source.text, source_scan.NOT_TEXT | {'jinja', 'urltag', 'tag'}, source.zones)
+        for number, line in enumerate(text.split('\n'), 1):
+            for name, pattern, advice in self.rules:
+                if (m := pattern.search(line)):
+                    found.append(Finding(number, name, m.group(0), advice))
+        if not self.small_text:
+            return sorted(found, key=lambda f: f.line)
+        stack = []                  # blocks open: [name (None: anonymous), line, list items]
+        advice = 'the text at its size: shorten it (small:: for captions, references)'
+        for number, line in enumerate(source.masked.split('\n'), 1):
+            if (m := BLOCK_OPEN.match(line)) and not (m.group(1) and m.group(1) in self.empty) \
+                    and (m.group(1) or m.group(3)):
+                stack.append([m.group(1), number, 0])
+            elif (m := BLOCK_CLOSE.match(line)):
+                name = m.group(1)
+                if name and name not in [b[0] for b in stack]:
+                    continue        # an inline macro alone on its line (::nl), not a closer
+                while stack:
+                    block = stack.pop()
+                    if block[0] in ('small', 'tiny') and block[2]:
+                        found.append(Finding(block[1], 'small-text', f'{block[0]}:: around {block[2]} list item(s)', advice))
+                    if not name or block[0] == name:
+                        break
+            elif (m := SMALL_ITEM.match(line)):
+                found.append(Finding(number, 'small-text', f'{m.group(1)}:: on a list item', advice))
+            elif LIST_ITEM.match(line):
+                for block in stack:
+                    if block[0] in ('small', 'tiny'):
+                        block[2] += 1
+        return sorted(found, key=lambda f: f.line)
 
     def _gap(self, height):
         if 'gap' not in self.macros or not self.spaces:
@@ -174,6 +223,7 @@ class Linter:
             if RAW_IFRAME.search(line) and 'demo' in self.macros:
                 findings.append(Finding(number, 'iframe', '<iframe style=...>',
                                         'demo::url (size: the tokens of the design, or media::)'))
+        findings += self._project_rules(source)
         if layout:
             if base is None:
                 findings.append(Finding(layout_line, 'layout', f'layout {layout}',

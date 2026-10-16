@@ -6,6 +6,7 @@ import yaml
 import json
 
 from lib import source_scan
+from lib.structure import public_entry
 
 # Keys of structure.yaml written by the generator (not available to the deck
 # metadata nor to the config.yaml of the pages)
@@ -56,27 +57,50 @@ def _sitemap_priority(page):
 
 
 RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
-TITLE_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}', r'^=+ (.*?)$']
+TITLE_SET_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}']
+TITLE_HEADING_REGEX = [r'^=+ (.*?)$']
+
+
+def string_literal(s):
+    """The value of a Jinja string literal ('...' or "..."), or s stripped
+    when it is not one."""
+    s = s.strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in '\'"':
+        quote, inner = s[0], s[1:-1]
+        return re.sub(r'\\(.)', lambda m: {'n': '\n', 't': '\t'}.get(m.group(1), m.group(1)), inner) \
+            if '\\' in inner else inner
+    return s
+
+
+def extract_title(source):
+    """Title of a page: its tocTitle or pageTitle (a Jinja string), or its
+    first heading `= Title`, as written (apostrophes, parentheses and slashes
+    kept); None without any."""
+    title = extract_data(source, TITLE_SET_REGEX)
+    if title is not None:
+        return string_literal(RAW_MARKERS.sub('', title))
+    title = extract_data(source, TITLE_HEADING_REGEX)
+    return RAW_MARKERS.sub('', title).strip() if title is not None else None
 
 
 def extract_titles(pages):
     """Title of each page (page.title, read in its source) and the sitemap {id: page}."""
     sitemap = {}
     for page in sorted(pages, key=_sitemap_priority):
-        title = extract_data(page.scan, TITLE_REGEX)
-        if title is not None:
-            title = RAW_MARKERS.sub('', title)
+        title = extract_title(page.scan)
         title_id = generate_unique_id(extract_title_id(page.scan, title), sitemap)
-        page.title = clean_string(title)
+        page.title = title if title is not None else 'unknown'
         sitemap[title_id] = page
     return sitemap
 
 
-def export_structure(pages, structure_path):
-    """structure.yaml (and .json): one entry per page, in order, for the plugins
-    and the theme: its title, configuration and deck metadata, its place in the
-    site (dir, filename, template, level) and origin (src, source, occurrence).
-    Returns the entries."""
+def export_structure(pages, structure_path, public_keys=()):
+    """structure.yaml (and .json): one entry per page, in order, for the
+    plugins and the theme: its title, its place in the site (dir, filename,
+    template, level) and its origin (source, occurrence). The files written
+    into the site hold the public keys only (lib/structure.py); the entries
+    returned, which the build uses, also hold the settings of the page and
+    `src`, the path of its source."""
     structure_to_export = []
     for page in pages:
         structure = {'title': page.title, **page.settings,
@@ -91,10 +115,13 @@ def export_structure(pages, structure_path):
 
     os.makedirs(structure_path, exist_ok=True)
 
-    with open(structure_path + 'structure.yaml', 'w') as fid:
-        yaml.dump(structure_to_export, fid)
-    with open(structure_path + 'structure.json', 'w') as fid:
-        json.dump(structure_to_export, fid, indent=4, default=str)
+    # Written into the site: the public part of each entry (lib/structure.py).
+    # The build keeps the whole entry, returned below.
+    published = [public_entry(entry, public_keys) for entry in structure_to_export]
+    with open(structure_path + 'structure.yaml', 'w', encoding='utf-8') as fid:
+        yaml.dump(published, fid)
+    with open(structure_path + 'structure.json', 'w', encoding='utf-8') as fid:
+        json.dump(published, fid, indent=4, default=str)
     return structure_to_export
 
 
@@ -102,5 +129,5 @@ def export_sitemap(sitemap, dir_sitemap):
     os.makedirs(dir_sitemap, exist_ok=True)
 
     for id, page in sitemap.items():
-        with open(dir_sitemap + id + '.html', 'w') as fid:
+        with open(dir_sitemap + id + '.html', 'w', encoding='utf-8') as fid:
             fid.write(f'<html><head><meta http-equiv="refresh" content="0; url=../{page.site_html}"></head></html>')

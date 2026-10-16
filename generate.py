@@ -11,6 +11,7 @@ import yaml
 import json
 import os
 import shutil
+import tempfile
 import argparse
 import sys
 import importlib.util
@@ -25,12 +26,23 @@ from lib import figures
 from lib import filesystem
 from lib import generator_tool
 from lib import lint
+from lib import dependencies
 from lib import source_map
+from lib.tracking import TrackingLoader, lhtml_includes
 from lib import source_scan
+from lib import theme
+from lib import menu
+from lib import headings
+from lib import wrap
+from lib import index_page
+from lib import video_cache
+from lib.layout import build as layout_build
 from lib import logger
 from lib import pages
-from lib.configuration import BuildContext, ConfigError, load_config, validate_paths, layout_output_directory
+from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
+from lib import layout_options
 from lib.build_output import staged_site
+from lib.structure import documents_directory
 
 import lhtml
 
@@ -58,7 +70,10 @@ def parse_arguments():
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
-                             'of each page in .layout/ (plugin layout_report.py, requires npm install).')
+                             'of each page in .layout/ (lib/layout/, requires npm install).')
+    parser.add_argument('--render', metavar='FILE', action='append',
+                        help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
+                             'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
     parser.add_argument('--deck', metavar='FILE',
                         help='Deck file (order of the slides) replacing the deck of the configuration.')
     parser.add_argument('--scaffold', action='store_true',
@@ -75,6 +90,9 @@ def parse_arguments():
         parser.error('--only cannot be combined with --clean or --check-config')
     if args.lint and (args.clean or args.check_config or args.serve or args.watch):
         parser.error('--lint cannot be combined with --clean, --check-config, --serve or --watch')
+    if args.render and (args.clean or args.check_config or args.serve or args.watch or args.lint or args.only
+                        or args.layout or args.deck or args.scaffold):
+        parser.error('--render is used alone (no build)')
     return args
 
 
@@ -121,18 +139,6 @@ def resolve_plugins(meta, log):
     return found, missing
 
 
-LAYOUT_PLUGIN = 'plugins/layout_report.py'
-
-
-def add_layout_plugin(meta):
-    """Add the layout report plugin (--layout): after the other plugins, but
-    before generate_pdf, which removes the site directory."""
-    plugins = [p for p in meta['plugin'] if not p.endswith('layout_report.py')]
-    position = next((k for k, p in enumerate(plugins) if p.endswith('generate_pdf.py')), len(plugins))
-    plugins.insert(position, meta['lib_directory'] + LAYOUT_PLUGIN)
-    meta['plugin'] = plugins
-
-
 _plugin_modules = {}     # {path: module} of the build (emptied by generate_site)
 
 
@@ -158,6 +164,10 @@ def run_plugins(meta, hook_name, log):
             if hasattr(module, hook_name):
                 log.keyvalue('Run plugin', full_path.split('/')[-1])
                 getattr(module, hook_name)(meta)
+        except ConfigError as e:        # what it was asked to do, not what happened
+            log.error(f'{e} (configuration of {os.path.basename(full_path)})')
+            log.debug(traceback.format_exc())
+            failures += 1
         except Exception as e:
             log.error(f'Plugin {full_path} failed ({hook_name}): {type(e).__name__}: {e}')
             log.debug(traceback.format_exc())
@@ -186,13 +196,17 @@ def select_pages(meta, log, scaffold=False):
     created first."""
     loaded_deck = load_deck(meta)
     site = [meta['site_directory']]
-    found = pages.discover(pages.Source(None, meta['source_directory']), exclude=site)
+    # Without a deck, every page of the project is published: a hidden page
+    # is a draft and stays out. A deck publishes what it names, so a hidden
+    # page it names is published - that is its author asking for it.
+    found = pages.discover(pages.Source(None, meta['source_directory']), exclude=site,
+                           include_hidden=loaded_deck is not None)
     if loaded_deck is None:
         pages.name_outputs(found)
         return found
     for name, root in loaded_deck.sources.items():
         if any(e.source == name for e in loaded_deck.entries):
-            found += pages.discover(pages.Source(name, root), exclude=site)
+            found += pages.discover(pages.Source(name, root), exclude=site, include_hidden=True)
     result = deck.apply_deck(loaded_deck, found)
     if scaffold and result.missing:
         for path in deck.scaffold(result.missing, meta['source_directory']):
@@ -205,7 +219,10 @@ def select_pages(meta, log, scaffold=False):
     for entry in result.missing:
         log.warning(f"Deck: '{entry.pointer}' ({entry.meta['title']}) has no source yet "
                     f"(--scaffold creates it)")
-    log.keyvalue('info', f'Deck: {result.summary()}', indent_level=1)
+    log.keyvalue('info', f'Deck: {result.summary(loaded_deck.duration)}', indent_level=1)
+    if (extra := result.over_time(loaded_deck.duration)) is not None:
+        log.warning(f'Deck: {extra:g} min over the length of the talk ({loaded_deck.duration:g} min, '
+                    f"key 'duration' of the deck)")
     if result.unlisted:
         names = ', '.join(p.label for p in result.unlisted[:5])
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
@@ -222,23 +239,14 @@ def other_sources(selected):
 
 
 def only_pages(meta, selected, log):
-    """--only: the pages it names, or None for a full build (no previous site,
-    or its pages are not those of this build: a deck or a page changed)."""
+    """--only: the pages its pointers name. Whether the build may stay
+    partial is decided in one place, by the dependency store."""
     built = deck.named_pages(selected, meta['args'].only, other_sources(selected))
-    previous = os.path.join(meta['site_directory'], 'structure/structure.json')
-    if not os.path.isfile(previous):
-        log.keyvalue('info', '--only: no previous build, full build', indent_level=1)
-        return None
-    with open(previous, encoding='utf-8') as fid:
-        names = [entry['dir'] + entry['filename'] for entry in json.load(fid)]
-    if names != [page.site_html for page in selected]:
-        log.keyvalue('info', '--only: the pages of the site changed, full build', indent_level=1)
-        return None
     log.keyvalue('info', f"--only: {', '.join(p.label for p in built)}", indent_level=1)
     return built
 
 
-# Guide of the procedure for AI agents, copied into each site (structure/agents.md)
+# Guide of the procedure for AI agents, copied into each project (.structure/agents.md)
 AGENTS_GUIDE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'docs', 'agents.md')
 
 
@@ -253,8 +261,15 @@ def prepare_data(meta, selected, built, log):
     warnings = []
     if not only:
         log.debug(f"Copy source files '{dir_source}' -> '{dir_site}'")
-        warnings += filesystem.copy_directories(dir_source, dir_site, skip=pages.is_template,
-                                                exclude=[meta.get('published_site_directory')])
+        # The site, and the files of the project that are not content: a link
+        # inside the sources would otherwise publish the configuration, the
+        # deck (which holds the notes of the author) or the documents written
+        # next to them.
+        warnings += filesystem.copy_directories(
+            dir_source, dir_site, skip=pages.is_build_input,
+            exclude=[meta.get('published_site_directory'), meta.get('config_file'),
+                     meta['deck'] if isinstance(meta.get('deck'), str) else None,
+                     str(documents_directory(meta))])
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
         warnings += filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
     if only:        # a page that fails keeps its previous version
@@ -263,11 +278,10 @@ def prepare_data(meta, selected, built, log):
             if os.path.isfile(dir_site + page.site_html):
                 with open(dir_site + page.site_html, 'rb') as fid:
                     meta['previous_pages'][page.site_html] = fid.read()
-    transform = None
-    if meta.get('source_map'):
-        tags = source_scan.value_tags(meta['macros'])
-        transform = lambda text: source_map.add_markers(text, tags)
-    warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
+    source_transform = marker_transform(meta)
+    warnings += pages.place(built, dir_site, project_assets=only, source_transform=source_transform)
+    if only and meta.get('dependency_store'):
+        meta['dependency_store'].refresh_assets(meta, built)
     for warning in warnings:
         log.warning(warning)
     directories = sorted({dir_site + page.site_directory for page in built}) if only else [dir_site]
@@ -280,37 +294,39 @@ def prepare_data(meta, selected, built, log):
     log.debug(f"Found {len(selected)} template files")
     sitemap = generator_tool.extract_titles(selected)
     generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
-    meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/')
-    shutil.copy2(AGENTS_GUIDE, dir_site + 'structure/agents.md')
+    meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/',
+                                                       meta.get('public_page_keys') or ())
+    shutil.copy2(AGENTS_GUIDE, documents_directory(meta) / 'agents.md')
     built_set = set(built)
     meta['built'] = [entry for page, entry in zip(selected, meta['structure']) if page in built_set]
     return sitemap, write_credits_and_todo(meta, selected, log)
 
 
 def write_credits_and_todo(meta, selected, log):
-    """structure/credits.md (origin of the pages, credits of the images) and
-    structure/todo.md (planned figures and slides). Returns the credits of
-    each page (lib/credits.py) and the errors of the pages whose credits are
-    invalid ({page: message}: these pages fail)."""
+    """.structure/credits.md (origin of the pages, credits of the images)
+    and .structure/todo.md (planned figures and slides), next to the
+    configuration. Returns the credits of each page (lib/credits.py) and the
+    errors of the pages whose credits are invalid ({page: message}: these
+    pages fail)."""
     credits_of, errors = {}, {}
     for page in selected:
         try:
             credits_of[page] = credits.page_credits(page)
         except credits.CreditsError as exc:
             credits_of[page], errors[page] = {}, str(exc)
-    structure_dir = meta['site_directory'] + 'structure/'
+    documents = documents_directory(meta)
     text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'],
                                                        meta['macros'])
-    with open(structure_dir + 'credits.md', 'w', encoding='utf-8') as fid:
+    with open(documents / 'credits.md', 'w', encoding='utf-8') as fid:
         fid.write(text)
     planned_figures = credits.placeholders(selected)
     planned_slides = meta.get('planned_slides') or []
-    with open(structure_dir + 'todo.md', 'w', encoding='utf-8') as fid:
+    with open(documents / 'todo.md', 'w', encoding='utf-8') as fid:
         fid.write(credits.todo_markdown(planned_figures, planned_slides, meta['config_directory']))
-    log.debug(f'Credits: {credited} credited, {missing} image(s) without credit (structure/credits.md)')
+    log.debug(f'Credits: {credited} credited, {missing} image(s) without credit ({documents}/credits.md)')
     if planned_figures or planned_slides:
         log.keyvalue('info', f'To do: {len(planned_figures)} planned figure(s), {len(planned_slides)} planned '
-                             f'slide(s) (structure/todo.md)', indent_level=1)
+                             f'slide(s) ({documents}/todo.md)', indent_level=1)
     return credits_of, errors
 
 
@@ -366,6 +382,20 @@ def sitemap_keywords_used(env, templates):
     return used
 
 
+def marker_transform(meta):
+    """`(text, path) -> text` writing the source-map markers of a template of
+    the project, or None when the build does not want them. The same function
+    marks the pages (lib/pages.py) and the templates they include, so a block
+    names the file it is written in."""
+    if not meta.get('source_map'):
+        return None
+    tags = source_scan.value_tags(meta['macros'])
+    def mark(text, path):
+        source = source_map.source_label(path, meta['config_directory'], meta['source_directory'])
+        return source_map.add_markers(text, source, tags)
+    return mark
+
+
 def jinja_environment(meta, selected, built):
     """Jinja environment: the templates of the pages to generate (as the
     plugins left them in the site), then the files of the sources (includes,
@@ -378,7 +408,8 @@ def jinja_environment(meta, selected, built):
     roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
-    return Environment(loader=loader, extensions=['jinja_markdown.MarkdownExtension'])
+    loader = TrackingLoader(loader, roots, marker_transform(meta))
+    return Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
 
 
 def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=None):
@@ -413,6 +444,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
 
         log.debug(f'- {page.site_template}')
         try:
+            env.loader.used.clear()
             template = env.get_template(page.site_template)
             output_html = template.render({**meta['keywords'], **links, 'params': page.params,
                                            'page': entries[page],
@@ -425,6 +457,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
             discard_page(meta, page)
             continue
 
+        meta.setdefault('template_dependencies', {})[page.site_html] = sorted(env.loader.used | {str(page.src)})
         filesystem.write_file(dir_site + page.site_html, output_html)
 
     return failed
@@ -436,7 +469,7 @@ def load_project_design(meta):
 
 
 def prepare_design(meta, log):
-    """Write theme/css/design.css and structure/design.md of the design
+    """Write theme/css/design.css of the site and .structure/design.md
     (meta['loaded_design'], loaded at the start of the build)."""
     # Always written (even empty): the theme may link it, and --only must not
     # keep the design.css of a previous design.
@@ -465,7 +498,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             # Jinja2 rendering failed for this page (error already reported)
             continue
         log.debug(f'- {html_path}')
-        with open(html_path, 'r') as fid:
+        with open(html_path, 'r', encoding='utf-8') as fid:
             input_html = fid.read()
 
         options = {k: meta[k] for k in LHTML_OPTIONS if k in meta}
@@ -474,11 +507,14 @@ def render_lhtml(meta, selected, log, failed_before=()):
         try:
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
-                output_html = lhtml.run(input_html, options)
+                included = set()
+                with lhtml_includes(included):
+                    output_html = lhtml.run(input_html, options)
+                meta.setdefault('include_dependencies', {})[page.site_html] = sorted(included)
             for warning in caught:          # with the page they come from
                 log.warning(f'{page.label}: {warning.message}')
             if meta.get('source_map'):
-                output_html = source_map.apply(output_html, os.path.relpath(page.src, meta['config_directory']))
+                output_html = source_map.apply(output_html)
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
@@ -547,6 +583,53 @@ def clean_directories(meta):
 
 
 # ---------------------------------------------------------------------------
+# Render of files (--render)
+# ---------------------------------------------------------------------------
+
+def render_files(meta, files, log):
+    """PNG of each file as the slides draw it, in <layout output>/render/
+    (under its path relative to the configuration directory, or, for a file
+    outside it, under _outside/<its directory>/), at the size of the slides
+    of the layout report."""
+    from pathlib import Path
+    from lib.layout.measure import run_node
+    try:
+        output = layout_options.output_directory(meta) / 'render'
+    except ConfigError as exc:
+        log.error(str(exc))
+        sys.exit(1)
+    base = Path(meta['config_directory']).resolve()
+    entries, targets = [], {}
+    for name in files:
+        path = Path(name).resolve()
+        if not path.is_file():
+            log.error(f'--render: no file {name}')
+            sys.exit(1)
+        relative = path.relative_to(base) if path.is_relative_to(base) \
+            else Path('_outside', *[part.strip('/\\:') or '_' for part in path.parts])
+        png = output / (str(relative) + '.png')
+        if png in targets and targets[png] != path:
+            log.error(f'--render: {name} and {targets[png]} would be written to the same {png}')
+            sys.exit(1)
+        targets[png] = path
+        entries.append({'file': str(path), 'png': str(png)})
+    options = layout_options.options_of(meta)
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
+        json.dump(entries, fid)
+        listing = fid.name
+    try:
+        run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
+                                     f"--height={options['height']}"], chrome=options['chrome'], log=log)
+    except RuntimeError as exc:
+        log.error(str(exc))
+        sys.exit(1)
+    finally:
+        os.remove(listing)
+    for entry in entries:
+        log.keyvalue('info', f"{os.path.relpath(entry['file'])} -> {os.path.relpath(entry['png'])}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -569,9 +652,7 @@ def build_once(args):
     # data-lhtml-src="file:line" on the blocks (lib/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
-    if args.layout:
-        add_layout_plugin(meta)
-
+    meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lib/layout/build.py)
 
     # Diagnostic mode takes precedence over --clean and never runs plugins.
     if args.check_config or not args.clean:
@@ -579,25 +660,35 @@ def build_once(args):
         context.plugin_paths.extend(paths)
         if plugin_failures:
             sys.exit(1)
-    if any(path.endswith('layout_report.py') for path in context.plugin_paths):
+    if (meta['analyse_layout'] or (args.check_config and meta.get('layout'))) and not args.clean:
+        # What the analysis will refuse, refused here: before the build, and
+        # with --check-config, which builds nothing (lib/layout_options.py).
+        # A project that neither asks for the analysis nor configures it is
+        # not held to a configuration it does not have, and --clean, which
+        # does not touch the reports, is not held to it either.
         try:
-            layout_output_directory(meta)
+            layout_options.output_directory(meta)
+            layout_options.validate(meta, log)
         except ConfigError as exc:
             log.error(str(exc))
             sys.exit(1)
+    if args.render:
+        render_files(meta, args.render, log)
+        return
     if args.check_config:
         # The deck and the design are read (not the pages): errors before any build
         try:
             loaded_deck = load_deck(meta)
             loaded_design = load_project_design(meta)
-        except (deck.DeckError, design.DesignError) as exc:
+            loaded_theme = theme.of(meta)
+        except (deck.DeckError, design.DesignError, ConfigError) as exc:
             log.error(str(exc))
             sys.exit(1)
         print(yaml.safe_dump({
             'config_file': str(config_file),
             'source_directory': config.source_directory,
             'site_directory': config.site_directory,
-            'theme': config.theme,
+            'theme': {'directory': config.theme, **loaded_theme},
             'deck': meta['deck'] if loaded_deck is None else {
                 'file': meta['deck'] if isinstance(meta['deck'], str) else '(inline)',
                 'slides': len(loaded_deck.entries), 'sources': loaded_deck.sources},
@@ -631,8 +722,17 @@ def build_once(args):
     built = None
     try:
         selected = select_pages(meta, log, scaffold=args.scaffold)
+        meta['dependency_contexts'] = {p.site_html: dependencies.page_context(p) for p in selected}
+        meta['source_roots'] = other_sources(selected)
+        meta['dependency_store'] = dependencies.BuildStore(meta)
         built = only_pages(meta, selected, log) if args.only else None
+        if built is not None:
+            built = meta['dependency_store'].expand(meta, selected, built)
         meta['only'] = built is not None
+        if args.only and built is None:
+            # a full build (the pages of the site changed), but the layout report
+            # measures only the pages named (and those without a report)
+            meta['measure'] = meta.get('dependency_measure') or [p.site_html for p in deck.named_pages(selected, args.only, other_sources(selected))]
         if meta['only']:
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated
@@ -682,6 +782,10 @@ def generate_site(meta, selected, built):
     log.keyvalue('info', f"Source: {meta['source_directory']}", indent_level=1)
     log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
 
+    meta['page_contexts'] = {p.site_html: {'page': p.site_html,
+        'source': os.path.relpath(p.src, meta['config_directory']),
+        'occurrence': p.occurrence, 'params': p.params, 'deck_line': p.deck_line} for p in selected}
+
     # Data preparation
     log.title('Data preparation', pre='\n')
     log.tic()
@@ -697,6 +801,14 @@ def generate_site(meta, selected, built):
     log.title('Pre-process', pre='\n')
     log.tic()
     plugin_failures += run_plugins(meta, 'pre_process', log)
+    # Core stages on the sources, after the extensions have written them:
+    # the theme wraps what the content ends up being (lib/wrap.py), and the
+    # headings of that content get their ids (lib/headings.py).
+    headings.run(meta)
+    wrap.run(meta)
+    # Transcoded videos next to the assets, before LHTML writes the <video>
+    # tags that look for them (lib/video_cache.py)
+    video_cache.run(meta)
     log.ok_elapsed()
 
     # Jinja2 rendering
@@ -720,15 +832,36 @@ def generate_site(meta, selected, built):
     failed += render_lhtml(meta, built, log, failed_before=failed)
     log.ok_elapsed()
 
+
     # SASS compilation
     compile_sass(meta, log)
+
+    if meta['only']:
+        dependencies.refresh_runtime_files(meta, built)
 
     # Post-process plugins
     log.title('Post-process', pre='\n')
     log.tic()
-    if not failed and not plugin_failures:
+    post_ran = not failed and not plugin_failures
+    if post_ran:
         plugin_failures += run_plugins(meta, 'post_process', log)
+        # Core stages on the built site: the menu of the theme, and the
+        # index of a site that has none (lib/menu.py, lib/index_page.py)
+        menu.run(meta)
+        index_page.run(meta)
     log.ok_elapsed()
+
+    # The layout analysis is part of the generator, not a plugin: it runs
+    # once the pages and the theme are in place, and before the dependency
+    # store records what each page used. A plugin that fails during the post
+    # stage does not take it away: a build that went wrong is when the
+    # report is worth reading, and the plugin that used to run after it
+    # could not suppress it either.
+    if meta['analyse_layout'] and post_ran:
+        log.title('Layout analysis', pre='\n')
+        log.tic()
+        layout_build.run(meta)
+        log.ok_elapsed()
 
     restore_previous_pages(meta, failed)
     log.plain()
@@ -738,6 +871,8 @@ def generate_site(meta, selected, built):
         log.error(f'{plugin_failures} plugin error(s) (see errors above, use -d for details)')
     if failed or plugin_failures:
         raise RuntimeError('Page or plugin errors (see above)')
+    if meta.get('dependency_store'):
+        meta['dependency_store'].save(meta)
 
 
 def main():

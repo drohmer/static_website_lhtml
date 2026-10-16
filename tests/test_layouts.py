@@ -49,7 +49,7 @@ class LayoutBuildTests(unittest.TestCase):
 
     def build(self, deck=None, *args):
         config = {'source_directory': 'src', 'site_directory': 'site', 'theme': str(REPO / 'themes/slides'),
-                  'plugin': ['plugins/auto_wrap.py']}
+                  'plugin': []}
         if deck is not None:
             config['deck'] = deck
         self.write('config.yaml', yaml.safe_dump(config))
@@ -74,11 +74,12 @@ class LayoutBuildTests(unittest.TestCase):
         self.assertEqual(self.body('b'), '<body class="layout-stack">')
         self.assertEqual(self.body('c'), '<body class="layout-side layout-side-s">')
         self.assertIn('C hello', (self.site / 'c/index.html').read_text())
-        self.assertEqual((self.site / 'structure/agents.md').read_text(),
+        self.assertEqual((self.root / '.structure/agents.md').read_text(),
                          (REPO / 'docs/agents.md').read_text())          # the guide for agents
-        from plugins import layout_report
-        self.assertIn('`../site/structure/agents.md`',
-                      layout_report.summary_markdown([], design='../site/structure/design.md'))
+        self.assertFalse((self.site / 'structure/agents.md').exists())   # the site is published
+        from lib.layout import report
+        self.assertIn('`../.structure/agents.md`',
+                      report.summary_markdown([], design='../.structure/design.md'))
         self.assertIn('Lint: 2 value(s) written by hand in 2 of 3', output)    # b, c: a layout without media::
 
     def test_layout_after_an_import_or_a_comment(self):
@@ -197,3 +198,74 @@ class LintTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ProjectRulesTests(unittest.TestCase):
+    """The lint section of a design: small text on list items, patterns."""
+    linter = lint.Linter({**SLIDES, 'lint': {
+        'small_text': True,
+        'rules': {'part-number': {'pattern': r'\bPart \d', 'advice': 'name the topic'}}}})
+
+    def kinds(self, text):
+        return [(f.line, f.kind) for f in self.linter.lint(text)]
+
+    def test_small_text_on_list_items(self):
+        text = ('= T\n'
+                'small::\n'
+                '* first\n'
+                '* second\n'
+                '::\n'
+                '* tiny:: a whole item ::\n'
+                '* an item with credit:: a caption ::\n'
+                'small::\n'
+                'A note, not a list\n'
+                '::\n'
+                'col::\n'
+                'tiny:: Caption ::\n'
+                '::\n')
+        self.assertEqual(self.kinds(text), [(2, 'small-text'), (6, 'small-text')])
+
+    def test_patterns_skip_math_and_code(self):
+        text = ('= T\n'
+                '* Seen in Part 2\n'
+                '* \\(\\text{Part 3}\\)\n'
+                'code::[python]\nPart 4\ncode::[-]\n')
+        self.assertEqual(self.kinds(text), [(2, 'part-number')])
+
+    def test_off_by_default(self):
+        self.assertEqual(lint.Linter(SLIDES).lint('small::\n* item in Part 2\n::\n'), [])
+
+    def test_invalid_rules(self):
+        for bad in ({'unknown': 1}, {'small_text': 'yes'}, {'rules': {'a': {'pattern': '('}}},
+                    {'rules': {'a': 'text'}}):
+            with self.assertRaises(design.DesignError):
+                design._check({'lint': bad}, 'test')
+
+    def test_blocks_followed_as_lhtml_reads_them(self):
+        cases = {
+            'media::\nsmall::\ncaption\n::\ngap::\n::\n* a\n* b\n': [],          # gap:: has no closer
+            'small::{data-x=1}\n* item\n::\n': [(1, 'small-text')],
+            'small::\n::(.x)\n::\n* item\n::\n': [(1, 'small-text')],          # anonymous block
+            'small::\n* a\n::nl\n* b\n::\n': [(1, 'small-text')],             # ::nl is not a closer
+            'small::\n  * indented: not a list\n::\n': [],
+        }
+        for text, expected in cases.items():
+            self.assertEqual(self.kinds(text), expected, text)
+
+    def test_patterns_only_in_the_text(self):
+        text = ("{# Part 1 #}\n<p title=\"Part 2\">x</p>\n{% set t = 'Part 3' %}\n"
+                "img::assets/Part 4.png\n* real Part 5\n")
+        self.assertEqual(self.kinds(text), [(5, 'part-number')])
+
+    def test_extending_design_changes_an_advice(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder) / 'base.yaml'
+            base.write_text(yaml.safe_dump({'lint': {'rules': {'r': {'pattern': 'x', 'advice': 'a'}}}}))
+            child = Path(folder) / 'child.yaml'
+            child.write_text(yaml.safe_dump({'extends': 'base.yaml', 'lint': {'rules': {'r': {'advice': 'b'}}}}))
+            loaded = design.load_design(Path(folder) / 'none', child)
+            self.assertEqual(loaded['lint']['rules']['r'], {'pattern': 'x', 'advice': 'b'})
+            child.write_text(yaml.safe_dump({'lint': {'rules': {'s': {'advice': 'no pattern'}}}}))
+            with self.assertRaises(design.DesignError):
+                design.load_design(Path(folder) / 'none', child)
+

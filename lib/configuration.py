@@ -6,13 +6,27 @@ from pathlib import Path
 from typing import Any
 import copy
 import difflib
+import os
 import yaml
+
+from lib.filesystem import read_text
+from lib.structure import PRIVATE_KEYS
 
 GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
 RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}
 
 
 # Keys of meta set by the generator during a build (never by the configuration)
+# Plugins of the previous version that the build now runs itself: the name of
+# the file, and what it became.
+CORE_STAGES = {
+    'menu.py': "the theme's menu",
+    'title_submenu.py': 'the heading ids (configuration key title_id:)',
+    'auto_wrap.py': 'the wrapping of a page in the template of its theme',
+    'redirection_first_page.py': 'the index of a site that has none',
+    'cache_video.py': "the transcoded videos (set 'cache_video_directory:' to ask for them)",
+}
+
 RUNTIME_KEYS = frozenset((
     'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory', 'extras',
     'current_directory',
@@ -22,7 +36,12 @@ RUNTIME_KEYS = frozenset((
     'previous_pages',               # --only: HTML of the pages before the build (restored if they fail)
     'loaded_design', 'macros',      # the design (lib/design.py) and its macros for LHTML
     'lint_findings',                # {source path: [finding]} of the generated pages (lib/lint.py)
-    'headings',                     # {page: [heading]} written by plugins/title_submenu.py
+    'measure',                      # --only: the pages the layout report measures again
+    'source_roots',                 # the sources read by each page (lib/tracking.py)
+    'dependency_contexts', 'dependency_store', 'dependency_measure',
+    'page_contexts',                # what each page depends on (lib/dependencies.py)
+    'analyse_layout',               # --layout: the build runs the layout analysis (lib/layout/build.py)
+    'publish_site',                 # a target asks for its intermediate site not to be published
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
 ))
@@ -37,15 +56,25 @@ class Config:
     source_directory: str = 'src_site/'
     site_directory: str = '.site/'
     theme: str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
-    plugin: list[str] = field(default_factory=lambda: ['plugins/menu.py', 'plugins/redirection_first_page.py'])
+    # Extensions, and nothing else: everything a bundled theme needs to
+    # render a project written in LHTML is a stage of the build now
+    # (lib/wrap.py, lib/headings.py, lib/menu.py, lib/index_page.py), so the
+    # default is empty and a project lists only what is its own.
+    plugin: list[str] = field(default_factory=list)
     debug: bool = False
     level_print: int = 0
     title_id: bool = True
     keywords: dict = field(default_factory=dict)
     use_tidy: bool = False
     include_head: list[str] = field(default_factory=list)
+    # Page settings a custom theme needs in the site, beyond the ones the
+    # bundled themes display (lib/structure.py, PUBLIC_KEYS). Everything else
+    # an author writes in a config.yaml or a deck entry stays out of the site.
+    public_page_keys: list[str] = field(default_factory=list)
     plugin_arg: dict = field(default_factory=dict)
+    layout: dict = field(default_factory=dict)      # options of the layout analysis (--layout)
     cache_video_directory: str | None = None
+    chrome: str | None = None
     design: dict | str | None = None
     deck: list | dict | str | None = None
     # Legacy extensions stay available to custom plugins, with a warning.
@@ -54,8 +83,9 @@ class Config:
     def to_meta(self):
         values = asdict(self)
         values.update(values.pop('extras'))
-        if values['cache_video_directory'] is None:
-            del values['cache_video_directory']
+        for key in ('cache_video_directory', 'chrome'):
+            if values[key] is None:
+                del values[key]
         for key in ('design', 'deck'):
             if values[key] is None:
                 del values[key]
@@ -99,6 +129,34 @@ def _file_or_inline(values, key, inline_types, inline_text, config_directory):
         raise ConfigError(f"'{key}' must be {inline_text} or the path of a YAML file")
 
 
+def _chrome_executable(values, config_directory):
+    """'chrome': the Chrome executable the Node scripts run (layout report,
+    PDF export, --render), instead of the one downloaded by puppeteer. A
+    relative path is resolved from the configuration directory; a macOS
+    bundle ('.app') is resolved to the executable it contains."""
+    value = values.get('chrome')
+    if value is None:
+        return
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("'chrome' must be the path of the Chrome executable")
+    file = Path(value.strip()).expanduser()
+    if not file.is_absolute():
+        file = config_directory / file
+    if file.suffix == '.app' and file.is_dir():                 # macOS bundle
+        inside = file / 'Contents/MacOS' / file.stem
+        if not inside.is_file():
+            candidates = sorted(p for p in (file / 'Contents/MacOS').glob('*') if p.is_file())
+            if not candidates:
+                raise ConfigError(f"'chrome': no executable in the bundle '{file}'")
+            inside = candidates[0]
+        file = inside
+    if not file.is_file():
+        raise ConfigError(f"'chrome' executable not found: '{file}'")
+    if not os.access(file, os.X_OK):
+        raise ConfigError(f"'chrome' is not executable: '{file}'")
+    values['chrome'] = str(file.resolve())
+
+
 def load_config(filename, debug_override=None):
     path = Path(filename).expanduser().resolve()
     warnings = []
@@ -108,8 +166,9 @@ def load_config(filename, debug_override=None):
             warnings.append("'configure_default.yaml' was renamed 'configure_example.yaml'; update your command.")
             path = replacement
     try:
-        with path.open() as stream:
-            data = yaml.safe_load(stream)
+        data = yaml.safe_load(read_text(path))
+    except ValueError as exc:                       # not UTF-8: the message names the file
+        raise ConfigError(str(exc)) from None
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigError(f"Cannot read configuration '{path}': {exc}") from exc
     if data is None:
@@ -124,7 +183,7 @@ def load_config(filename, debug_override=None):
         data['plugin'] = data.pop('plugin_post')
 
     defaults = Config().to_meta()
-    known = set(defaults) | {'cache_video_directory', 'design', 'deck'}
+    known = set(defaults) | {'cache_video_directory', 'chrome', 'design', 'deck'}
     extras = {}
     for key in set(data) - known:
         if key in RUNTIME_KEYS:
@@ -139,7 +198,7 @@ def load_config(filename, debug_override=None):
             raise ConfigError(f"'{key}' must be a boolean (true or false)")
     if type(values['level_print']) is not int or values['level_print'] < 0:
         raise ConfigError("'level_print' must be a non-negative integer")
-    for key in ('keywords', 'plugin_arg'):
+    for key in ('keywords', 'plugin_arg', 'layout'):
         if not isinstance(values[key], dict) or any(not isinstance(k, str) for k in values[key]):
             raise ConfigError(f"'{key}' must be a mapping with string keys")
     for name in sorted({'params', 'page', 'credit', 'credits'} & set(values['keywords'])):
@@ -151,9 +210,36 @@ def load_config(filename, debug_override=None):
     elif plugins is None:
         plugins = []
     values['plugin'] = plugins
-    for key in ('plugin', 'include_head'):
+    for key in ('plugin', 'include_head', 'public_page_keys'):
         if not isinstance(values[key], list) or any(not isinstance(v, str) or not v.strip() for v in values[key]):
             raise ConfigError(f"'{key}' must be a list of non-empty strings")
+    for name in sorted(set(values['public_page_keys']) & set(PRIVATE_KEYS)):
+        raise ConfigError(f"'public_page_keys': '{name}' is never written into the site "
+                          f"(it is the path of the source on this machine)")
+    # The layout analysis is part of the generator, not a plugin: it is
+    # selected by --layout and configured by 'layout:'. A configuration of
+    # the previous version says so here, before the build, naming the fix.
+    for entry in plugins:
+        if entry.endswith('layout_report.py'):
+            raise ConfigError("'plugin': the layout report is no longer a plugin. Remove "
+                              f"'{entry}' from 'plugin:' and run the build with --layout")
+    if isinstance(values['plugin_arg'], dict) and 'layout_report' in values['plugin_arg']:
+        raise ConfigError("'plugin_arg': the options of the layout report moved to the "
+                          "configuration key 'layout:'. Move the content of "
+                          "'plugin_arg: layout_report:' under 'layout:'")
+    # Stages the build always runs: a project does not list them, and cannot
+    # know whether its theme has a menu - the theme declares that (theme.yaml).
+    for entry in plugins:
+        name = entry.rsplit('/', 1)[-1]
+        if name in CORE_STAGES:
+            raise ConfigError(f"'plugin': {CORE_STAGES[name]} is a stage of the build, not a "
+                              f"plugin. Remove '{entry}' from 'plugin:'")
+    if isinstance(values['plugin_arg'], dict) and 'menu' in values['plugin_arg']:
+        raise ConfigError("'plugin_arg': the extra page settings of the menu are declared by "
+                          "the theme. Move the content of 'plugin_arg: menu: keys:' to "
+                          "'toc: keys:' in the theme.yaml of your theme")
+
+    _chrome_executable(values, path.parent)
 
     _file_or_inline(values, 'design', dict, 'a mapping (tokens, macros)', path.parent)
     _file_or_inline(values, 'deck', (list, dict), 'a list of slides', path.parent)
@@ -194,31 +280,3 @@ def validate_paths(config, config_file, require_inputs=True):
             raise ConfigError(f"Unsafe 'site_directory': deleting '{output}' would remove '{path}'")
     if output.exists() and not output.is_dir():
         raise ConfigError(f"'site_directory' is not a directory: {output}")
-
-
-def layout_output_directory(meta):
-    """Validate the layout output before any build or plugin deletion."""
-    options = meta.get('plugin_arg', {}).get('layout_report') or {}
-    if not isinstance(options, dict):
-        raise ConfigError("'plugin_arg.layout_report' must be a mapping")
-    value = options.get('output', '.layout/')
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError("'plugin_arg.layout_report.output' must be a non-empty path")
-    output = (Path(meta['config_directory']) / Path(value).expanduser()).resolve()
-    for key in ('source_directory', 'theme', 'site_directory', 'published_site_directory', 'cache_video_directory'):
-        if not meta.get(key):
-            continue
-        path = Path(meta[key]).resolve()
-        if path == output or path in output.parents or output in path.parents:
-            raise ConfigError(f"Unsafe layout output '{output}': overlaps '{key}' ({path})")
-    protected = [GENERATOR_DIRECTORY, Path(meta['config_file']),
-                 Path(meta['config_directory']) / 'code',
-                 Path(meta['config_directory']) / 'cache_video_directory']
-    protected += [Path(path) for path in meta.get('plugin_paths', [])]
-    for path in protected:
-        path = path.resolve()
-        if path == output or output in path.parents:
-            raise ConfigError(f"Unsafe layout output '{output}': would remove '{path}'")
-    if output.exists() and not output.is_dir():
-        raise ConfigError(f'Layout output is not a directory: {output}')
-    return output

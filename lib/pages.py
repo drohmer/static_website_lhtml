@@ -19,7 +19,7 @@ import unicodedata
 
 import yaml
 
-from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy
+from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy, read_text
 from lib import source_scan
 from lib.generator_tool import STRUCTURE_KEYS
 
@@ -29,6 +29,17 @@ TEMPLATE_SUFFIX = '.j2'         # the template of a page index.html is index.htm
 def is_template(name):
     """Whether a file is the template of a page (index.html.j2)."""
     return name.endswith('.html' + TEMPLATE_SUFFIX)
+
+
+PAGE_CONFIG = 'config.yaml'      # settings of the pages of a directory
+
+
+def is_build_input(name):
+    """A file of the sources that the build reads and that is not content:
+    the template of a page, and the configuration of a directory (it holds
+    the settings an author writes for themselves). Never copied into the
+    site."""
+    return is_template(name) or name == PAGE_CONFIG
 
 
 def html_name(name):
@@ -97,14 +108,36 @@ class Page:
                              f"save it in UTF-8") from None
 
     @cached_property
+    def front_matter(self):
+        """The settings the page writes about itself, in YAML at its top:
+
+            ---
+            layout: stack
+            ---
+            = Title
+
+        LHTML already reads this form and removes it (`process_yaml`); what
+        was missing was the build reading it too, so that a page can say
+        what it is without a Jinja statement ({% set layout = 'stack' %})
+        or a config.yaml sitting next to it for one page out of five."""
+        from lhtml import process_yaml
+        try:
+            return process_yaml(self.text)[1] or {}
+        except Exception:               # malformed YAML: not a front matter
+            return {}
+
+    @cached_property
     def scan(self):
         """Its zones and its text read as LHTML (lib/source_scan.py), computed once."""
         return source_scan.Scan(self.text)
 
     @property
     def settings(self):
-        """Its settings: its config.yaml, then its deck entry (which takes precedence)."""
-        return {**self.config, **self.meta}
+        """Its settings, from the least specific to the most: the config.yaml
+        of its directory, the front matter of the page itself, then its deck
+        entry - the deck is where a talk is arranged, so it has the last
+        word over what a page says about itself."""
+        return {**self.config, **self.front_matter, **self.meta}
 
     @property
     def site_directory(self):
@@ -127,11 +160,10 @@ class Page:
 
 def _read_config(directory, cache):
     if directory not in cache:
-        path = os.path.join(directory, 'config.yaml')
+        path = os.path.join(directory, PAGE_CONFIG)
         config = {}
         if os.path.isfile(path):
-            with open(path) as fid:
-                config = yaml.safe_load(fid)
+            config = yaml.safe_load(read_text(path))      # names the file when it is not UTF-8
             if config is None:
                 config = {}
             if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
@@ -144,14 +176,25 @@ def _read_config(directory, cache):
     return cache[directory]
 
 
-def discover(source, exclude=()):
+def hidden(path_local, filename):
+    """Whether a page is hidden: its file, or any directory above it in the
+    source, starts with a dot. Such a page is a draft of the author - it is
+    not copied into the site, so it is not generated either."""
+    return any(part.startswith('.') for part in (path_local or '').split('/') + [filename] if part)
+
+
+def discover(source, exclude=(), include_hidden=False):
     """Pages of a source, in file order, with the config.yaml of their
-    directory. Hidden files and directories at the top level of the source
-    are ignored (as they are not copied into the site), and the directories
-    `exclude` (the site)."""
+    directory, and the directories `exclude` (the site) left out.
+
+    A hidden page (its file, or a directory above it, starts with a dot) is
+    a draft: it is not part of the pages of a project, since it is not
+    copied into the site either. `include_hidden` keeps them, for a deck:
+    naming one is the choice of its author."""
     cache = {}
     found = [f['path'] for f in find_files_in_hierarchy(source.root, is_template, exclude=exclude)]
-    found = [f for f in found if not (f.path_local or f.filename).startswith('.')]
+    if not include_hidden:
+        found = [f for f in found if not hidden(f.path_local, f.filename)]
     return [Page(source, f.path_local, f.filename, position=k,
                  config=_read_config(source.root + f.path_local, cache))
             for k, f in enumerate(found)]
@@ -182,7 +225,7 @@ def copy_assets(source_dir, target_dir):
     """Copy the assets of a page directory: its files and its subdirectories
     without templates (those of other pages), not the templates (see
     filesystem.copy_tree). Returns the warnings."""
-    hidden = ignore_hidden(source_dir, skip=is_template)
+    hidden = ignore_hidden(source_dir, skip=is_build_input)
     top = os.path.abspath(source_dir)
 
     def ignore(directory, names):
@@ -195,7 +238,7 @@ def copy_assets(source_dir, target_dir):
     return copy_tree(source_dir, target_dir, ignore)
 
 
-def place(pages, site_directory, project_assets=False, transform=None):
+def place(pages, site_directory, project_assets=False, transform=None, source_transform=None):
     """Copy the templates of the pages into the site, with the assets of their
     directory for the pages of other projects (those of the project are copied
     with its whole directory), and of the project too with `project_assets`
@@ -213,9 +256,9 @@ def place(pages, site_directory, project_assets=False, transform=None):
         if (page.source.name or project_assets) and page.site_directory not in copied:
             warnings += copy_assets(str(page.src.parent), target_dir)
             copied.add(page.site_directory)
-        if transform is None:
+        if transform is None and source_transform is None:
             shutil.copy2(page.src, site + page.site_template)
         else:
             with open(site + page.site_template, 'w', encoding='utf-8') as fid:
-                fid.write(transform(page.text))
+                fid.write(source_transform(page.text, page.src) if source_transform else transform(page.text))
     return warnings

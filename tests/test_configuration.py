@@ -1,6 +1,7 @@
 """Configuration precedence, diagnostics, and non-destructive path validation."""
 from pathlib import Path
 from types import SimpleNamespace
+import re
 import subprocess
 import sys
 import tempfile
@@ -38,7 +39,7 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(Path(config.site_directory), self.root / '.site')
         context = BuildContext(config, path, SimpleNamespace(), Logger())
         context.meta['keywords']['nested']['value'] = 'changed'
-        context.meta['headings'] = {'runtime': []}
+        context.meta['planned_slides'] = ['runtime']
         self.assertEqual(config.keywords['nested']['value'], 'original')
         self.assertTrue(config.title_id)
         self.write(debug=True)
@@ -50,15 +51,39 @@ class ConfigurationTests(unittest.TestCase):
         self.write(debug=False)
         self.assertIn('debug: true', self.cli('--check-config', '-d').stdout)
 
-    def test_layout_diagnostic_orders_plugin_before_pdf(self):
+    def test_a_configuration_that_lists_the_layout_report_as_a_plugin_is_refused(self):
+        """It is part of the generator now, selected by --layout: a
+        configuration of the previous version is told what to change,
+        before any build."""
         self.write(plugin=['plugins/generate_pdf.py', 'plugins/layout_report.py'])
         result = self.cli('--check-config', '--layout')
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        report = yaml.safe_load(result.stdout)
-        paths = report['plugin_paths']
-        self.assertEqual([Path(path).name for path in paths], ['layout_report.py', 'generate_pdf.py'])
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('--layout', result.stdout)
         self.assertFalse((self.root / '.site').exists())
-        self.assertFalse((self.root / '_layout').exists())
+
+        self.write(plugin=[], plugin_arg={'layout_report': {'root': 'main'}})
+        result = self.cli('--check-config')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("'layout:'", ' '.join(result.stdout.split()))
+
+    def test_a_configuration_that_lists_a_core_stage_as_a_plugin_is_refused(self):
+        """The menu of the theme and the heading ids are stages of the build:
+        a configuration of the previous version is told so, before any build."""
+        for entry, expected in (('plugins/menu.py', "theme's menu"),
+                                ('plugins/title_submenu.py', 'heading ids')):
+            self.write(plugin=[entry])
+            result = self.cli('--check-config')
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            flat = ' '.join(result.stdout.split())
+            self.assertIn(expected, flat)
+            self.assertIn(entry, flat)
+            self.assertFalse((self.root / '.site').exists())
+
+        # the extra keys of the menu are declared by the theme now
+        self.write(plugin=[], plugin_arg={'menu': {'keys': ['duration']}})
+        result = self.cli('--check-config')
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn('theme.yaml', ' '.join(result.stdout.split()))
 
     def test_bad_types_and_yaml_have_actionable_errors(self):
         for key, value in [('source_directory', None), ('site_directory', 3),
@@ -146,7 +171,50 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(len(warnings), 2)
 
 
+    def test_chrome_executable_is_resolved_and_checked(self):
+        executable = self.root / 'chrome'
+        executable.write_text('#!/bin/sh\n')
+        executable.chmod(0o755)
+        self.write()                                        # without the key
+        self.assertIsNone(load_config(self.file)[0].chrome)
+        self.assertNotIn('chrome', load_config(self.file)[0].to_meta())
+
+        self.write(chrome='chrome')                          # relative to the configuration
+        config = load_config(self.file)[0]
+        self.assertEqual(config.chrome, str(executable))
+        self.assertEqual(config.to_meta()['chrome'], str(executable))
+
+        bundle = self.root / 'Chrome.app/Contents/MacOS'     # macOS bundle
+        bundle.mkdir(parents=True)
+        (bundle / 'Chrome').write_text('#!/bin/sh\n')
+        (bundle / 'Chrome').chmod(0o755)
+        self.write(chrome='Chrome.app')
+        self.assertEqual(load_config(self.file)[0].chrome, str(bundle / 'Chrome'))
+
+        not_executable = self.root / 'plain'
+        not_executable.write_text('')
+        not_executable.chmod(0o644)
+        for value in ('missing-chrome', '   ', 42, str(not_executable)):
+            self.write(chrome=value)
+            with self.assertRaises(ConfigError):
+                load_config(self.file)
+
+
 class ReservedKeysAndWatchTests(unittest.TestCase):
+    def test_every_runtime_key_written_by_the_build_is_reserved(self):
+        """A key the generator writes in meta must be in RUNTIME_KEYS, else the
+        same key written in the YAML reaches meta (through 'extras') and the
+        build reads the user's value instead of its own."""
+        from lib.configuration import Config, RUNTIME_KEYS
+        known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
+        written = {}
+        for file in [REPO / 'generate.py', *sorted((REPO / 'lib').rglob('*.py')),
+                     *sorted((REPO / 'plugins').glob('*.py'))]:
+            for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text()):
+                written.setdefault(match.group(1), file.name)
+        unreserved = {key: name for key, name in written.items() if key not in known}
+        self.assertEqual(unreserved, {}, f'add these keys to RUNTIME_KEYS: {unreserved}')
+
     def test_params_keyword_is_reserved(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / 'c.yaml'
@@ -203,3 +271,30 @@ class LoggerTests(unittest.TestCase):
         self.assertIn('[a[b]] [bold]x[/bold]', text)
         self.assertIn('plain', text)
         self.assertNotIn('[info]', text)
+
+
+class CheckConfigTests(unittest.TestCase):
+    """--check-config answers for what the build will refuse, and it loads no
+    plugin to do it (the options live in lib/layout_options.py)."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='lhtml-check-')
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        (self.root / 'src').mkdir()
+        (self.root / 'src/a.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
+
+    def check(self, **report):
+        config = self.root / 'configure.yaml'
+        config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                          'layout': report}))
+        return subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--check-config'],
+                              cwd=self.root, capture_output=True, text=True)
+
+    def test_the_options_the_build_refuses_are_refused_here(self):
+        for bad in ({'jobs': 'four'}, {'width': 'wide'}, {'images': 'yes'},
+                    {'design_rules': 42}, {'output': '../../..'}):
+            result = self.check(**bad)
+            self.assertEqual(result.returncode, 1, (bad, result.stdout + result.stderr))
+        self.assertEqual(self.check(jobs=2).returncode, 0)
+        self.assertIn('unknown: widht', ' '.join(self.check(widht=10).stdout.split()))

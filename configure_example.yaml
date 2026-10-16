@@ -5,11 +5,12 @@ source_directory: 'example/'
 site_directory: '.site/'  # Optional; .site/ is the built-in default.
 theme: 'themes/webpage-frame/'  # Omit to use the bundled webpage-frame theme.
 
-# Plugins run in this order. Use [] to disable them.
+# Extensions, in the order they run. Everything a bundled theme needs is a
+# stage of the build - the page placed in the template of its theme, the
+# heading ids, the menu, the index of a site that has none - so a project
+# lists only what is its own, and the default is empty.
 # Paths are relative to this file, then to the generator installation.
-plugin:
-  - 'plugins/menu.py'
-  - 'plugins/redirection_first_page.py'
+# plugin: ['plugins/pre_include.py']
 
 # Optional settings (uncomment to override the defaults):
 # debug: false           # --debug takes precedence; also keeps intermediate files.
@@ -18,10 +19,19 @@ plugin:
 # title_id: true
 # keywords: {}           # Variables exposed to Jinja2 templates.
 # include_head: []
+# chrome: '/Applications/Google Chrome.app'  # Chrome run by the Node scripts (layout
+                                             # report, PDF export, --render); without it,
+                                             # PUPPETEER_EXECUTABLE_PATH, else the Chrome
+                                             # downloaded by puppeteer.
 # plugin_arg: {}         # Plugin-specific options.
-# cache_video_directory: 'cache_video_directory/'
+# cache_video_directory: 'cache_video_directory/'   # setting it asks for the
+                                                   # transcoded videos (ffpb)
 
-# With --layout, reports default to .layout/; override with:
-# plugin_arg:
-#   layout_report:
+# The layout analysis (--layout) is part of the generator, not a plugin.
+# Its reports default to .layout/; override with:
+# layout:
 #     output: '.layout/'
+#     root: '#main-content-centered'   # the theme declares this in its theme.yaml;
+#                                      # set it here only to override what it says. With a
+#                                      # root that does not match the theme, each page
+#                                      # is measured as a single block (the report says so).

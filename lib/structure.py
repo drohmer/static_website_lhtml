@@ -6,9 +6,49 @@ it generates in meta['built']: all of them, or those named by --only (the
 other pages of the site are those of the previous build). A plugin working
 on the pages (templates, HTML) uses built_pages; one writing a file for the
 whole site (menu, redirection) uses structure.
+
+Two levels of detail. In meta, an entry holds everything the build knows
+about a page, including the settings its author wrote for themselves and the
+absolute path of its source. Written into the site, an entry holds only
+PUBLIC_KEYS: structure/ is served with the site, so what a reader must not
+see does not go there.
 """
 
+from pathlib import Path
 import json
+
+# The documents written for the author and their agent (agents.md,
+# design.md, credits.md, todo.md) go next to the configuration, not into
+# the site: the site is published, and they are working documents.
+DOCUMENTS = '.structure/'
+
+# What may be written into the site for each page: what places it (dir,
+# filename, template, level, occurrence), what names it (title, source), and
+# the display flags the themes read. A setting that is not listed here
+# (notes:, message:, duration: ... of a config.yaml or of a deck entry) stays
+# in the build and never reaches the site.
+# Read by the themes to display a page in their menu.
+DISPLAY_KEYS = ('title', 'level', 'level-toc', 'hide-toc', 'nourl-toc', 'direct-url', 'delimiter')
+
+PUBLIC_KEYS = DISPLAY_KEYS + ('dir', 'filename', 'template', 'source', 'occurrence')
+
+# Never written into the site, whatever a configuration asks for: `src` is
+# the path of the source on the machine of the author.
+PRIVATE_KEYS = ('src',)
+
+
+def public_entry(entry, extra=()):
+    """The part of a page entry that may be written into the site."""
+    keys = set(PUBLIC_KEYS) | set(extra)
+    keys -= set(PRIVATE_KEYS)
+    return {key: value for key, value in entry.items() if key in keys}
+
+
+def documents_directory(meta):
+    """Where the documents of the project are written, created if needed."""
+    path = Path(meta.get('config_directory') or '.') / DOCUMENTS
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def load_structure(site_directory):

@@ -9,6 +9,17 @@ import shutil
 BUILD_DIRECTORIES = ('.site-build-', '.site-backup-')
 
 
+def read_text(path):
+    """The text of a file of the project. A file that is not UTF-8 says so
+    with its name and the byte that stopped the reading: the message of the
+    decoder alone names neither."""
+    try:
+        with open(path, encoding='utf-8') as stream:
+            return stream.read()
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"'{path}' is not UTF-8 text (byte {exc.start}): save it in UTF-8") from None
+
+
 def directory_name_clean(d_in):
     d = d_in
     if d == '' or d == '.':
@@ -87,16 +98,14 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None, exclude=()):
 
 
 def ignore_hidden(root, skip=None):
-    """Filter of copy_tree: hidden files at the top level of `root` (as the
-    previous 'cp -r root/*'), .git / .DS_Store everywhere, and the files for
-    which `skip(name)` is true."""
+    """Filter of copy_tree: the hidden files and directories of `root`, at
+    every level (a `.notes.md` written next to a slide is no more published
+    than one at the top), and the files for which `skip(name)` is true."""
     root = os.path.abspath(root)
 
     def ignore(directory, names):
-        top_level = os.path.abspath(directory) == root
         return {n for n in names
-                if n in ('.git', '.DS_Store') or (top_level and n.startswith('.'))
-                or (skip is not None and skip(n))}
+                if n.startswith('.') or (skip is not None and skip(n))}
     return ignore
 
 
@@ -143,6 +152,8 @@ def copy_tree(source, target, ignore=None, exclude=()):
             if name in skipped:
                 continue
             path, path_target = os.path.join(directory, name), os.path.join(destination, name)
+            if os.path.realpath(path) in excluded:      # a file or a directory named by the caller
+                continue
             if os.path.isdir(path):
                 real = os.path.realpath(path)
                 if real in excluded or os.path.basename(real).startswith(BUILD_DIRECTORIES):

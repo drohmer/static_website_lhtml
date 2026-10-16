@@ -1,10 +1,6 @@
-import sys
 import os
 import re
 import subprocess
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)) + '/../lib')
-import filesystem
 
 from lhtml.element_extract import extract_bracket_elements
 from lib.structure import built_pages
@@ -128,7 +124,7 @@ def research_line_in_header_files(arg):
         local_root = root[len(root_path):]
         for f in files:
             if f.endswith('.hpp'):
-                with open(root + '/' + f, 'r') as fid:
+                with open(root + '/' + f, 'r', encoding='utf-8') as fid:
                     content = fid.read()
 
                 content = extract_first_namespace(content)
@@ -163,7 +159,7 @@ def mid_process(meta):
         if not os.path.isfile(file_path):       # the page failed
             continue
 
-        with open(file_path, 'r') as fid:
+        with open(file_path, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
         r_code = r'includeadv::\{.*?\}'
@@ -177,7 +173,7 @@ def mid_process(meta):
 
             if 'filepath' in arg_includeadv:
                 include_filepath = CODE_DIRECTORY + arg_includeadv['filepath']
-                with open(include_filepath, 'r') as fid:
+                with open(include_filepath, 'r', encoding='utf-8') as fid:
                     include_file_content = fid.read()
 
             if 'research' in arg_includeadv:
@@ -203,5 +199,5 @@ def mid_process(meta):
 
         parts.append(file_content[prev:])
 
-        with open(file_path, 'w') as fid:
+        with open(file_path, 'w', encoding='utf-8') as fid:
             fid.write(''.join(parts))

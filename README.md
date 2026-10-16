@@ -12,10 +12,30 @@ pip install -r requirements.txt
 
 **Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
 
-**Dependencies**: `lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`
+**Required**, and that is all a site of HTML pages or slides needs:
+`lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`,
+`pyyaml`, `rich` - installed by the `pip install` above. No Node, no browser,
+no other program.
 
-Optional:
-- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Put `generate_pdf.py` last in the plugin list: after the export, it removes the site directory (kept with `-d`).
+**Systems**: Linux and macOS are supported; the tests run on Linux in CI and
+on macOS in development. **Windows is not supported yet.** Measured on
+Windows 11 with Python 3.11: a simple project builds (one source, one theme,
+the default plugins) and every module imports, but 52 of the 308 tests fail -
+mostly the deck, `--only` and the pages in sub-directories, where a path is
+compared with `/` while Windows writes `\`. What is known to work there is a
+flat project without a deck; the rest waits for those separators to be
+normalised, and for the CI to cover it.
+
+**Optional**, each unlocking one feature and needed only for it:
+- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `slides.pdf` and `images/`, and the site directory is not published (kept with `-d`, and kept as it is with `--only`).
+- **Layout report** (`--layout`, `--render`): Node.js and `npm install` in
+  this directory. If `npm install` leaves no Chrome behind (recent npm
+  versions skip that step), run `npx puppeteer browsers install chrome`; a
+  Chrome already installed on the machine is used as a last resort, and the
+  configuration key `chrome` names one explicitly.
+- **Videos in several codecs** (`cache_video_directory:`): `ffmpeg`, and `ffpb` for
+  the progress bar (`pip install ffpb`).
+- **Code snippets from other repositories** (`code_include.py`): `git`.
 - **SASS**: `pip install libsass` to compile `.sass` files (a warning is shown if they are left uncompiled).
 - **Figures in code**: the libraries their scripts import, in the Python that runs the generator (`pip install matplotlib numpy`); `latex` and `dvisvgm` (TeX Live) for the TikZ figures.
 
@@ -38,7 +58,7 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -d, --debug          Display debug info and keep temporary files
@@ -52,6 +72,9 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--l
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
   --layout             Write a layout report of each page in .layout/ (see below)
+  --render FILE        Render a file as PNG as the slides draw it (an SVG or image at its size,
+                       at most the slide; an HTML page at the size of the slide) in
+                       .layout/render/ (files outside the project: _outside/); no build
   --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
                        (relative to the current directory, else to the configuration file)
   --scaffold           Create the source of the deck slides that do not exist yet
@@ -63,7 +86,7 @@ python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--l
 python generate.py --serve --watch
 ```
 
-The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild. `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
+The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild (the server asks the browser to check every file again, `Cache-Control: no-cache`: a page rebuilt after an edit of the deck never runs with the previous menu, which gives the previous and next pages). `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
 
 **Comments on the render.** With `--serve`, the pages have a button 💬 (or
 the key `c`): click a block, write a comment, save. The comments are kept next
@@ -96,7 +119,10 @@ other pages are those of the previous build. Their numbering, their links
 fails keeps its previous version (put back at the end of the build, as it
 was), and the build reports the failure. When there is no previous build, or when
 the pages of the site changed (deck, new, renamed or removed page), a full
-build is done instead. Edits of the theme or of files outside the page
+build is done instead; with `--layout`, it still measures only the pages
+named (and those without a report, or whose report was made from another
+source), the other pages keep their report (also when only their deck entry
+changed: `layout`, `params`; `--layout` measures all of them). Edits of the theme or of files outside the page
 directories (shared images, sources included from elsewhere are read from the
 sources) need a full build.
 
@@ -106,14 +132,23 @@ sources) need a full build.
 source_directory: 'example/'           # Source content directory
 site_directory: '.site/'               # Output directory
 theme: 'themes/webpage-frame/'         # Theme directory
-plugin:                                # Plugin list (executed in order)
-  - 'plugins/menu.py'
-  - 'plugins/redirection_first_page.py'
+plugin: []                             # Extensions, in order (none by default)
 ```
+
+**The site is published; the documents of a project are not.** The site
+holds the pages, the assets, the theme and `structure/structure.{json,yaml}`
+(the pages of the site, read by the plugins and by `--only`, with the keys a
+theme may display: a `notes:` or a `message:` written by the author stays out
+of it, as does the path of the sources). What is written for the author and
+their agent goes to `.structure/`, next to the configuration: `agents.md`
+(the procedure), `design.md` (the macros and tokens of the design),
+`credits.md` (the origin of the pages and the credits of the images) and
+`todo.md` (the planned figures and slides). A custom theme that needs another
+page setting in the site declares it with `public_page_keys:`.
 
 Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lib/configuration.py`.
 
-Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. An explicitly configured relative theme path is relative to the YAML file.
+Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is empty: everything a bundled theme needs is a stage of the build - the page placed in the template of its theme, the heading ids, the menu, the index of a site that has none. A project lists only its own extensions, and the theme declares whether it has a menu (see [Theme](#theme-what-it-declares-about-the-build)). An explicitly configured relative theme path is relative to the YAML file.
 
 Configuration values are type-checked before generating or cleaning. Unknown keys produce warnings (with spelling suggestions) but remain available to custom plugins. Runtime fields such as `log`, `args`, and `plugin_paths` cannot be supplied in YAML. Prefer `plugin_arg` for custom plugin options.
 
@@ -134,11 +169,13 @@ Optional keys:
 | `debug` | Verbose logging and retained intermediate files; overridden by `--debug` / `--no-debug` |
 | `level_print` | Non-negative log indentation level (default: 0) |
 | `include_head` | List of extra head fragments passed to LHTML |
-| `cache_video_directory` | Directory for cached video codec conversions |
+| `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies them into the site, and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
-| `title_id` | Give the headings IDs and write their summary (`title_id.json`) with `plugins/title_submenu.py` (default: true) |
+| `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
+| `chrome` | Chrome executable run by the Node scripts (layout report, PDF export, `--render`), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
+| `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lib/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
 
@@ -146,7 +183,7 @@ Optional keys:
 
 The generator runs the following stages:
 
-1. **Data preparation** — Find the `.html.j2` templates, select and order them (deck), copy the sources and theme to the site (or, with `--only`, the templates and assets of its pages), extract titles and sitemap, export `structure/`, write the design (`design.css`, `design.md`)
+1. **Data preparation** — Find the `.html.j2` templates, select and order them (deck), copy the sources and theme to the site (or, with `--only`, the templates and assets of its pages), extract titles and sitemap, export `structure/`, write the design (`design.css` in the site, `design.md` in `.structure/`)
 2. **Pre-process plugins** — Plugin hooks before Jinja2 rendering
 3. **Jinja2 rendering** — Render the templates with their variables (see [Template variables](#template-variables))
 4. **Mid-process plugins** — Plugin hooks between Jinja2 and LHTML
@@ -166,7 +203,7 @@ Each page is rendered by Jinja2 with:
 | `linkTo_<id>` | `<a href="...">` to that page |
 | `params` | Parameters of the occurrence given by the deck (`params.current`), empty otherwise |
 | `page` | Metadata of the page: its `config.yaml` and deck entry (`page.notes`, `page.layout`), title, place in the site |
-| `layout` | Layout of the page, when the page sets it (`{% set layout = 'side' %}`, see [Design](#design-tokens-macros-and-layouts)) |
+| `layout` | Layout of the page, when the page sets it with `{% set layout = 'side' %}` (the front matter sets `page.layout` instead, see [Design](#design-tokens-macros-and-layouts)) |
 | `credit(file)`, `credits` | Credit of a file of the page, credits of all the pages (see [Credits](#credits-origin-of-the-slides-figures-in-code)) |
 | keys of `keywords` | Values of the configuration (`params`, `page`, `credit`, `credits` are reserved) |
 
@@ -189,36 +226,46 @@ static_website_lhtml/
     feedback.py, feedback.js  # Comments on the render (--serve)
     source_scan.py         # Reading of the sources as LHTML reads them (code, comments, Jinja, URLs)
     source_map.py          # data-lhtml-src="file:line" on the blocks (builds for development)
+    tracking.py            # Templates and includes read by each page
+    dependencies.py        # Files each page depends on: --only, validity of the reports
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
+    theme.py               # What a theme declares about the build (theme.yaml)
+    menu.py                # The table of contents written into the theme's menu
+    headings.py            # Heading ids and their summary (title_id.json)
+    wrap.py                # The page placed in the template of its theme
+    index_page.py          # The index of a site that has none
+    video_cache.py         # Transcoded variants of the videos (cache_video_directory:)
     lint.py                # Design lint: values written by hand in the pages
-    credits.py             # Credits, origin of the slides, planned figures (structure/credits.md, todo.md)
+    design_checks.py       # Checks of the layout report by role (title, body, caption, figure)
+    report_lock.py         # One build at a time writes the layout report
+    credits.py             # Credits, origin of the slides, planned figures (.structure/credits.md, todo.md)
     figures.py             # Figures made from code (*.svg.py, *.svg.tex)
     filesystem.py          # File/directory utilities
     generator_tool.py      # Metadata extraction, sitemap generation
     logger.py              # Console output (rich)
-    structure.py           # Pages of the site for plugins (structure, built_pages)
+    layout_options.py      # Options of the layout report, checked by --check-config
+    layout/
+      analysis.py          # What a measured page shows: collisions, overflows, density, deviations
+      findings.py          # The checks: their code, their severity, their sentence
+      report.py            # layout.md, summary.md, changes.md and the contact sheets
+      measure.py           # Measurement in headless Chrome (Node scripts of plugins/assets/)
+      build.py             # The analysis of a build (--layout): which pages, what to keep, where
+    structure.py           # Pages of the site for plugins (structure, built_pages),
+                           #   what may be published, and .structure/ of a project
   plugins/
-    auto_wrap.py           # Auto-wrap plain HTML in Jinja2 template
-    menu.py                # Generate JS menu from sitemap
-    redirection_first_page.py  # Create index.html redirect
-    title_submenu.py       # Extract heading IDs for navigation
     pre_include.py         # Pre-include content into templates
     code_include.py        # Include code from external repos
-    cache_video.py         # Video codec conversion and caching
     generate_pdf.py        # PDF/image generation (requires puppeteer)
-    layout_report.py       # Layout report (--layout, requires puppeteer)
     assets/                # Node scripts of the PDF export and of the layout report
     video_convert/         # Video conversion utilities (ffmpeg)
-  tools/
-    style_profile.py       # Style profile of a corpus of slide decks
   tests/                   # pytest suite
-  themes/
-    webpage-frame/         # Default web page theme
+  themes/                  # each with theme.yaml (contract with the build)
+    webpage-frame/         #   and, for the slides, design.yaml (tokens, macros)
     slides/                # Presentation slides theme
     slides-pdf/            # PDF export slides theme
-  docs/agents.md           # Procedure for AI agents writing slides (copied into structure/)
+  docs/agents.md           # Procedure for AI agents writing slides (copied into .structure/)
   example/                 # Example source content
 ```
 
@@ -230,19 +277,23 @@ Three built-in themes are available:
 - **`slides/`** — Presentation slides for browser display
 - **`slides-pdf/`** — Presentation slides optimized for PDF export
 
-Themes use Jinja2 template inheritance. The base template (`template/base.html`) provides blocks that content pages can override.
+Themes use Jinja2 template inheritance. The base template provides blocks
+that content pages can override; which template and which block is what the
+theme declares in its `theme.yaml`, with what the layout analysis must take
+as the content of a page - see
+[Theme: what it declares about the build](#theme-what-it-declares-about-the-build).
 
 ## Writing slides with an AI agent
 
 [`docs/agents.md`](docs/agents.md) is the procedure for an agent (LLM) that
 writes or edits slides: plan in the deck, layouts and macros, `--only
 --layout`, `--lint`, how to read the report and when to stop. It does not
-depend on the agent used. Each build copies it into `structure/agents.md` of
+depend on the agent used. Each build copies it into `.structure/agents.md` of
 the site, and the layout report links to it. In a slide project, one line in
 the file that your agent reads (`AGENTS.md`, `CLAUDE.md`, ...) is enough:
 
 ```
-To write or edit the slides, follow <site>/structure/agents.md (e.g. _site/structure/agents.md).
+To write or edit the slides, follow .structure/agents.md of this project.
 ```
 
 ## Deck: order of the slides
@@ -256,6 +307,7 @@ projects, and a slide can appear several times:
 ```yaml
 # deck.yaml (configure.yaml: deck: 'deck.yaml')
 title: Talk, short version
+duration: 60                          # length of the talk (minutes): a warning beyond
 sources:                              # other projects (relative to the deck file)
   inf585: ~/teaching/inf585/lecture/inf585_lecture_slides/src
 slides:
@@ -293,7 +345,9 @@ slides:
 - `!pattern` excludes the matching pages from the whole deck
   (`!inf585:*/00_title` for another project).
 - A slide may be a mapping with `path` and metadata. `title` replaces the
-  title in the menu; `duration` (minutes) is summed in the build log;
+  title in the menu; `duration` (minutes) is summed in the build log (the
+  `duration` of the deck itself is the length of the talk: the log gives the
+  total against it, and warns beyond);
   `params` (see below); every other key (`message`, `notes`, ...) is exported
   in `structure.yaml`, like the page `config.yaml` (`structure.yaml` also gives
   the template of each page in the site, `template`, and its origin: `src`,
@@ -358,6 +412,40 @@ so adding pages of other projects or repeated slides does not change them.
 `--check-config` also reads the deck and the design (sources, macros). Several decks can share
 the same sources (`python generate.py --deck deck_short.yaml`).
 
+## Theme: what it declares about the build
+
+A theme answers questions the build used to answer for it: which template a
+page is wrapped in, which block it fills, and what the measurement must take
+as the content of a page. It says so in `theme.yaml`, next to its
+`design.yaml`:
+
+```yaml
+template: 'theme/template/base.html'   # the page is wrapped in it
+content_block: 'content'               # the Jinja block it fills
+layout:                                # what the layout analysis reads
+  root: 'body'                         # CSS selector of the content
+  exclude: 'nav, footer'               # children of the root that are not content
+  width: 1920                          # size of a page, in CSS pixels
+  height: 1080
+```
+
+Everything is optional and a theme with no `theme.yaml` builds as before.
+The order is **engine, then theme, then project**: the defaults above are
+the engine's fallback, a theme replaces what it declares, and the `layout:`
+key of a project replaces both - the project keeps the last word because it
+is the one that knows it added a banner to its pages.
+
+A theme may declare only `root`, `exclude`, `width`, `height` and
+`reserved` under `layout:`; the other options (thresholds, output
+directory, jobs) belong to a project. An unknown key is refused by name,
+and `--check-config` prints the manifest the build will use.
+
+The three themes shipped declare theirs. `webpage-frame` holds its content
+in `#main-content-centered`: a project using it used to have to write that
+selector in its own configuration, and a project that did not had its whole
+page measured as a single block - the example site went from 3 blocks over
+3 pages to 145 when its theme started saying so.
+
 ## Design: tokens, macros and layouts
 
 A theme can describe its design in `design.yaml`: **tokens** (sizes, colors,
@@ -393,16 +481,24 @@ Macros of the slide themes: `gap::` (`gap::s`, `gap::l`, `gap::xl`),
 Brackets still work for exceptions; the classes, style and attributes of
 the source are added to those of the macro.
 
-**Layouts.** A page chooses a layout with `{% set layout = 'side' %}` at its
-top (only blank lines, comments, other `{% set %}` and `{% import %}` may come
-before it: elsewhere it is ignored, and the lint says so; a page that writes
-its own `{% extends %}` sets it outside its `{% block %}`), or with
-`layout: side` in its `config.yaml` or its deck entry; the
-theme then places and sizes its blocks, and `media::` holds its figures,
-fitted in the area of the layout: no positions, widths or spacers to write.
+**Layouts.** A page chooses a layout in its **front matter**, the YAML at
+its very top; the theme then places and sizes its blocks, and `media::`
+holds its figures, fitted in the area of the layout: no positions, widths
+or spacers to write.
+
+A page setting can be written in three places, from the least specific to
+the most: the `config.yaml` of its directory, the front matter of the page
+itself, and its deck entry - the deck is where a talk is arranged, so it
+has the last word over what a page says about itself. A page may also set
+`layout` as a Jinja variable (`{% set layout = 'side' %}` at its top, only
+blank lines, comments, other `{% set %}` and `{% import %}` before it; a
+page that writes its own `{% extends %}` sets it outside its `{% block %}`),
+which the theme reads directly and which therefore wins over all three.
 
 ```
-{% set layout = 'side' %}
+---
+layout: side
+---
 = Forward kinematics
 
 * Each joint angle is set by hand
@@ -426,7 +522,7 @@ macros):
 
 A layout is a class of `<body>` (`layout-side`, plus `layout-side-s` for a
 variant) styled by its `css` in `design.yaml` (`layouts:` with `css` and
-`doc`, documented in `structure/design.md`); the `design` key adds or
+`doc`, documented in `.structure/design.md`); the `design` key adds or
 removes layouts like macros.
 
 **Lint.** `python generate.py --lint` lists the values written by hand in the
@@ -444,6 +540,26 @@ src/03_squelette/04_ik/index.html.j2:9: spacer: div::[height:25px;]::
     -> gap::
 ```
 
+**Rules of the project.** The `lint` section of the design adds the rules of
+a deck (an author's habits that the design cannot express):
+
+```yaml
+design:
+  lint:
+    small_text: true          # small::/tiny:: on list items: keep the text at its size
+    rules:                    # a pattern of the text (code, math and comments are not read)
+      part-number:
+        pattern: '\bPart \d'
+        advice: 'name the topic: the audience does not remember part numbers'
+```
+
+`small_text` reports a `small::` or `tiny::` around list items, or opening
+a list item; captions, credits and notes may stay small (a list of references
+in `tiny::` is reported too: justify it, or write it without a list). The
+patterns are searched in the text only: not in code, math, comments, Jinja,
+HTML tags nor URLs. They are listed in
+`.structure/design.md` and reported as the other values written by hand.
+
 Each build gives their number (the style debt of the deck), and the layout
 report lists them per page (column `lint` of `summary.md`). What LHTML does
 not read as text is not linted: code and verbatim blocks, inline code, math,
@@ -457,7 +573,7 @@ The generator:
    configuration (a value `null` removes a token or a macro),
 2. writes `theme/css/design.css`: the tokens as CSS variables
    (`font: {small: 85%}` gives `--font-small`), then the `css` of each macro,
-3. writes their reference in `structure/design.md` of the site (macros,
+3. writes their reference in `.structure/design.md` of the project (macros,
    layouts, tokens: for authors and LLMs; the layout report links to it),
 4. validates the tokens and the macros (with LHTML), and gives the macros to LHTML without their `css`.
 
@@ -524,7 +640,7 @@ small::
 ::
 ```
 
-Each build writes `structure/credits.md`: the origin of each page (`origin`,
+Each build writes `.structure/credits.md`: the origin of each page (`origin`,
 or its project), the credits, and the images and videos used by the pages
 without credit (`img::`, `video::`, `videoplay::`, the macros showing an image
 or a video, `src="..."`; to check: your own figures need none). A page whose
@@ -534,7 +650,7 @@ version).
 
 **To do.** `placeholder:: video of the walk cycle ::` draws a planned figure;
 each build lists the planned figures (with their line) and the planned slides
-of the deck in `structure/todo.md`, and gives their number in the log.
+of the deck in `.structure/todo.md`, and gives their number in the log.
 
 **Figures in code.** A file `<name>.<format>.py` of the sources (`svg`, `png`,
 `pdf`, `jpg`), e.g. `assets/curve.svg.py`, is a script that writes the figure
@@ -565,7 +681,7 @@ def post_process(meta):  # After all conversions
 
 Each plugin module is loaded once per build, so it can keep a state from a hook to the next, but not from a build to the next (`--watch` loads it again). The plugins that run after the rendering (`mid_process`) only get the pages generated: a page that failed is no longer in `built_pages`. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets only its own options (`macros`, `line-breaks`...), and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
 
-With `title_submenu.py`, each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
+With the heading ids (`title_id: true`), each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 
 Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit, skips directory symlink cycles and never enters the site (reached through a link). The generator never writes through a link into the sources or the theme: a symbolic link to a directory is copied into the site as a directory (a linked library of videos is thus copied into each build), and a link to a file is kept only if it is relative and leads to a file of the copy, else the file is copied. A link to a directory containing it is kept only if it is relative and stays in the sources; the site itself is never copied.
 
@@ -575,21 +691,31 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 
 | Plugin | Hook | Description |
 |--------|------|-------------|
-| `auto_wrap.py` | pre | Wraps plain HTML files in Jinja2 template structure |
-| `title_submenu.py` | pre | Generates IDs for headings, exports navigation JSON |
-| `menu.py` | post | Injects sitemap structure into the JS menu |
-| `redirection_first_page.py` | post | Creates `index.html` redirect to first page |
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
-| `cache_video.py` | pre | Converts and caches videos in multiple codecs |
-| `layout_report.py` | post | Layout report of each page (`--layout`, requires `npm install`) |
-| `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation; put it last) |
+| `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation) |
+
+The page placed in the template of its theme, the heading ids, the menu,
+the index of a site that has none and the transcoded videos used to be
+plugins; they are stages of the build (`lib/wrap.py`, `lib/headings.py`,
+`lib/menu.py`, `lib/index_page.py`, `lib/video_cache.py`). A configuration
+that still lists one of them is refused by name.
 
 ## Layout Report (LLM-assisted slide layout)
 
 `--layout` measures the layout of every generated page in headless Chrome and
 writes a text report that an LLM (or any script) can read to find and fix
 layout problems. It requires `npm install` (see Installation).
+
+**What happens when it cannot run.** The analysis never takes the build with
+it: a missing browser, a page it cannot measure, a measurement that crashes
+are reported (`Layout report not produced ...`), the site is built and
+published, and the report of the previous build is left whole - what the
+measurement cannot replace, it does not destroy. What it is *asked* to do is
+another matter: an output directory that would overlap the sources, the
+theme or the site, and an option of the wrong shape (`jobs`,
+`design_rules`), stop the build with the name of the key, before anything is
+written.
 
 ```bash
 python generate.py --layout          # full generation + layout report
@@ -616,11 +742,24 @@ Files:
 - `pages/<relative HTML path>/layout.md`: one row per top-level block (number, kind, position and
   size of what is actually drawn, margins, CSS position, font size, signature),
   then the problems, warnings, differences with the deck, density and the
-  vertical gaps between blocks
-- `pages/<relative HTML path>/layout.json`: the same data, for scripts
+  vertical gaps between blocks. Each finding ends with where its blocks are
+  written: `[line 62]` for the line of the block in the page,
+  `[parts/bloc.j2:3]` for a block written in a template the page includes,
+  `[near line 62]` for the line of what surrounds it (an element inside a
+  marked block), `[no source marker]` for a block nothing names (one a
+  script writes); the table writes them `62`, `~62` and `-`
+- `pages/<relative HTML path>/layout.json`: the same data, for scripts.
+  `analysis.findings` is what was found, one shape for every check:
+  `{key, code, severity, blocks, subject, detail, text, data}` - `code` is
+  what the report prints (`HIDDEN TEXT`), `severity` is `problem`,
+  `warning`, `deviation` or `note`, `blocks` the numbers the finding is
+  about, `text` the line of the report, `data` the row the check produced
+  (its measured values). Read it instead of parsing `layout.md`
 - `pages/<relative HTML path>/render.png`: the real render
 - `pages/<relative HTML path>/overlay.png`: the real render with the outlined ink of each block and its number
 - `pages/<relative HTML path>/blocks.png`: the ink of each block as solid rectangles, content hidden
+- `pages/<relative HTML path>/internal-overlay.png`: the render with the inner blocks outlined
+  (columns, paragraphs, list items, figures, captions, formulas)
 
 Coordinates are CSS pixels, origin at the top-left corner of the page
 (1920×1080 for slides); the usable area is the inside of the slide frame.
@@ -631,12 +770,33 @@ Detected problems:
   of another block is visible on top of the text)
 - `COLLISION`: the drawn content of two blocks overlaps (text on text, text
   on the drawn part of an image, images, backgrounds)
-- `OUT OF AREA`: block beyond the usable area
+- `OUT OF AREA`: block beyond the usable area. A block laid over the page
+  rather than placed in the content is compared with the whole page
+  instead - one marked as an intentional overlay (class `overlay`), or one
+  fixed to the viewport (`position: fixed`: a timer, a page number, a
+  source line in the margin). A full-bleed figure covers the slide on
+  purpose and a fixed note sits in the margin on purpose; either one is
+  still reported when it spills past the page itself
 - `CLIPPED`: content cut by `overflow`
 - `UPSCALED IMAGE`: bitmap or video drawn more than 1.25× its native size,
   hence blurry (vector images such as SVG are ignored)
-- `RESERVED AREA`: content over an area of the theme (the navigation: the
-  elements of `exclude`)
+- `RESERVED AREA`: **text** written over an area of the theme (the
+  navigation: the elements of `exclude`), reported once per block and per
+  element, whatever the number of parts that element is drawn in. A figure
+  or a background passing under the navigation is not reported: the theme
+  draws its navigation over the content, which is what a full-bleed slide
+  is for
+- `COLLAPSED FIGURE`: an image or a video drawn (almost) without width or
+  height, e.g. in a flex box without a height: invisible
+- `SVG OVERFLOW`: an SVG figure draws beyond its viewBox (by more than the
+  threshold, at its displayed size): what is beyond is cut. For an SVG image,
+  its pixels drawn outside the viewBox are measured on a copy of its file (an
+  SVG without viewBox needs its width and height in px); for an inline SVG,
+  the boxes of its elements beyond its own box (unless its overflow is visible).
+- `INTERNAL COLLISION`, `INTERNAL CLIPPED`: the same checks between the inner
+  blocks of a block (two items of a list, a formula and its text...); at most
+  400 inner blocks per page.
+- `COLUMN OVERFLOW`: content wider than its column (`.col`, `.column`).
 
 Warnings:
 
@@ -650,21 +810,53 @@ Warnings:
   meaningful are compared: edges of images filling their box and of
   backgrounds/borders, the aligned side of text (left, right or center,
   from `text-align`); tops and bottoms only between blocks side by side.
+  A block laid over the page (the same overlay as `OUT OF AREA`) takes no
+  part on either side: it is positioned against the page, not in the grid
+  of the content.
 - `DENSE` (more than `max_words` words of text) and `SMALL FONT` (text
-  smaller than `min_font` px), on slides only.
-- `WRAPPED`: a title on several lines, or a list item (or credit) whose
-  second line holds only a few words.
+  smaller than `min_font` px, only when `design_rules.enabled` is false), on
+  slides only.
+- `WRAPPED`: a title on several lines, or a list item (paragraph, credit or
+  reference) whose second line holds only a few words.
+- `SHORT WRAPPED`: a list item (paragraph, credit or reference) on several
+  lines that would fit on one line of the slide: its width on one line is at
+  most the width from its left edge to the right of the usable area. The
+  report gives that width, the width available and the difference: give the
+  element that width (another layout, a wider column) or shorten the text.
 - `ROW`: figures side by side whose tops (or bottoms) differ by 3 to 40 px.
 - `SMALL IN ITS BOX` / `CROPPED`: a figure drawn on less than 75 % of its
   box, or cut, by `object-fit` (e.g. in `media::`: use `media::(.fill)` or
   another arrangement).
+- `SVG LABEL`: a text of an SVG figure drawn across one of its lines (a line,
+  path, circle... with a stroke), without a halo that keeps it readable
+  (`paint-order="stroke" stroke="white"`).
+- `DESIGN`: checks by role. Text smaller than the minimum of its role (body,
+  caption, reference, code), title not larger than the body or on more than 2
+  lines, caption larger than the body or far from its figure, tiny figure. The
+  role comes from the element: `.credit`, `.legende`, `figcaption` are
+  captions, `.source`, `.reference` references; `data-lhtml-role` sets it
+  (`decorative` exempts an ornament). Inside a block laid over the page (the
+  same overlay as `OUT OF AREA`) the role is not guessed: it is `decorative`,
+  so a timer, a page number or a watermark is not judged as content. Write
+  `data-lhtml-role` on it to have it judged. These checks replace `SMALL FONT`
+  unless `design_rules.enabled` is false.
+- `CANVAS OVERLAP`: text over a canvas or an animated demo. The box of a
+  canvas does not say which pixels are drawn: look at the render.
+- `INTERNAL TIGHT`: `TIGHT` between inner blocks.
+
+A formula is one box for `WRAPPED` and `SHORT WRAPPED`: its sums, indices and fractions are not
+lines of text.
 
 Each page report also gives its density: words (math and code excluded),
 formulas, lines of code, list items, lines of text, smallest font size, the
 parts of the area covered by text and images, and the largest free area.
 
 Renders are reproducible: videos are measured at their first frame, animated
-GIFs at their first image, CSS animations stopped. `changes.md` lists what
+GIFs at their first image, CSS animations stopped. A page whose media could
+not be measured says so (`Report validity`, and `render_health` in
+`layout.json`): a video measured before it loaded has the default box of the
+browser, not the one of the slide, so the checks of that page are computed
+on a rectangle it never shows. `changes.md` lists what
 changed since the previous report for the pages measured again: the problems
 that appeared or were solved, the counts of warnings and of values written
 by hand, the blocks moved or resized (matched by their signature), added or
@@ -690,8 +882,9 @@ blocks (`::nl`, `div[height:...]`) are `spacer`s and are ignored.
 
 An overlap can be intentional (zoom inset over an image, annotation placed on
 a figure): add the class `overlay` to one of the blocks, e.g.
-`::(.overlay)[position:fixed; ...]`. The overlap is then listed in the
-`Notes` section instead of the problems (hidden text is still reported).
+`::(.overlay)[position:fixed; ...]`. The overlap is then listed as
+`INTENTIONAL OVERLAP` in the `Notes` section instead of the problems
+(hidden text is still reported).
 
 A block is a top-level element of the page: title, paragraph or bare text,
 list, code block, image, video, math, or a `div::` / `::[...]` with all its
@@ -704,8 +897,8 @@ signature (tag, inline style, beginning of the text, image names).
 **Source map.** In the builds for development (`--layout`, `--serve`,
 `--watch`), the blocks of the pages carry `data-lhtml-src="<file>:<line>"`:
 the line of the template where they start. The blocks are the children of
-`<body>`, or of the wrapper of the theme that holds all the content (the
-`webpage-frame` theme: `#main-content-centered`). The generator marks the
+the content root the theme declares (`layout: root:` of its `theme.yaml`),
+or of the wrapper of the theme that holds all the content. The generator marks the
 lines of the templates with invisible characters before Jinja and LHTML, then
 moves them to the attribute (`lib/source_map.py`); the lines inside a zone
 that LHTML keeps as it is (code block, multi-line Jinja or HTML tag, math)
@@ -715,6 +908,31 @@ in HTML or by a macro (`{{ box() }}`) gets its own line. Without the
 attributes, the HTML is the same as in a normal build (also with
 `line-breaks`).
 
+**Validity of the reports.** Each build records the files that each page
+depends on (template, includes, configuration, design, theme, plugins, its
+assets, the files its scripts request) with their SHA-256, in
+`.verification/builds.json`. `--only` then also rebuilds and measures the pages
+whose dependencies changed. A change of what all pages share (theme,
+configuration, design, plugins, the generator itself) rebuilds and measures
+all of them, once. A report kept from a previous build gives its validity in
+`layout.md` (`current`, `stale` or `unknown` for a remote file). One build at a
+time writes the report: a second one waits for the first (at most 10 min).
+
+**Pages that load asynchronously.** The measure waits for the load of the
+page and of its local frames, for the fonts and the images, then for a short
+network idle and a settling delay. A page or a demo that prepares itself
+asynchronously can say when it is ready: the measure then waits for its
+promises (a rejected promise, or more than 15 s, fails the measure of the
+page), and skips the delays when every frame of the page does so and none
+plays a video or a sound. The slides theme loads
+`themes/slides/js/readiness.js`; a demo in an iframe loads it too, from
+`theme/js/readiness.js` of the site:
+
+```js
+window.__lhtmlReady.optIn();
+window.__lhtmlReady.waitUntil(loadAndPrepareTheDemo());   // a promise
+```
+
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources
 (positions, widths, font sizes), run `python generate.py --only <slide> --layout` and
@@ -723,48 +941,35 @@ check the new report".
 Options (`configure.yaml`):
 
 ```yaml
-plugin_arg:
-  layout_report:
-    root: 'body'                # content root ('#main-content-centered' for webpage-frame)
+layout:
+    # these four describe the theme and are declared in its theme.yaml
+    # (see Theme); set them here only to override what the theme says
+    root: 'body'                # content root
     exclude: 'nav, footer'      # children of the root that are not content
     width: 1920                 # viewport size
     height: 1080
-    images: true                # write render.png / overlay.png / blocks.png and contact sheets
+    images: true                # write overlay.png / blocks.png / internal-overlay.png and contact sheets
     threshold: 4                # minimal overlap / overflow reported (px)
     output: '.layout/'
     max_words: 80               # DENSE above this number of words per slide
-    min_font: 20                # SMALL FONT below this font size (px)
+    min_font: 20                # SMALL FONT below this font size (px), when design_rules is disabled
     contact_columns: 4          # thumbnails per row and rows per contact sheet
     contact_rows: 4
+    jobs: auto                  # pages measured at the same time (tabs of one browser); auto: half of the processors, at most 6
+    design_rules:               # DESIGN checks (defaults at 1920 px, scaled with the width)
+      enabled: true
+      roles:
+        body: {min_font: 20}
+        caption: {min_font: 12, max_body_ratio: 1.05, max_figure_gap: 64}
+        title: {min_font: 32, min_body_ratio: 1.25, max_lines: 2}
+        figure: {min_extent: 32}
+      layouts:                  # per layout (exact name, e.g. side-s)
+        section:
+          title: {min_body_ratio: 1.5}
 ```
 
-## Style Profile (writing slides in the style of an author)
-
-`tools/style_profile.py` describes what the slides of a corpus usually look
-like and how they are written, so that an LLM can write new slides in the
-same style:
-
-```bash
-python tools/style_profile.py ../course_a ../course_b --output style/
-```
-
-Each argument is a slide project with `src/<chapter>/` and the generated
-`_site/<chapter>/html/` (nothing is regenerated: the pages are measured as
-they are, like `--layout`). Measurements are cached in `style/pages/` and
-redone only for pages generated since (`-f` to force, `-j` for the number of
-browsers in parallel). A slide copied in several chapters counts once.
-
-Output:
-
-- `style.md`: usual values of each deck (title, columns, font sizes, words
-  per slide), layout types of the slides (`section`, `media`, `media_row`,
-  `columns`, `text_left_media_right`, `text_then_media`, `text_code`,
-  `code_media`, `text`, ...) with their frequency in each deck, typical
-  measures and examples (path and LHTML source), and the LHTML idioms of
-  the sources (block tags, spacers, most used style properties and values,
-  most frequent block openers)
-- `types/<type>.png`: thumbnails of 16 examples of each layout type
-- `style.json`: the same data, with the type and measures of every slide
+A check set to `null` is disabled; an unknown key or an invalid limit is an
+error of the configuration.
 
 ## Error Reporting
 
@@ -787,14 +992,20 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 - Light mode (`-l`) was removed: it copied the whole previous site and was not faster than a full build. Use `--only <page>` to regenerate some pages.
 - Deck parameters of a page are read as `params.<name>` (not as top-level variables).
 - `plugins/auto-wrap.py` was renamed `plugins/auto_wrap.py` (the old name keeps working, with a warning).
-- Heading anchors generated by `title_submenu.py` keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
+- `auto_wrap.py`, `redirection_first_page.py` and `cache_video.py` are no longer plugins either: remove them from `plugin:`, which is then usually empty. The transcoded videos are asked for by setting `cache_video_directory:` (the plugin used to fall back to a default directory and say so); without it, nothing is transcoded.
+- The menu of the theme and the heading ids are no longer plugins: remove `plugins/menu.py` and `plugins/title_submenu.py` from `plugin:`. The build runs them itself, and the theme declares whether it has a menu (`toc:` in its `theme.yaml`). The extra page settings the menu carried move from `plugin_arg: menu: keys:` to `toc: keys:` of the theme. Both old spellings are refused by name.
+- The layout report is no longer a plugin: remove `plugins/layout_report.py` from `plugin:` and run the build with `--layout`. Its options move from `plugin_arg: layout_report:` to the configuration key `layout:`. Both old spellings are refused by name, with the change to make; `--check-config` reports them without building anything.
+- `generate_pdf.py` no longer has to be last in the plugin list: it asks for the HTML it rendered not to be published instead of deleting the site directory, so a stage that runs after it (the layout analysis, another plugin) still has a site to read.
+- Heading anchors keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
 
 ## Tests
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests -q
+python -m pytest tests -q -n auto
 ```
+
+Most tests run a build in a subprocess, so they are slow one after the other and almost free in parallel: `-n auto` (pytest-xdist) takes the suite from about 85 s to 15 s, and about 110 s to 30 s with the browser tests. Drop `-n auto` to read the output of a single test.
 
 Development dependencies are listed separately in `requirements-dev.txt` and share the version lock. The tests require Node.js to validate generated menu JavaScript and the heading reader. The suite covers configuration precedence, validation, path protection, read-only diagnostics, plugin context isolation, generation regressions, and simulated PDF tool failures.
 
@@ -803,6 +1014,14 @@ The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and
 ```bash
 LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_integration.py tests/test_development.py -q
 ```
+
+Checking a change against a real deck: a full `--layout` measures every page, which is the slow way. `--only` rebuilds and re-measures the pages named and keeps the reports of the others, so the summary still counts the whole deck:
+
+```bash
+python generate.py -i <deck>/configure.yaml --layout --only <page> --only <other page>
+```
+
+On a deck of 78 slides, four pages measured this way take 11 s against 45 s, and report the same totals. Measuring a *subset deck* instead would not: the table of contents and the deck norms are computed over the slides present, so a shorter deck has a different navigation, and findings that involve it disappear.
 
 The browser and HTTP tests are opt-in locally because they launch Chrome and bind a localhost port. When updating dependencies, update `requirements-lock.txt`, install into a fresh environment, and run both the unit suite and smoke tests before committing. Optional PDF/SASS system tools are not part of the Python lock.
 

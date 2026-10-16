@@ -1,6 +1,7 @@
 'use strict';
 
 const puppeteer = require('puppeteer');
+const {launchBrowser} = require('./chrome');
 const path = require('path');
 const args = require('minimist')(process.argv.slice(2))
 
@@ -19,7 +20,7 @@ const url = `file:${input}`;
 console.log(url);
 (async() => {   
 
-const browser = await puppeteer.launch({
+const browser = await launchBrowser(puppeteer, args, {
   headless: "new",
   args: [
        '--disable-gpu',

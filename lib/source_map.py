@@ -1,12 +1,20 @@
 """Source map of the pages: data-lhtml-src="file:line" on the blocks of the HTML.
 
 In a build for development (--layout, --serve, --watch), each line of a
-template copied into the site gets an invisible marker with its line number
-(private-use characters, `\\ue000<line>\\ue001`). The markers go through Jinja
-and LHTML as text. After LHTML, `apply` gives each block of the content the
-line of the first marker it contains (or of a marker just before it) as
-`data-lhtml-src="<file>:<line>"`, and removes the markers. The layout report
-and the comments on the render point to the source with it.
+template read by the build gets an invisible marker naming the file it is
+in and its line number (private-use characters, `\\ue000<file>:<line>\\ue001`).
+The markers go through Jinja and LHTML as text. After LHTML, `apply` gives
+each block of the content the place of the first marker it contains (or of
+a marker just before it) as `data-lhtml-src="<file>:<line>"`, and removes
+the markers. The layout report and the comments on the render point to the
+source with it.
+
+The file travels in the marker rather than being stamped at the end,
+because a page is not the only template it is made of: what a template
+included by the page writes is written in that template. The templates
+marked are those of the project (the page and what it includes from the
+source directories); the theme's are not, so a block of the theme's own
+base template is left unmarked rather than named as content of the page.
 
 Where a marker goes on a line, so that LHTML reads the line as before:
 - at its end in general (`= Title`, `* item`, `div::(.x)`, `img::a.png[...]`,
@@ -32,13 +40,16 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 import html as html_lib
+import os
 import re
 
 from lib import source_scan
 
 OPEN, CLOSE = '', ''
-MARKER = re.compile(f'{OPEN}(\\d+){CLOSE}')
+LEADING = ''              # written at the start of the line of the block that follows
+MARKER = re.compile(f'{OPEN}([^{OPEN}{LEADING}{CLOSE}]*)({LEADING}?){CLOSE}')
 ATTRIBUTE = 'data-lhtml-src'
+NEAR = 'data-lhtml-near'        # the line is the one before the block, not its own
 
 CLOSER = re.compile(r'^\s*::(?:[\w-]*\[-\])?\s*$')
 JINJA_LINE = re.compile(r'^\s*(\{%.*%\}|\{#.*#\})\s*$')
@@ -55,20 +66,34 @@ VOID = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'l
 WRAPPERS = frozenset(('div', 'main', 'section', 'article'))
 
 
-def marker(line):
-    return f'{OPEN}{line}{CLOSE}'
+def marker(place, leading=False):
+    """The marker of a place, `<file>:<line>`. The file travels with the
+    line because a page is not the only template it is made of: what an
+    included file writes is written there, not in the page that includes it.
+
+    `leading`: the marker is written at the start of its line, before the
+    block that line creates (`img::a.png`, `gap::l`), so the block that
+    comes right after it is on that line."""
+    return f'{OPEN}{place}{LEADING if leading else ""}{CLOSE}'
 
 
-def add_markers(text, tags=source_scan.value_tags()):
-    """The template `text` with a marker of its line number on each line
+def add_markers(text, source, tags=source_scan.value_tags(), marker_for=marker, mark_protected=False):
+    """The template `text` with a marker of `<source>:<line>` on each line
     where LHTML reads it as before (see the module documentation)."""
+    marker_for = lambda number, leading=False, _m=marker_for: _m(f'{source}:{number}', leading)
     found = source_scan.zones(text)
     skipped = source_scan.multiline_lines(text, found) | _value_block_lines(text, found)
     offsets = source_scan.line_offsets(text)
+    protected_starts = {text.count('\n', 0, z.start) for z in found
+                        if z.kind in ('code', 'verbatim', 'math', 'raw', 'tag')
+                        and '\n' in text[z.start:z.end]} if mark_protected else set()
     commented = {text.count('\n', 0, z.start) for z in found if z.kind == source_scan.LHTML_COMMENT}
     out = []
     for index, line in enumerate(text.split('\n')):
         number = index + 1
+        if index in protected_starts:
+            out.append(marker_for(number) + line)
+            continue
         if (index in skipped or index in commented or not line.strip() or CLOSER.match(line)
                 or JINJA_LINE.match(line) or EMPTY_ITEM.match(line)):
             out.append(line)
@@ -78,14 +103,17 @@ def add_markers(text, tags=source_scan.value_tags()):
         trailing = TRAILING_TAG.search(stripped)
         if last and last.group(1) in tags and not stripped.endswith((']', ')', '}')):
             # the line ends with the value of a tag: marker at its start, if the tag starts it
-            out.append(marker(number) + line if line.lstrip().startswith(last.group(0)) else line)
+            out.append(marker_for(number, True) + line if line.lstrip().startswith(last.group(0)) else line)
         elif (stripped.endswith('::') and stripped[:-2].count('::') >= 1 and not stripped.endswith('::::')
               and not _in_zone(found, offsets[index] + len(stripped) - 2)):
-            out.append(stripped[:-2] + marker(number) + '::' + line[len(stripped):])
+            out.append(stripped[:-2] + marker_for(number) + '::' + line[len(stripped):])
         elif trailing and _is_tag_zone(found, offsets[index] + trailing.start()):
-            out.append(line[:trailing.start()] + marker(number) + line[trailing.start():])
+            # a line that is an opening tag takes its marker at the start,
+            # before the block that tag writes: that block is on this line
+            leading = trailing.start() == 0 and not stripped.startswith('</')
+            out.append(line[:trailing.start()] + marker_for(number, leading) + line[trailing.start():])
         else:
-            out.append(stripped + marker(number) + line[len(stripped):])
+            out.append(stripped + marker_for(number) + line[len(stripped):])
     return '\n'.join(out)
 
 
@@ -124,17 +152,28 @@ def strip(text):
     return MARKER.sub('', text)
 
 
-class _After(int):
+class _Mark(str):
+    """The place `<file>:<line>` a marker names, and whether it was written
+    at the start of the line of the block that follows it (see `marker`)."""
+
+    def __new__(cls, value, leading=False):
+        mark = super().__new__(cls, value)
+        mark.leading = leading
+        return mark
+
+
+class _After(_Mark):
     """The line of a marker right after an element, on its line (raw HTML,
     the output of a macro): the line of this element."""
 
 
 class _Element:
-    __slots__ = ('tag', 'offset', 'items', 'first')
+    __slots__ = ('tag', 'offset', 'items', 'first', 'texts')
 
     def __init__(self, tag, offset):
         self.tag, self.offset = tag, offset
         self.items = []         # in order: child _Element, or the line (int, _After) of a marker in its text
+        self.texts = []
         self.first = None       # line of the first marker inside it
 
     def children(self):
@@ -187,11 +226,13 @@ class _Tree(HTMLParser):
 
     def handle_data(self, data):
         if self.stack:
+            self.stack[-1].texts.append(data)
             items = self.stack[-1].items
             for m in MARKER.finditer(data):
                 after = (not self.new_line and '\n' not in data[:m.start()] and items
                          and isinstance(items[-1], _Element))
-                items.append(_After(m.group(1)) if after else int(m.group(1)))
+                leading = bool(m.group(2))
+                items.append(_After(m.group(1)) if after else _Mark(m.group(1), leading))
         self.new_line = self.new_line or '\n' in data
 
 
@@ -206,7 +247,7 @@ def _first_markers(element):
 def _content(root):
     """The element holding the blocks: the root, or the wrapper holding all its markers."""
     element = root
-    while not any(isinstance(item, int) for item in element.items):
+    while not any(isinstance(item, _Mark) for item in element.items):
         marked = [c for c in element.children() if c.first is not None]
         if len(marked) != 1 or marked[0].tag not in WRAPPERS or not marked[0].children():
             break
@@ -215,9 +256,14 @@ def _content(root):
 
 
 def block_lines(html):
-    """{offset of the start tag of a block: line}: the blocks of the content
-    with the line of their first marker, else of the marker right after them
-    on their line, else of the marker just before them."""
+    """{offset of the start tag of a block: (place, exact)}: the blocks of the
+    content with the place of their first marker, else of the marker right
+    after them on their line - both the line of the block itself, `exact` -
+    else of the marker just before them. That last marker is the line of the
+    block too when it is a leading one (written at the start of the line the
+    block comes from: `gap::l`, `img::a.png`); otherwise it is the line of
+    what comes before, a landmark and not a position, and the report must
+    not state it as one."""
     tree = _Tree(whole=not re.search(r'<body[\s>]', html, re.IGNORECASE))
     tree.feed_text(html)
     if tree.root is None:
@@ -227,31 +273,55 @@ def block_lines(html):
     for item in _content(tree.root).items:
         if isinstance(item, _After) and previous is not None:
             if previous.first is None:          # its own line, rather than a marker before it
-                lines[previous.offset] = int(item)
-        elif isinstance(item, int):
+                lines[previous.offset] = (str(item), True)
+        elif isinstance(item, _Mark):
             pending = item
         else:
             if item.first is not None or pending is not None:
-                lines[item.offset] = item.first if item.first is not None else pending
+                lines[item.offset] = ((item.first, True) if item.first is not None
+                                      else (pending, pending.leading))
             pending, previous = None, item
             continue
         previous = None
     return lines
 
 
-def apply(html, source):
-    """The HTML of a page with data-lhtml-src="<source>:<line>" on the blocks
-    of its content, and without markers."""
+def source_label(src, config_directory, source_directory=None):
+    """How a source is named in the pages: its path relative to the project.
+
+    The marker is read by an author and by their agent, so it must point at
+    a file of the project - never at the machine it was built on. A source
+    outside the configuration directory would give a path climbing out of
+    it ('../../../Users/...'), published in every page of a --layout build:
+    it is named relative to the sources instead, and by its name alone if
+    it is outside them too."""
+    relative = os.path.relpath(src, config_directory)
+    if not relative.startswith('..'):
+        return relative
+    if source_directory:
+        inside = os.path.relpath(src, source_directory)
+        if not inside.startswith('..'):
+            return inside
+    return os.path.basename(src)
+
+
+def apply(html):
+    """The HTML of a page with data-lhtml-src="<file>:<line>" on the blocks
+    of its content, and without markers. The file is the one the marker
+    carries, so a block of an included template names that template. A block
+    whose line is the one of a marker before it, not of a marker of its own,
+    also gets data-lhtml-near: the line is where to look, not where it is."""
     if OPEN not in html:
         return html
     try:
         lines = block_lines(html)
     except Exception:           # malformed HTML: no source map, but no markers either
         return strip(html)
-    attribute = html_lib.escape(source, quote=True)
     for offset in sorted(lines, reverse=True):
         name_end = re.compile(r'<[A-Za-z][\w-]*').match(html, offset)
         if name_end:
             insert = name_end.end()
-            html = html[:insert] + f' {ATTRIBUTE}="{attribute}:{lines[offset]}"' + html[insert:]
+            place, exact = lines[offset]
+            near = '' if exact else f' {NEAR}="1"'
+            html = html[:insert] + f' {ATTRIBUTE}="{html_lib.escape(place, quote=True)}"{near}' + html[insert:]
     return strip(html)

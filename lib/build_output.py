@@ -16,7 +16,12 @@ def staged_site(meta):
     meta['site_directory'] = str(staging) + '/'
     try:
         yield
-        # PDF-only exports may intentionally remove their staging site.
+        # A target may publish something else than the site it rendered: the
+        # PDF export keeps slides.pdf and images/, and asks for the HTML it
+        # used as an intermediate not to be published. It says so rather
+        # than deleting the directory under whatever runs next.
+        if not meta.get('publish_site', True):
+            shutil.rmtree(staging, ignore_errors=True)
         if staging.is_dir():
             backup = target.with_name('.site-backup-' + uuid.uuid4().hex)
             had_target = target.exists()

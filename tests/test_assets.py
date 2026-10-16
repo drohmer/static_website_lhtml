@@ -61,7 +61,7 @@ class AssetsBuildTests(unittest.TestCase):
     def build(self):
         self.write('configure.yaml', yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
                                                      'theme': str(REPO / 'themes/slides'),
-                                                     'plugin': ['plugins/auto_wrap.py']}))
+                                                     'plugin': []}))
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.root / 'configure.yaml')],
                                 capture_output=True, text=True)
         return result.returncode, ' '.join((result.stdout + result.stderr).split())
@@ -78,10 +78,12 @@ class AssetsBuildTests(unittest.TestCase):
         site = self.root / 'site'
         self.assertIn('E. Muybridge, public domain', (site / 'a/index.html').read_text())
         self.assertIn('assets/x.jpg: E. Muybridge, public domain', (site / 'b/index.html').read_text())
-        report = (site / 'structure/credits.md').read_text()
+        documents = self.root / '.structure'      # next to the configuration, not in the site
+        self.assertFalse((site / 'structure/credits.md').exists())
+        report = (documents / 'credits.md').read_text()
         self.assertIn('| 1 | a/index.html | A | `src/a/index.html.j2` | course/a |', report)
         self.assertIn('- a/index.html: `assets/y.png`', report)                 # without credit
-        self.assertIn('src/a/index.html.j2:5` (a/index.html): a walk cycle', (site / 'structure/todo.md').read_text())
+        self.assertIn('src/a/index.html.j2:5` (a/index.html): a walk cycle', (documents / 'todo.md').read_text())
         self.assertIn('To do: 1 planned figure(s)', output)
         self.assertTrue((site / 'a/assets/s.svg').is_file())
         self.assertFalse((self.root / 'src/a/assets/s.svg').exists())          # never in the sources
@@ -114,3 +116,18 @@ class AssetsBuildTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_figure_cache_invalidated_by_adjacent_data(tmp_path):
+    from lib import figures
+    folder = tmp_path / 'assets'
+    folder.mkdir()
+    (folder / 'data.txt').write_text('first')
+    (folder / 'plot.svg.py').write_text(
+        'import sys\nfrom pathlib import Path\nPath(sys.argv[1]).write_text(Path("data.txt").read_text())\n')
+    cache = tmp_path / '.cache'
+    assert figures.build_figures([folder], cache)[:2] == (1, 0)
+    assert figures.build_figures([folder], cache)[:2] == (0, 1)
+    (folder / 'data.txt').write_text('second')
+    assert figures.build_figures([folder], cache)[:2] == (1, 0)
+    assert (folder / 'plot.svg').read_text() == 'second'

@@ -2,7 +2,8 @@
 
 This guide is for an agent (LLM) that writes or edits the slides of a
 project built with static_website_lhtml. It is copied into every built site
-as `structure/agents.md`. The README of the generator is the full reference;
+as `.structure/agents.md`, next to the configuration. The README of the
+generator is the full reference;
 this page is the procedure.
 
 ## The project
@@ -16,7 +17,7 @@ this page is the procedure.
   given as pointers to their directories. It can include slides of other
   projects (`name:path`) and repeated slides with `params`. Without a deck,
   the slides follow the order of the files.
-- After a build, `<site>/structure/design.md` is the reference of the design:
+- After a build, `.structure/design.md` is the reference of the design:
   macros, layouts and tokens. **Read it before writing a slide.**
 
 ## Commands
@@ -33,9 +34,11 @@ Run them from the directory of `configure.yaml`, with
 | `generate.py --lint` | List the values written by hand, with their replacement (no build) |
 | `generate.py --scaffold` | Create the planned slides of the deck (entries with a `title` and no source yet) |
 | `generate.py --check-config` | Check the configuration, deck and design without building |
+| `generate.py --render assets/fig.svg` | Render a figure (or an HTML demo) alone, as the slides draw it: `.layout/render/` |
 
 `--only` falls back to a full build when the list of pages changed (deck
-edited, slide added or removed).
+edited, slide added or removed); `--layout` then still measures only the
+slides named.
 
 ## Procedure
 
@@ -49,10 +52,16 @@ edited, slide added or removed).
 4. Write the slides, then build and check them as for an edit.
 
 **Writing or editing a slide.**
-1. Choose a layout (see below) and put it at the top of the page:
-   `{% set layout = 'side' %}`. Only blank lines, comments, `{% set %}` and
-   `{% import %}` may come before it; elsewhere it is ignored (the lint says so).
-   A page that writes its own `{% extends %}` sets it outside its `{% block %}`.
+1. Choose a layout (see below) and put it in the front matter, the YAML at
+   the very top of the page:
+
+       ---
+       layout: side
+       ---
+       = Title of the slide
+
+   The front matter is the first thing in the file, between two lines of
+   three dashes. It is read as the settings of the page and never printed.
 2. Write the content with the macros of `design.md`. Do not write positions,
    pixel sizes, spacers or font sizes.
 3. Run `--only <slide> --layout`, then read
@@ -98,6 +107,8 @@ credit:: Image: Wikimedia Commons ::
 - `(.fill)`: enlarge small figures.
 - `(.top)`, `(.middle)`, `(.bottom)`: vertical position.
 - `(.auto)` in `stack`: take only the height of the figures.
+- `(.s)`, `(.m)`, `(.l)`: figures at most 300, 450 or 600 px high (also in a
+  row: `media::(.row .m)`), instead of a height written by hand.
 - `(.here)` in `side`: in the right column, facing the text that follows it
   (write it just before that text). Several figures can face several parts,
   but a figure never goes above the bottom of the previous one: when a figure
@@ -124,10 +135,10 @@ stands for a figure that does not exist yet.
   changes go in the `design` key of `configure.yaml` (tokens, new macros).
 - An image you did not make needs a credit: `credits:` in the `config.yaml`
   of its slide (author, source, license, url), and its caption
-  `credit:: {{ credit('assets/file.jpg') }} ::`. `structure/credits.md` lists
+  `credit:: {{ credit('assets/file.jpg') }} ::`. `.structure/credits.md` lists
   the images without credit. A slide copied from another one gets `origin:`.
 - A figure that does not exist yet: `placeholder:: what it shows ::`
-  (listed in `structure/todo.md`). A figure that can be computed (a plot, a
+  (listed in `.structure/todo.md`). A figure that can be computed (a plot, a
   diagram) is better written as code: `assets/plot.svg.py` (writes the file
   given as argument) or `assets/diagram.svg.tex` (TikZ), made at the build.
 - A repeated slide reads its parameters as `params.name`
@@ -138,28 +149,53 @@ stands for a figure that does not exist yet.
 
 `layout.md` gives one row per top-level block: number, the line of the source
 where it starts, kind, position and size of what is drawn, font, and a
-signature. An element in `position: fixed`/`absolute` inside a block is a
+signature. Every finding ends with where its blocks are written, in square
+brackets: `[line 62]`, the line of the block in the source of the page;
+`[parts/bloc.j2:3]`, the file and the line when the block is written in a
+template the page includes; `[near line 62]`, the line of what surrounds
+it, when the block itself carries no marker (an element inside a marked
+block) - look around that line; `[no source marker]` when nothing names it
+at all (a block a script writes). The table says the same with `62`, `~62`
+and `-`. Open that line rather than searching for the signature. An element in `position: fixed`/`absolute` inside a block is a
 block of its own (`in #n`): its overlaps with the text of its block are
 reported.
 
 **Problems** must be fixed:
 - `HIDDEN TEXT`: text covered by another block.
 - `COLLISION`: drawn contents overlapping.
-- `OUT OF AREA`: a block beyond the slide frame.
+- `OUT OF AREA`: a block beyond the slide frame. A block laid over the page
+  rather than placed in the content - the class `overlay`, or
+  `position: fixed` (a timer, a page number, a source line in the margin) -
+  is compared with the whole slide instead, and reported only if it leaves
+  it.
 - `CLIPPED`: content cut by `overflow`.
 - `UPSCALED IMAGE`: a bitmap or video enlarged above 1.25×, so it looks blurry.
 - `RESERVED AREA`: content over the navigation of the theme.
+- `COLLAPSED FIGURE`: an image or video drawn without width or height (invisible).
+- `SVG OVERFLOW`: an SVG figure draws beyond its viewBox, so it is cut.
 
 **Warnings** should be checked:
 - `TIGHT`: lines too close to another block.
-- `NEAR-ALIGNED`: edges a few pixels apart; align them exactly or move them clearly.
+- `NEAR-ALIGNED`: edges a few pixels apart; align them exactly or move them
+  clearly. A block laid over the page (see `OUT OF AREA`) is left out: it is
+  positioned against the page, not in the grid of the content.
 - `DENSE`: too many words.
-- `SMALL FONT`: text too small.
+- `SMALL FONT`: text too small for its role (body, caption, code...). Inside
+  a block laid over the page (see `OUT OF AREA`) the role is not guessed:
+  a timer or a page number is decorative and is not judged. Write
+  `data-lhtml-role` on it to have it judged.
 - `WRAPPED`: a title on several lines, or an item with a few words on its
   second line: shorten it, or give it more width.
+- `SHORT WRAPPED`: text on several lines that would fit on one line of the
+  slide; the report gives the missing width: widen its column, or shorten it.
 - `ROW`: figures side by side not aligned.
 - `SMALL IN ITS BOX` / `CROPPED`: a figure much smaller than its area
   (`media::(.fill)`, or another arrangement), or cut.
+- `SVG LABEL`: a label of an SVG figure drawn across one of its lines: move
+  it, or give it a halo (`paint-order="stroke" stroke="white"`).
+
+A figure you made (an SVG): check it alone with `--render` before placing it;
+the report sees its overflow and its labels, not whether it reads well.
 
 **Differences with the deck** (title position, text sizes used nowhere
 else) are breaks of consistency, not errors.
@@ -169,11 +205,23 @@ section gives the largest free area of the slide.
 
 After an edit, `.layout/changes.md` lists the problems that appeared or were
 solved, and the blocks that moved, changed size, appeared or disappeared:
-check that only the intended blocks changed. The
-renders are reproducible (videos and GIFs at their first frame), so a change
-there is a real change.
+check that only the intended blocks changed. The renders are reproducible
+(videos and GIFs at their first frame), so a change there is a real change.
+One exception remains, measured on a deck of 78 slides: on the pages
+holding several videos, `NEAR-ALIGNED` can differ by one finding between
+two runs of the same sources. A problem that appears or is solved is real;
+a `NEAR-ALIGNED` that flickers on a page full of videos is not. If a page
+says its measure is incomplete (`Report validity`), read that first: a
+video measured before it loaded has the default box of the browser, and
+every check of that page is then computed on a rectangle the slide never
+shows.
 
-An intended overlap (an inset over a figure) takes the class `overlay`.
+An intended overlap (an inset over a figure) takes the class `overlay`: it
+is listed under `Notes` as `INTENTIONAL OVERLAP`, not as a problem. A block
+laid over the page that way is also left out of the checks that compare it
+with the layout of the content (`OUT OF AREA`, `NEAR-ALIGNED`, the design
+roles), and still checked against the pixels of what is drawn (collisions,
+hidden text, `RESERVED AREA`).
 
 ## Comments of the author
 
@@ -191,7 +239,8 @@ anything else.
 A slide is done when:
 - its report has no problem;
 - its warnings are understood;
-- `--lint` reports nothing unjustified;
+- `--lint` reports nothing unjustified (including the rules of the project:
+  the `lint` section of the design, listed in `design.md`);
 - its render reads well: figures large enough, no large empty area, text not
   crowded.
 

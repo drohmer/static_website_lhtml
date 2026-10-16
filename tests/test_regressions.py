@@ -77,7 +77,8 @@ class GeneratorRegressions(unittest.TestCase):
         self.assertIn('b/index.html', menu)
         self.assertTrue((self.site / 'sitemap/second.html').exists())
         structure = yaml.safe_load((self.site / 'structure/structure.yaml').read_text())
-        self.assertEqual(structure[1]['custom'], 'fresh')
+        self.assertEqual(structure[1]['title'], 'Second')       # the new page was read by this build
+        self.assertNotIn('custom', structure[1])                # its settings stay out of the site
         self.assertEqual((self.site / 'asset.txt').read_text(), 'changed asset')
         (self.source / 'a/index.html.j2').unlink()
         self.page('b/index.html.j2', 'Renamed')
@@ -99,6 +100,23 @@ class GeneratorRegressions(unittest.TestCase):
             self.build('--only', 'a')
             self.assertTrue((self.site / 'a/index.html').is_file())
 
+    def test_titles_keep_apostrophes_and_parentheses(self):
+        (self.source / 'a').mkdir()
+        (self.source / 'a/index.html.j2').write_text("= Angles d'Euler (x/y/z)\n\nText\n")
+        (self.source / 'b').mkdir()
+        (self.source / 'b/index.html.j2').write_text(
+            "{% set pageTitle = 'L\\'informatique \"graphique\"' %}\n<h1>B</h1>")
+        config = yaml.safe_load(self.config.read_text())
+        config['plugin'] = []
+        self.config.write_text(yaml.safe_dump(config))
+        self.build()
+        script = self.site / 'theme/js/menu.js'
+        menu = json.loads(script.read_text().split('const toc = ', 1)[1].split(';', 1)[0])
+        self.assertEqual([entry['title'] for entry in menu],
+                         ["Angles d'Euler (x/y/z)", 'L\'informatique "graphique"'])
+        page = (self.site / 'a/index.html').read_text()
+        self.assertRegex(page, r"<title>\s*Angles d(&#39;|')Euler \(x/y/z\)\s*</title>")
+
     def test_menu_escapes_metadata_and_retains_flags(self):
         self.page('a/index.html.j2', 'First')
         title = 'Le mode "debug"\nC:\\docs'
@@ -116,7 +134,7 @@ class GeneratorRegressions(unittest.TestCase):
 
     def test_each_page_has_its_own_heading_summary(self):
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/title_submenu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         self.page('a.html.j2', 'A')
         self.page('b.html.j2', 'B')
@@ -197,7 +215,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                 self.assertTrue((self.site / 'index.html').exists())
                 self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
 
-    def test_pdf_success_cleans_only_after_publication(self):
+    def test_pdf_asks_not_to_publish_instead_of_deleting(self):
         self.site.mkdir()
         def run(command, check):
             self.assertTrue(self.site.exists())
@@ -209,10 +227,16 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                 'structure': [{'dir': '', 'filename': 'index.html'}]}
         with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
-            generate_pdf.post_process({**meta, 'only': True})       # --only: built in the site itself
+            partial = {**meta, 'only': True}                        # --only: built in the site itself
+            generate_pdf.post_process(partial)
             self.assertTrue(self.site.exists())
+            self.assertNotIn('publish_site', partial)
             generate_pdf.post_process(meta)
-        self.assertFalse(self.site.exists())
+        # The site it rendered was an intermediate of the export: the export
+        # says so, and the publication step drops it (lib/build_output.py).
+        # It does not delete a directory other stages may still be reading.
+        self.assertTrue(self.site.exists())
+        self.assertFalse(meta['publish_site'])
         self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')
         self.assertEqual((self.root / 'images/slide_000.jpg').read_bytes(), b'export')
 

@@ -136,7 +136,7 @@ class DeckGenerationTests(unittest.TestCase):
 
     def build(self, deck_value=None, *args):
         config = {'source_directory': 'src', 'site_directory': 'site',
-                  'theme': str(REPO / 'themes/slides'), 'plugin': ['plugins/menu.py']}
+                  'theme': str(REPO / 'themes/slides'), 'plugin': []}
         if deck_value is not None:
             config['deck'] = deck_value
         self.config.write_text(yaml.safe_dump(config))
@@ -206,7 +206,7 @@ class DeckProjectsTests(unittest.TestCase):
         self.config = self.root / 'talk/config.yaml'
         self.config.write_text(yaml.safe_dump({
             'source_directory': 'src', 'site_directory': 'site', 'deck': 'deck.yaml',
-            'theme': str(REPO / 'themes/slides'), 'plugin': ['plugins/menu.py']}))
+            'theme': str(REPO / 'themes/slides'), 'plugin': []}))
 
     def write(self, name, text):
         path = self.root / name
@@ -234,7 +234,10 @@ class DeckProjectsTests(unittest.TestCase):
             self.assertEqual([e['dir'] + e['filename'] for e in structure],
                              ['00_plan/index.html', '01_a/index.html', 'course/05_b/01_c/index.html',
                               '00_plan/index-2.html'])
-            self.assertEqual(structure[2]['credit'], 'course')
+            # 'credit' is a setting of the page, kept in the build and not published;
+            # 'source' says publicly that the page comes from the other project.
+            self.assertEqual(structure[2]['source'], 'course')
+            self.assertNotIn('credit', structure[2])
             self.assertEqual(structure[3]['title'], 'Plan (2)')
             first = (self.site / '00_plan/index.html').read_text()
             second = (self.site / '00_plan/index-2.html').read_text()
@@ -305,7 +308,7 @@ class DeckBuildRegressionTests(DeckProjectsTests):
     def test_title_with_quotes_and_auto_wrap(self):
         self.write('talk/src/02_raw/index.html.j2', '= Raw\n')
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         title = 'L\'animation d\'un "personnage" {{ x }}'
         structure = self.build({'slides': [{'path': '02_raw', 'title': title}]})
@@ -414,7 +417,7 @@ class DeckBuildEdgeCaseTests(DeckProjectsTests):
     def test_emoji_and_date(self):
         self.write('talk/src/02_raw/index.html.j2', '= Party 🎉\n')
         config = yaml.safe_load(self.config.read_text())
-        config['plugin'] = ['plugins/auto_wrap.py', 'plugins/menu.py']
+        config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         import datetime
         structure = self.build({'slides': ['02_raw', {'path': '01_a', 'title': 'Fête 🎉',
@@ -459,3 +462,24 @@ class DeckWarningTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TalkLengthTests(unittest.TestCase):
+    def test_duration_of_the_talk(self):
+        loaded = deck.load_deck({'duration': 10, 'slides': [{'path': 'a', 'duration': 8}, {'path': 'b', 'duration': 4}]})
+        self.assertEqual(loaded.duration, 10)
+        result = deck.apply_deck(loaded, SLIDES)
+        self.assertEqual(result.over_time(loaded.duration), 2)
+        self.assertIn('12 min of 10', result.summary(loaded.duration))
+        self.assertIsNone(result.over_time(20))
+        self.assertIsNone(result.over_time(None))
+        for bad in (0, -5, 'one hour', True):
+            with self.assertRaises(deck.DeckError):
+                deck.load_deck({'duration': bad, 'slides': ['a']})
+
+    def test_sum_of_decimals_is_not_over_time(self):
+        loaded = deck.load_deck({'duration': 7, 'slides': [{'path': p, 'duration': 0.7} for p in
+                                                            ('a/00_section', 'a/01_x', 'a/02_y', 'a/03_todo_z',
+                                                             'b/00_section', 'b/01_w')]})
+        self.assertIsNone(deck.apply_deck(loaded, SLIDES).over_time(4.2))
+

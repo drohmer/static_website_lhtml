@@ -15,12 +15,18 @@ key. Example:
       side: {css: 'body.layout-side > .media { position: absolute; ... }',
              doc: 'Text on the left, media:: on the right.'}
 
+    lint:                            # rules of the project for --lint (lib/lint.py)
+      small_text: true               # small::/tiny:: on list items: the text at its size
+      rules:                         # a pattern of the text (not code, math or comments)
+        part-number: {pattern: '\\bPart \\d', advice: 'name the topic, not its number'}
+
 A design file may start from another one: `extends: ../slides/design.yaml`
 (relative to the file), then override it key by key.
 
 The generator writes `theme/css/design.css` (the tokens as CSS variables on
-:root, then the `css` of each macro) and `structure/design.md` (reference of
-the macros and tokens, for authors and LLMs), and passes the macros to LHTML
+:root, then the `css` of each macro) and `.structure/design.md` next to the
+configuration (reference of the macros and tokens, for authors and LLMs:
+the site is published, those documents are not), and passes the macros to LHTML
 without their `css` (lhtml_macros).
 """
 from __future__ import annotations
@@ -30,12 +36,14 @@ import copy
 import re
 
 import lhtml
+from lib.filesystem import read_text
 import yaml
 
 DESIGN_FILE = 'design.yaml'
 CSS_PATH = 'theme/css/design.css'
-REFERENCE_PATH = 'structure/design.md'
-SECTIONS = ('tokens', 'macros', 'layouts')
+REFERENCE_NAME = 'design.md'
+SECTIONS = ('tokens', 'macros', 'layouts', 'lint')
+LINT_FIELDS = {'small_text', 'rules'}
 LAYOUT_FIELDS = {'css', 'doc'}
 MAX_EXTENDS = 10
 TOKEN_NAME = re.compile(r'[A-Za-z0-9_-]+$')
@@ -50,8 +58,9 @@ class DesignError(ValueError):
 
 def _read_yaml(path):
     try:
-        with open(path, encoding='utf-8') as stream:
-            data = yaml.safe_load(stream)
+        data = yaml.safe_load(read_text(path))
+    except ValueError as exc:                       # not UTF-8: the message names the file
+        raise DesignError(str(exc)) from None
     except (OSError, yaml.YAMLError) as exc:
         raise DesignError(f"cannot read '{path}': {exc}") from exc
     if data is None:
@@ -87,6 +96,26 @@ def _check(design, origin):
         if spec is not None and not isinstance(spec, dict):
             raise DesignError(f"{origin}: macro '{name}' must be a mapping (or null to remove it), "
                               f"got {spec!r}")
+    lint = design.get('lint') or {}
+    if set(lint) - LINT_FIELDS:
+        raise DesignError(f"{origin}: unknown lint key(s) {', '.join(sorted(map(str, set(lint) - LINT_FIELDS)))} "
+                          f"(expected {', '.join(sorted(LINT_FIELDS))})")
+    if 'small_text' in lint and not isinstance(lint['small_text'], bool):
+        raise DesignError(f"{origin}: lint 'small_text' must be true or false")
+    if not isinstance(lint.get('rules') or {}, dict):
+        raise DesignError(f"{origin}: lint 'rules' must be a mapping name: {{pattern, advice}}")
+    for name, rule in (lint.get('rules') or {}).items():
+        if rule is None:
+            continue
+        # a design extending another one may change only the advice of a rule:
+        # its pattern is checked after the merge (_check_lint_patterns)
+        if not isinstance(rule, dict) or set(rule) - {'pattern', 'advice'} \
+                or not isinstance(rule.get('pattern', ''), str):
+            raise DesignError(f"{origin}: lint rule '{name}' must be a mapping with pattern and advice")
+        try:
+            re.compile(rule.get('pattern', ''))
+        except re.error as exc:
+            raise DesignError(f"{origin}: lint rule '{name}': invalid pattern ({exc})") from exc
     for name, spec in (design.get('layouts') or {}).items():
         if not isinstance(name, str) or not TOKEN_NAME.match(name):
             raise DesignError(f"{origin}: invalid layout name {name!r} (letters, digits, - and _ only)")
@@ -131,6 +160,9 @@ def load_design(theme_directory, override=None, base_directory='.', files=None):
         design = merge(design, _load(override, base_directory, "'design' of the configuration", files))
     design = {section: design.get(section) or {} for section in SECTIONS}
     flatten_tokens(design['tokens'])                    # validation
+    for name, rule in (design['lint'].get('rules') or {}).items():
+        if rule is not None and not rule.get('pattern'):
+            raise DesignError(f"lint rule '{name}' has no pattern")
     try:
         lhtml.registry_with_macros(lhtml_macros(design))
     except lhtml.LHTMLError as exc:
@@ -235,6 +267,16 @@ def design_markdown(design):
                 out += [str(spec['doc']).strip(), '']
             if spec.get('css'):
                 out += ['```css', _resolve(str(spec['css']).strip(), tokens), '```', '']
+    lint = design.get('lint') or {}
+    rules = {name: rule for name, rule in (lint.get('rules') or {}).items() if rule}
+    if lint.get('small_text') or rules:
+        out += ['## Rules of the project', '', '`--lint` (and the layout report) also checks:', '']
+        if lint.get('small_text'):
+            out.append('- `small-text`: no `small::` / `tiny::` on list items: the text stays at its size '
+                       '(shorten it); captions, credits and references may be small.')
+        out += [f"- `{name}`: `{rule['pattern']}` -> {rule.get('advice') or 'not in the slides'}"
+                for name, rule in rules.items()]
+        out.append('')
     out += ['## Tokens', '', 'CSS variables (`var(--name)`), in `theme/css/design.css`.', '',
             '| token | value |', '|---|---|']
     out += [f'| `--{name}` | `{value}` |' for name, value in tokens.items()]
@@ -242,9 +284,12 @@ def design_markdown(design):
 
 
 def write_design(meta, design):
-    """Write theme/css/design.css and structure/design.md in the site directory."""
+    """Write theme/css/design.css in the site, and the reference of the design
+    in .structure/design.md, next to the configuration: it is written for the
+    author and their agent, and the site is published."""
+    from lib.structure import documents_directory
     site = Path(meta['site_directory'])
-    for relative, text in ((CSS_PATH, design_css(design)), (REFERENCE_PATH, design_markdown(design))):
-        (site / relative).parent.mkdir(parents=True, exist_ok=True)
-        (site / relative).write_text(text, encoding='utf-8')
+    (site / CSS_PATH).parent.mkdir(parents=True, exist_ok=True)
+    (site / CSS_PATH).write_text(design_css(design), encoding='utf-8')
+    (documents_directory(meta) / REFERENCE_NAME).write_text(design_markdown(design), encoding='utf-8')
     return site / CSS_PATH
