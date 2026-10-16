@@ -1368,6 +1368,17 @@ HTML or by a macro would lose. Decided: both stay, and `videoplay::`
 gains `playsinline` (on an iPhone, an autoplaying video otherwise opens
 full screen).
 
+*Done* (2026-10-17), on the branch `v3-no-file-reads` of LHTML. Replayed
+on the 914 calls of the corpus, the only changes were the 14 calls of the
+documentation that wrote `link::` inside inline code, migrated in its copy
+to `<code class="code-inline">link::...</code>`; with them, every call
+gives the same HTML, `playsinline` set aside. The five projects built with
+LHTML 3 (before `playsinline`) are identical to their references, their
+PDFs compared page by page on the render: 22 and 74 pages of the two
+courses show a video and are skipped, found by four more builds each - a
+video page can show the same frame several times, so the list grows until
+a build finds none new.
+
 On the side of the generator, the same survey finds
 `include_head` (declared and documented, read nowhere), `title`/`css`/`js`/
 `line-breaks` in `LHTML_OPTIONS` (no effect on a page the theme wraps), the
