@@ -446,21 +446,30 @@ block taking the marker of a descendant - happens 0 times in the 554
 top-level blocks of the real deck. What is true is sharper, and it is the
 reason this section is not finished:
 
-- **The line is not always the line of the block.** The build marks the
-  lines of the page template and of nothing else. A block that comes from
-  an included file has no marker of its own and takes the line of the
-  marker before it - a line of the page, holding another block. Saying
-  "line 11" there sends a reader to the wrong place, so it does not: the
-  build records which of the two cases it is (`data-lhtml-near`), and the
-  report writes `near line 11` and `~11` in the table. 6 findings of the
-  deck are in that case, and 1188 of its 1660 sub-blocks, which take the
-  marker of the element around them.
-- **One file per page.** `apply()` stamps the page's own path on every
-  marker it writes, so `file` is always the page's. The `other/file.j2:4`
-  form the report knows how to write cannot come from a build today. Giving
-  a marker the identity of the file it came from is the real fix - the
-  Jinja loader knows the name of every template it reads - and it belongs
-  with the finding schema of 5.1, not before it.
+- **The line is not always the line of the block.** The build records
+  which case it is (`data-lhtml-near`) and the report writes `near line 11`
+  and `~11` in the table rather than sending a reader to another block.
+  Then measuring said *which* blocks were in that case, and the answer was
+  not the one this section had assumed. Of the 107 top-level blocks of the
+  deck marked `near`, **none came from an included file**: 100 were
+  `gap::l` and 7 were a raw `<img ...>` line. Both take their marker at the
+  **start** of their line - a marker at the end would become part of the
+  value of the tag - and the block that follows a marker at the start of a
+  line is the block that line writes. The line was exactly right and the
+  report called it a landmark. The marker now says which of the two it is,
+  and the deck has **0 blocks marked `near`** and no finding that says
+  `near line`. What stays `near`, and rightly, is 1081 of the 1660
+  sub-blocks: an element inside a marked block takes the marker of the
+  block around it.
+- **One file per page.** Done, and the premise above was its real test: the
+  deck has no `{% include %}` at all, so the defect had to be reproduced on
+  a project written for it. It was real - a block of `parts/bloc.j2` was
+  reported at line 3 of the page, which holds another block. The marker now
+  carries the file it is written in (`\ue000<file>:<line>\ue001`) instead of
+  having the page's path stamped on it at the end, and `TrackingLoader`
+  marks the templates the page includes as the pages themselves are marked.
+  Only the templates under the source directories are marked: the theme's
+  base template is not content of the page, and stays unmarked.
 - **A bare text run gets nothing.** Not because of KaTeX, as a first
   reading of the deck suggested, but because `apply()` writes an attribute
   on a tag and a text run is not one: 10 of the 108 blocks of the example's
@@ -820,7 +829,7 @@ special case comes before what adds a concept.**
    records instead of hiding. What is left of 5.2 is the file: one marker
    carries one path, the page's, so a block from an included file is given
    a line of the page. That needs the marker to carry the identity of the
-   file it came from; step 6 did not do it, and it is named below.
+   file it came from, which is step 6b below.
 
 6. **The contracts inside `lib/layout/`.** The 18 record shapes of the
    checks became one: `lib/layout/findings.py` declares, per check, its
@@ -844,13 +853,22 @@ special case comes before what adds a concept.**
    concludes - which waits for both, because a verdict nobody can diff is a
    sentence, not a contract.
 
-   One more is not done and is not waiting on anything: **one file per
-   page** (5.2). A marker still carries the path of the page it was
-   rendered in, so a block from an included file is given a line of the
-   page, which the report says plainly (`near line 11`, 6 findings of the
-   deck) but cannot resolve. The fix is in `lib/source_map.py` and the
-   Jinja loader, not in the finding schema; it is step 6b, cheap, and it
-   belongs to whoever next opens the source map.
+6b. **One file per page, and the line that was right all along** (5.2).
+   The marker carries the file it is written in instead of having the
+   page's path stamped on it at the end, and the Jinja loader marks the
+   templates a page includes: a block of `parts/bloc.j2` names that file
+   and its line, where it used to be given a line of the page holding
+   another block.
+
+   Measuring first changed what this step was. The 107 blocks of the deck
+   reported `near` did not come from an included file - the deck has no
+   `{% include %}` at all. They were `gap::l` and raw `<img>` lines, which
+   take their marker at the **start** of their line, and a block that
+   follows a marker at the start of a line is on that line. The report was
+   calling a right answer a landmark, 100 times. Both cases are now exact,
+   and the deck has 0 blocks marked `near`; the included-file defect was
+   real but unexercised, and had to be reproduced on a project written for
+   it before it could be fixed.
 
 ### Deferred, with a reason: the declared positions (was step 2)
 

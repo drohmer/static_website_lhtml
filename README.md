@@ -698,10 +698,11 @@ Files:
   size of what is actually drawn, margins, CSS position, font size, signature),
   then the problems, warnings, differences with the deck, density and the
   vertical gaps between blocks. Each finding ends with where its blocks are
-  written: `[line 62]` for the line of the block, `[near line 62]` for the
-  line of what surrounds it (a block of an included file carries no marker
-  of its own), `[no source marker]` for a block nothing names (one a script
-  writes); the table writes them `62`, `~62` and `-`
+  written: `[line 62]` for the line of the block in the page,
+  `[parts/bloc.j2:3]` for a block written in a template the page includes,
+  `[near line 62]` for the line of what surrounds it (an element inside a
+  marked block), `[no source marker]` for a block nothing names (one a
+  script writes); the table writes them `62`, `~62` and `-`
 - `pages/<relative HTML path>/layout.json`: the same data, for scripts.
   `analysis.findings` is what was found, one shape for every check:
   `{key, code, severity, blocks, subject, detail, text, data}` - `code` is

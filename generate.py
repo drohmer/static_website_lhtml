@@ -272,11 +272,8 @@ def prepare_data(meta, selected, built, log):
             if os.path.isfile(dir_site + page.site_html):
                 with open(dir_site + page.site_html, 'rb') as fid:
                     meta['previous_pages'][page.site_html] = fid.read()
-    transform = None
-    if meta.get('source_map'):
-        tags = source_scan.value_tags(meta['macros'])
-        transform = lambda text: source_map.add_markers(text, tags)
-    warnings += pages.place(built, dir_site, project_assets=only, transform=transform)
+    source_transform = marker_transform(meta)
+    warnings += pages.place(built, dir_site, project_assets=only, source_transform=source_transform)
     if only and meta.get('dependency_store'):
         meta['dependency_store'].refresh_assets(meta, built)
     for warning in warnings:
@@ -379,6 +376,20 @@ def sitemap_keywords_used(env, templates):
     return used
 
 
+def marker_transform(meta):
+    """`(text, path) -> text` writing the source-map markers of a template of
+    the project, or None when the build does not want them. The same function
+    marks the pages (lib/pages.py) and the templates they include, so a block
+    names the file it is written in."""
+    if not meta.get('source_map'):
+        return None
+    tags = source_scan.value_tags(meta['macros'])
+    def mark(text, path):
+        source = source_map.source_label(path, meta['config_directory'], meta['source_directory'])
+        return source_map.add_markers(text, source, tags)
+    return mark
+
+
 def jinja_environment(meta, selected, built):
     """Jinja environment: the templates of the pages to generate (as the
     plugins left them in the site), then the files of the sources (includes,
@@ -391,7 +402,7 @@ def jinja_environment(meta, selected, built):
     roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
-    loader = TrackingLoader(loader, roots)
+    loader = TrackingLoader(loader, roots, marker_transform(meta))
     return Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
 
 
@@ -497,8 +508,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             for warning in caught:          # with the page they come from
                 log.warning(f'{page.label}: {warning.message}')
             if meta.get('source_map'):
-                output_html = source_map.apply(output_html, source_map.source_label(
-                    page.src, meta['config_directory'], meta['source_directory']))
+                output_html = source_map.apply(output_html)
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:

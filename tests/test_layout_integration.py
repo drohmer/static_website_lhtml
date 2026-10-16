@@ -59,6 +59,30 @@ def test_nested_fixed_element_lines_and_changes(tmp_path):
 
 
 @pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
+def test_a_block_of_an_included_file_names_that_file(tmp_path):
+    """A marker carries the file it is written in, so what an include writes
+    points at the include - and not at a line of the page, which holds
+    another block."""
+    source = tmp_path / 'src'
+    (source / 'p').mkdir(parents=True)
+    (source / 'parts').mkdir()
+    (source / 'p/index.html.j2').write_text(
+        '= Titre\n\ntexte de la page\n\n{% include "parts/bloc.j2" %}\n')
+    (source / 'parts/bloc.j2').write_text('* premier item\n* second item\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
+                                      'theme': str(REPO / 'themes/slides')}))
+    result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
+                            capture_output=True, text=True, timeout=90)
+    assert result.returncode == 0, result.stdout + result.stderr
+    layout = json.loads((tmp_path / '.layout/pages/p/index.html/layout.json').read_text())
+    included = [b for b in layout['blocks'] if b['kind'] == 'list']
+    assert [(b['source'], b.get('source_near')) for b in included] == [('src/parts/bloc.j2:1', False)]
+    # the report names the file, since it is not the source of the page
+    assert 'src/parts/bloc.j2:1' in (tmp_path / '.layout/pages/p/index.html/layout.md').read_text()
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
 def test_the_design_rules_do_not_judge_the_typography_of_an_overlay(tmp_path):
     source = tmp_path / 'src'
     source.mkdir()
