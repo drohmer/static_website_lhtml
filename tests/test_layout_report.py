@@ -432,7 +432,7 @@ def test_a_root_that_does_not_match_the_theme_is_reported():
     one_block = [(page, 'a/layout.json', {'root': 'body', 'blocks': [{'id': 1}]})]
     measure.warn_degenerate_root(one_block, {'root': 'body'}, log)
     assert len(warnings) == 1
-    assert "single block (root: 'body')" in warnings[0] and 'main-content-centered' in warnings[0]
+    assert "single block (root: 'body')" in warnings[0] and 'theme.yaml' in warnings[0]
 
     warnings.clear()                      # a measured page with real blocks: nothing to say
     measure.warn_degenerate_root(

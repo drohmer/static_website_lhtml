@@ -1,0 +1,9 @@
+# What the slides-pdf theme declares about the build (lib/theme.py).
+# Same slide format as the slides theme, exported page by page.
+template: 'theme/template/base.html'
+content_block: 'content'
+layout:
+  root: 'body'
+  exclude: 'nav, footer'
+  width: 1920
+  height: 1080

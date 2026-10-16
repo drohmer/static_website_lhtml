@@ -8,6 +8,9 @@ from pathlib import Path
 
 from lib.configuration import GENERATOR_DIRECTORY, ConfigError
 
+# The fallback of a theme that declares nothing (lib/theme.py). A theme
+# says what its content is and what size a page has; a project says what it
+# wants measured and how. Engine, then theme, then project.
 DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
             'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
             'contact_columns': 4, 'contact_rows': 4, 'jobs': 'auto'}
@@ -35,10 +38,14 @@ def jobs(options):
 
 
 def options_of(meta):
-    """The options of the report: the defaults, then what the configuration
-    gives. The design rules are validated by lib/design_checks.py."""
+    """The options of the report: the defaults, then what the theme declares
+    (lib/theme.py), then what the configuration gives. The design rules are
+    validated by lib/design_checks.py."""
     from lib.design_checks import validate as validate_design_rules
+    from lib.theme import of as theme_manifest
     options = dict(DEFAULTS)
+    if meta.get('theme'):
+        options.update(theme_manifest(meta)['layout'])
     options.update(meta.get('layout') or {})
     options['chrome'] = meta.get('chrome')      # its own configuration key
     try:

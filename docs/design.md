@@ -229,8 +229,10 @@ A theme declares:
   (`menu.js` with the table of contents), which are **rendered per page**
   (`template/base.html`), and which are **copied verbatim** (everything else);
 - which **page settings** it may receive (the rest never reaches the site);
-- its **content root** and its **reserved areas**, for the measurement;
-- its **base template**, for the wrapping stage;
+- its **content root** and its **reserved areas**, for the measurement. Done
+  (`theme.yaml`, `lib/theme.py`): `root`, `exclude`, `width`, `height`;
+- its **base template** and the block a page fills, for the wrapping stage.
+  Done;
 - its **injection points**: where a project may add a script or a style to
   every page (today `keywords: jsAbs`), and what such a script may read -
   the table of contents, the number of the page - as a documented interface.
@@ -668,6 +670,7 @@ enough to wait for the finding schema.
 
 ```
 lib/            pipeline: pages, deck, design, rendering, headings, assets, index, structure
+lib/theme.py    what a theme declares about the build (theme.yaml)
 lib/layout/     analysis.py, findings.py, report.py, measure.py, build.py
 lib/targets/    html, pdf: theme, source transforms, deliverables
 lib/analyses/   lint, layout: what they need of the build, what they report
@@ -870,6 +873,28 @@ special case comes before what adds a concept.**
    real but unexercised, and had to be reproduced on a project written for
    it before it could be fixed.
 
+8a. **The theme manifest** (section 4.0). A theme declares in `theme.yaml`
+   the template a page is wrapped in, the block it fills, and what the
+   measurement takes as the content of a page. Those answers were written in
+   the engine and in an extension: `theme/template/base.html` and `content`
+   in `plugins/auto_wrap.py`, `root: 'body'` and `exclude: 'nav, footer'`
+   among the defaults of `lib/layout_options.py` - the answers of the
+   `slides` theme, applied to all three themes shipped here.
+
+   The order is engine, then theme, then project. The project keeps the last
+   word because it is the one that knows it added a banner; the engine keeps
+   a fallback so that a theme with no manifest builds exactly as before.
+   A theme may declare only what describes a theme: `root`, `exclude`,
+   `width`, `height`, `reserved`. Thresholds, output directory and jobs are
+   a project's business, and a manifest that claims them is refused by name.
+
+   What it was worth, measured on the example site, which uses
+   `webpage-frame` and configures no layout: **3 blocks over 3 pages became
+   145**. Its whole page was being measured as a single box - the degenerate
+   case the build already warned about - because the selector of the theme's
+   frame was something every project had to know and write down. The deck,
+   which did write it down, is unchanged to the finding.
+
 ### Deferred, with a reason: the declared positions (was step 2)
 
 The declared positions of the stages and extensions, and what a target may
@@ -890,9 +915,10 @@ of configuration, not a system.
    last" rule and the `if staging.is_dir()` of `build_output.py`. Separate
    from step 4 because it carries the publication contract, which step 4
    does not touch.
-8. **The theme manifest**, then the stages that depend on it: `menu`,
-   `auto_wrap`, `title_submenu`, `index`, the video cache - and the declared
-   positions of the two extensions that remain.
+8. **The stages that depend on the theme manifest**: `menu`,
+   `title_submenu`, `index`, the video cache - and the declared positions of
+   the two extensions that remain (see Deferred above). `auto_wrap` already
+   reads the manifest; what remains is for it to stop being a plugin.
 9. **The extension transformation contract** (section 4.2), once the engine
    owns the writes everywhere else.
 

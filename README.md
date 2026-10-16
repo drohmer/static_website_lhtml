@@ -234,6 +234,7 @@ static_website_lhtml/
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
+    theme.py               # What a theme declares about the build (theme.yaml)
     lint.py                # Design lint: values written by hand in the pages
     design_checks.py       # Checks of the layout report by role (title, body, caption, figure)
     report_lock.py         # One build at a time writes the layout report
@@ -409,6 +410,40 @@ the PDF export and the layout report follow the deck. The sitemap ids
 so adding pages of other projects or repeated slides does not change them.
 `--check-config` also reads the deck and the design (sources, macros). Several decks can share
 the same sources (`python generate.py --deck deck_short.yaml`).
+
+## Theme: what it declares about the build
+
+A theme answers questions the build used to answer for it: which template a
+page is wrapped in, which block it fills, and what the measurement must take
+as the content of a page. It says so in `theme.yaml`, next to its
+`design.yaml`:
+
+```yaml
+template: 'theme/template/base.html'   # the page is wrapped in it (auto_wrap)
+content_block: 'content'               # the Jinja block it fills
+layout:                                # what the layout analysis reads
+  root: 'body'                         # CSS selector of the content
+  exclude: 'nav, footer'               # children of the root that are not content
+  width: 1920                          # size of a page, in CSS pixels
+  height: 1080
+```
+
+Everything is optional and a theme with no `theme.yaml` builds as before.
+The order is **engine, then theme, then project**: the defaults above are
+the engine's fallback, a theme replaces what it declares, and the `layout:`
+key of a project replaces both - the project keeps the last word because it
+is the one that knows it added a banner to its pages.
+
+A theme may declare only `root`, `exclude`, `width`, `height` and
+`reserved` under `layout:`; the other options (thresholds, output
+directory, jobs) belong to a project. An unknown key is refused by name,
+and `--check-config` prints the manifest the build will use.
+
+The three themes shipped declare theirs. `webpage-frame` holds its content
+in `#main-content-centered`: a project using it used to have to write that
+selector in its own configuration, and a project that did not had its whole
+page measured as a single block - the example site went from 3 blocks over
+3 pages to 145 when its theme started saying so.
 
 ## Design: tokens, macros and layouts
 
@@ -852,8 +887,8 @@ signature (tag, inline style, beginning of the text, image names).
 **Source map.** In the builds for development (`--layout`, `--serve`,
 `--watch`), the blocks of the pages carry `data-lhtml-src="<file>:<line>"`:
 the line of the template where they start. The blocks are the children of
-`<body>`, or of the wrapper of the theme that holds all the content (the
-`webpage-frame` theme: `#main-content-centered`). The generator marks the
+the content root the theme declares (`layout: root:` of its `theme.yaml`),
+or of the wrapper of the theme that holds all the content. The generator marks the
 lines of the templates with invisible characters before Jinja and LHTML, then
 moves them to the attribute (`lib/source_map.py`); the lines inside a zone
 that LHTML keeps as it is (code block, multi-line Jinja or HTML tag, math)
@@ -897,7 +932,9 @@ Options (`configure.yaml`):
 
 ```yaml
 layout:
-    root: 'body'                # content root ('#main-content-centered' for webpage-frame)
+    # these four describe the theme and are declared in its theme.yaml
+    # (see Theme); set them here only to override what the theme says
+    root: 'body'                # content root
     exclude: 'nav, footer'      # children of the root that are not content
     width: 1920                 # viewport size
     height: 1080

@@ -28,10 +28,12 @@ measure, what to keep of a previous measure, where to write.
 Options (configure.yaml, under `layout:`):
     layout:
       root: 'body'         # CSS selector of the content root
-                           # (webpage-frame theme: '#main-content-centered')
       exclude: 'nav, footer'   # children of the root that are not content
       width: 1920          # viewport size
       height: 1080
+                           # these four describe the theme and are declared in
+                           # its theme.yaml (lib/theme.py); a project sets them
+                           # here only to override what its theme says
       images: true         # write overlay.png / blocks.png
       threshold: 4         # minimal overlap / overflow (px) reported
       output: '.layout/'   # output directory, relative to the config directory

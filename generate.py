@@ -30,6 +30,7 @@ from lib import dependencies
 from lib import source_map
 from lib.tracking import TrackingLoader, lhtml_includes
 from lib import source_scan
+from lib import theme
 from lib.layout import build as layout_build
 from lib import logger
 from lib import pages
@@ -674,14 +675,15 @@ def build_once(args):
         try:
             loaded_deck = load_deck(meta)
             loaded_design = load_project_design(meta)
-        except (deck.DeckError, design.DesignError) as exc:
+            loaded_theme = theme.of(meta)
+        except (deck.DeckError, design.DesignError, ConfigError) as exc:
             log.error(str(exc))
             sys.exit(1)
         print(yaml.safe_dump({
             'config_file': str(config_file),
             'source_directory': config.source_directory,
             'site_directory': config.site_directory,
-            'theme': config.theme,
+            'theme': {'directory': config.theme, **loaded_theme},
             'deck': meta['deck'] if loaded_deck is None else {
                 'file': meta['deck'] if isinstance(meta['deck'], str) else '(inline)',
                 'slides': len(loaded_deck.entries), 'sources': loaded_deck.sources},

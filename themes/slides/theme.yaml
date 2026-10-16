@@ -1,0 +1,9 @@
+# What the slides theme declares about the build (lib/theme.py).
+# The design of the slides - tokens, macros, layouts - is in design.yaml.
+template: 'theme/template/base.html'
+content_block: 'content'
+layout:
+  root: 'body'            # the slide itself is the content
+  exclude: 'nav, footer'  # the navigation of the theme is not
+  width: 1920             # the format of a slide, in CSS pixels
+  height: 1080
