@@ -33,7 +33,7 @@ normalised, and for the CI to cover it.
   versions skip that step), run `npx puppeteer browsers install chrome`; a
   Chrome already installed on the machine is used as a last resort, and the
   configuration key `chrome` names one explicitly.
-- **Videos in several codecs** (`cache_video.py`): `ffmpeg`, and `ffpb` for
+- **Videos in several codecs** (`cache_video_directory:`): `ffmpeg`, and `ffpb` for
   the progress bar (`pip install ffpb`).
 - **Code snippets from other repositories** (`code_include.py`): `git`.
 - **SASS**: `pip install libsass` to compile `.sass` files (a warning is shown if they are left uncompiled).
@@ -132,8 +132,7 @@ sources) need a full build.
 source_directory: 'example/'           # Source content directory
 site_directory: '.site/'               # Output directory
 theme: 'themes/webpage-frame/'         # Theme directory
-plugin:                                # Plugin list (executed in order)
-  - 'plugins/redirection_first_page.py'
+plugin: []                             # Extensions, in order (none by default)
 ```
 
 **The site is published; the documents of a project are not.** The site
@@ -149,7 +148,7 @@ page setting in the site declares it with `public_page_keys:`.
 
 Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lib/configuration.py`.
 
-Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is `auto_wrap.py` and `redirection_first_page.py`. The menu of the theme and the heading ids are stages of the build, not plugins: a project does not list them, and the theme declares whether it has a menu (see [Theme](#theme-what-it-declares-about-the-build)). An explicitly configured relative theme path is relative to the YAML file.
+Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is empty: everything a bundled theme needs is a stage of the build - the page placed in the template of its theme, the heading ids, the menu, the index of a site that has none. A project lists only its own extensions, and the theme declares whether it has a menu (see [Theme](#theme-what-it-declares-about-the-build)). An explicitly configured relative theme path is relative to the YAML file.
 
 Configuration values are type-checked before generating or cleaning. Unknown keys produce warnings (with spelling suggestions) but remain available to custom plugins. Runtime fields such as `log`, `args`, and `plugin_paths` cannot be supplied in YAML. Prefer `plugin_arg` for custom plugin options.
 
@@ -170,7 +169,7 @@ Optional keys:
 | `debug` | Verbose logging and retained intermediate files; overridden by `--debug` / `--no-debug` |
 | `level_print` | Non-negative log indentation level (default: 0) |
 | `include_head` | List of extra head fragments passed to LHTML |
-| `cache_video_directory` | Directory for cached video codec conversions |
+| `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies them into the site, and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
@@ -235,6 +234,9 @@ static_website_lhtml/
     theme.py               # What a theme declares about the build (theme.yaml)
     menu.py                # The table of contents written into the theme's menu
     headings.py            # Heading ids and their summary (title_id.json)
+    wrap.py                # The page placed in the template of its theme
+    index_page.py          # The index of a site that has none
+    video_cache.py         # Transcoded variants of the videos (cache_video_directory:)
     lint.py                # Design lint: values written by hand in the pages
     design_checks.py       # Checks of the layout report by role (title, body, caption, figure)
     report_lock.py         # One build at a time writes the layout report
@@ -253,11 +255,8 @@ static_website_lhtml/
     structure.py           # Pages of the site for plugins (structure, built_pages),
                            #   what may be published, and .structure/ of a project
   plugins/
-    auto_wrap.py           # Auto-wrap plain HTML in Jinja2 template
-    redirection_first_page.py  # Create index.html redirect
     pre_include.py         # Pre-include content into templates
     code_include.py        # Include code from external repos
-    cache_video.py         # Video codec conversion and caching
     generate_pdf.py        # PDF/image generation (requires puppeteer)
     assets/                # Node scripts of the PDF export and of the layout report
     video_convert/         # Video conversion utilities (ffmpeg)
@@ -421,7 +420,7 @@ as the content of a page. It says so in `theme.yaml`, next to its
 `design.yaml`:
 
 ```yaml
-template: 'theme/template/base.html'   # the page is wrapped in it (auto_wrap)
+template: 'theme/template/base.html'   # the page is wrapped in it
 content_block: 'content'               # the Jinja block it fills
 layout:                                # what the layout analysis reads
   root: 'body'                         # CSS selector of the content
@@ -684,12 +683,15 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 
 | Plugin | Hook | Description |
 |--------|------|-------------|
-| `auto_wrap.py` | pre | Wraps plain HTML files in Jinja2 template structure |
-| `redirection_first_page.py` | post | Creates `index.html` redirect to first page |
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
-| `cache_video.py` | pre | Converts and caches videos in multiple codecs |
 | `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation) |
+
+The page placed in the template of its theme, the heading ids, the menu,
+the index of a site that has none and the transcoded videos used to be
+plugins; they are stages of the build (`lib/wrap.py`, `lib/headings.py`,
+`lib/menu.py`, `lib/index_page.py`, `lib/video_cache.py`). A configuration
+that still lists one of them is refused by name.
 
 ## Layout Report (LLM-assisted slide layout)
 
@@ -982,6 +984,7 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 - Light mode (`-l`) was removed: it copied the whole previous site and was not faster than a full build. Use `--only <page>` to regenerate some pages.
 - Deck parameters of a page are read as `params.<name>` (not as top-level variables).
 - `plugins/auto-wrap.py` was renamed `plugins/auto_wrap.py` (the old name keeps working, with a warning).
+- `auto_wrap.py`, `redirection_first_page.py` and `cache_video.py` are no longer plugins either: remove them from `plugin:`, which is then usually empty. The transcoded videos are asked for by setting `cache_video_directory:` (the plugin used to fall back to a default directory and say so); without it, nothing is transcoded.
 - The menu of the theme and the heading ids are no longer plugins: remove `plugins/menu.py` and `plugins/title_submenu.py` from `plugin:`. The build runs them itself, and the theme declares whether it has a menu (`toc:` in its `theme.yaml`). The extra page settings the menu carried move from `plugin_arg: menu: keys:` to `toc: keys:` of the theme. Both old spellings are refused by name.
 - The layout report is no longer a plugin: remove `plugins/layout_report.py` from `plugin:` and run the build with `--layout`. Its options move from `plugin_arg: layout_report:` to the configuration key `layout:`. Both old spellings are refused by name, with the change to make; `--check-config` reports them without building anything.
 - `generate_pdf.py` no longer has to be last in the plugin list: it asks for the HTML it rendered not to be published instead of deleting the site directory, so a stage that runs after it (the layout analysis, another plugin) still has a site to read.

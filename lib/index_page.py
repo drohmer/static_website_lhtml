@@ -1,3 +1,10 @@
+"""The index of a site that has none: a redirection to its first page.
+
+A core stage, not a plugin: a site whose root has no index.html is broken,
+and nothing a project could say would make that acceptable. A hand-written
+index.html in the sources, or a page that already builds one, takes
+precedence and the stage does nothing.
+"""
 import os
 
 from lib.structure import structure
@@ -16,7 +23,7 @@ def create_html_redirection(url):
 '''
 
 
-def post_process(meta):
+def run(meta):
     pages = structure(meta)
     if not pages or any(os.path.normpath(entry['dir'] + entry['filename']) == 'index.html'
                         for entry in pages):

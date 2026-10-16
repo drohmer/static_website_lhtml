@@ -59,8 +59,8 @@ def test_a_manifest_the_build_cannot_read_is_refused(tmp_path):
 
 
 def test_the_page_is_wrapped_in_the_template_the_theme_declares(tmp_path):
-    """auto_wrap used to write 'theme/template/base.html' and 'content'
-    itself: a plugin that wraps a page should not decide in what."""
+    """The wrapping stage used to write 'theme/template/base.html' and
+    'content' itself: what wraps a page should not decide in what."""
     source = tmp_path / 'src'
     source.mkdir()
     (source / 'index.html.j2').write_text('= Titre\n\ntexte\n')
@@ -69,8 +69,7 @@ def test_the_page_is_wrapped_in_the_template_the_theme_declares(tmp_path):
     (custom / 'template/page.html').write_text(
         '<html><body><main>{% block body %}{% endblock %}</main></body></html>')
     config = tmp_path / 'configure.yaml'
-    config.write_text(yaml.safe_dump({'source_directory': 'src', 'theme': str(custom),
-                                      'plugin': [str(REPO / 'plugins/auto_wrap.py')]}))
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'theme': str(custom)}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config)],
                             capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stdout + result.stderr

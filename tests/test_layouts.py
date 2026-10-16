@@ -49,7 +49,7 @@ class LayoutBuildTests(unittest.TestCase):
 
     def build(self, deck=None, *args):
         config = {'source_directory': 'src', 'site_directory': 'site', 'theme': str(REPO / 'themes/slides'),
-                  'plugin': ['plugins/auto_wrap.py']}
+                  'plugin': []}
         if deck is not None:
             config['deck'] = deck
         self.write('config.yaml', yaml.safe_dump(config))

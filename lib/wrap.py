@@ -1,3 +1,11 @@
+"""The page placed in the template of its theme.
+
+A core stage, not a plugin: a source written in LHTML is a fragment, and
+without this it reaches the site as a bare fragment. It runs after the
+extensions of the pre stage, because an extension writes content and the
+theme wraps what the content ends up being - which is what used to be a
+rule about the order of two plugins (tests/test_plugin_order.py).
+"""
 import json
 import re
 
@@ -39,7 +47,7 @@ def wrapped(text):
     return bool(WRAPPED.search(text) or DOCUMENT.match(text))
 
 
-def pre_process(meta):
+def run(meta):
     manifest = theme_manifest(meta)
     for entry in built_pages(meta):
         file_path = template_path(meta, entry)
@@ -49,7 +57,12 @@ def pre_process(meta):
 
         if not wrapped(file_content):
             settings = leading_settings(file_content)
-            content = template_auto_wrap.format(title=json.dumps(str(entry['title']), ensure_ascii=False),
+            # The title of a page is one line: it goes in <title> and in the
+            # menu. A deck entry may hold several (lib/deck.py keeps the
+            # first one when it scaffolds the page); keep the same one here,
+            # or the rest of it is printed in the tab of the browser.
+            title = str(entry['title']).strip().splitlines()
+            content = template_auto_wrap.format(title=json.dumps(title[0] if title else '', ensure_ascii=False),
                                                 settings=settings, content=file_content[len(settings):],
                                                 template=manifest['template'], block=manifest['content_block'])
             with open(file_path, 'w', encoding='utf-8') as fid:

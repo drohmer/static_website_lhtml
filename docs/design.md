@@ -1023,13 +1023,47 @@ refolding it one step later.
    the build is byte-identical except the manifest itself, which the theme
    copy carries into the site.
 
-   Left for 8c: `cache_video.py`, `redirection_first_page.py` as the
-   `index:` stage - which I would make unconditional rather than a key,
-   since a site with no `index.html` is broken and a key nobody sets is not
-   simpler than no key - and `auto_wrap.py`, which reads the manifest since
-   8a but is still a plugin. Then `plugins/` holds `pre_include` and
-   `code_include`, and the declared positions of those two are a line of
-   configuration: the condition the deferred step 2 was waiting for.
+8c. **The last three, and the ordering debt settled.** `auto_wrap.py` is
+   `lib/wrap.py`, `redirection_first_page.py` is `lib/index_page.py` and
+   `cache_video.py` is `lib/video_cache.py`. **The default `plugin:` list is
+   empty**, and `plugins/` holds `pre_include`, `code_include` and
+   `generate_pdf` - the last of which leaves at step 7.
+
+   The index is unconditional rather than a key: a site whose root has no
+   `index.html` is broken, and a key nobody sets is not simpler than no key.
+   The video cache is the opposite case, and the one decision of this step:
+   it needs a transcoder on the machine and minutes of work, so it runs when
+   a project says where its cache lives (`cache_video_directory:`) and does
+   nothing otherwise. The plugin used to fall back to a default directory
+   and print that it had; five projects relied on that fallback, and the
+   migration error names the key they must now set.
+
+   **The deferred step 2 is settled rather than done.** `tests/test_plugin_order.py`
+   pinned the pair `pre_include` / `auto_wrap`, one of its two tests pinning
+   the bad outcome: wrapping first put the included text above
+   `{% extends %}`, so it landed before `<!DOCTYPE html>` and the browser
+   rendered in quirks mode - "pinned as it is today, not endorsed". The
+   wrapping is a stage now and runs after the extensions of the pre stage,
+   so that order is not something a configuration can express. A registry of
+   declared positions would have ordered the two; removing one of them
+   removed the question.
+
+   Two things the move surfaced. A defect: the wrapping put a multi-line deck
+   title into `{% set pageTitle %}`, so the second line was printed in the
+   tab of the browser - `deck.scaffold` already kept the first line only, and
+   the two now agree. And a contract nothing tested: `lib/video_cache.py`
+   writes the variants that `lhtml/export_html.py` probes for, through a
+   directory name shared by an imported constant and an `assets` convention
+   neither side declares (4.4). `tests/test_video_cache.py` pins it from the
+   outside, with the variants already in place, so it needs no transcoder.
+
+   The example site is byte-identical to the previous version, built with
+   `plugin: []`.
+
+   One more hole closed on the way, left by 6b: the `line` column of the
+   block table showed a bare number for a block written in an included
+   file, which a reader takes for a line of the page. It writes `file:n`
+   there now, the form the findings already used.
 
    **A project embedding its own copy does not migrate by being rebuilt.**
    The reference deck vendors the generator *and* the themes

@@ -53,6 +53,20 @@ def problem_lines(analysis, sources=None, page_source=None):
             if f['severity'] == 'problem']
 
 
+def _line_cell(block, page_source):
+    """The `line` column of a block: its line in the page, `~n` when that
+    line is a landmark (see `where`), `file:n` when the block is written in
+    another file than the page, and `-` when nothing names it. Without the
+    file, a block of an included file shows a line number a reader takes
+    for a line of the page."""
+    line = block.get('line')
+    if not line:
+        return '-'
+    file, _, _ = (block.get('source') or '').rpartition(':')
+    place = str(line) if file in ('', page_source) else f'{file}:{line}'
+    return f'~{place}' if block.get('source_near') else place
+
+
 def page_markdown(name, source, layout):
     """Markdown report of one page."""
     area, analysis = layout['area'], layout['analysis']
@@ -68,17 +82,18 @@ def page_markdown(name, source, layout):
              '(text lines, images reduced to their drawn shape, backgrounds, borders). '
              'Overlaps are computed on the ink rectangles themselves (layout.json: "ink"), '
              'so the empty corners of a block do not count. Spacers are empty blocks.', '',
-             'Line: line of the source where the block starts; `~n`, the line of what is around '
-             'it, when the block itself is not marked (content of an included file); `-` when '
-             'nothing marks it (a block a script writes). Each finding below ends with where its '
-             'blocks are written, in the same three forms.', '',
+             'Line: line of the source where the block starts; `file:n` when the block is '
+             'written in another file than the page; `~n`, the line of what is around it, when '
+             'the block itself is not marked; `-` when nothing marks it (a block a script '
+             'writes). Each finding below ends with where its blocks are written, in the same '
+             'forms.', '',
              '| # | line | kind | x, y | w × h | margins (t r b l) | position | font | signature |',
              '|---|------|------|------|-------|-------------------|----------|------|-----------|']
     for b in layout['blocks']:
         x0, y0, x1, y1 = _rect(b)
         kind = b['kind'] + (' (overlay)' if b.get('intentional') else '') \
             + (f" in #{b['inside']}" if b.get('inside') else '')
-        line_cell = f"~{b['line']}" if b.get('line') and b.get('source_near') else (b.get('line') or '-')
+        line_cell = _line_cell(b, source)
         lines.append(f"| {b['id']} | {line_cell} | {kind} | {x0}, {y0} | {x1 - x0} × {y1 - y0} | "
                      f"{' '.join(str(m) for m in b['margin'])} | {b['position']} | {b['font_size']} | "
                      f"{_md_cell(b['signature'])} |")

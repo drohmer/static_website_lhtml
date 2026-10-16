@@ -71,7 +71,7 @@ class ConfigurationTests(unittest.TestCase):
         a configuration of the previous version is told so, before any build."""
         for entry, expected in (('plugins/menu.py', "theme's menu"),
                                 ('plugins/title_submenu.py', 'heading ids')):
-            self.write(plugin=['plugins/auto_wrap.py', entry])
+            self.write(plugin=[entry])
             result = self.cli('--check-config')
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             flat = ' '.join(result.stdout.split())

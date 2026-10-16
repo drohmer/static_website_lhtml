@@ -33,6 +33,9 @@ from lib import source_scan
 from lib import theme
 from lib import menu
 from lib import headings
+from lib import wrap
+from lib import index_page
+from lib import video_cache
 from lib.layout import build as layout_build
 from lib import logger
 from lib import pages
@@ -794,13 +797,18 @@ def generate_site(meta, selected, built):
                              for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
     log.ok_elapsed()
 
-    # Heading ids and their summary: a core stage (lib/headings.py)
-    headings.run(meta)
-
     # Pre-process plugins
     log.title('Pre-process', pre='\n')
     log.tic()
     plugin_failures += run_plugins(meta, 'pre_process', log)
+    # Core stages on the sources, after the extensions have written them:
+    # the theme wraps what the content ends up being (lib/wrap.py), and the
+    # headings of that content get their ids (lib/headings.py).
+    headings.run(meta)
+    wrap.run(meta)
+    # Transcoded videos next to the assets, before LHTML writes the <video>
+    # tags that look for them (lib/video_cache.py)
+    video_cache.run(meta)
     log.ok_elapsed()
 
     # Jinja2 rendering
@@ -837,8 +845,10 @@ def generate_site(meta, selected, built):
     post_ran = not failed and not plugin_failures
     if post_ran:
         plugin_failures += run_plugins(meta, 'post_process', log)
-        # The menu of the theme: a core stage (lib/menu.py)
+        # Core stages on the built site: the menu of the theme, and the
+        # index of a site that has none (lib/menu.py, lib/index_page.py)
         menu.run(meta)
+        index_page.run(meta)
     log.ok_elapsed()
 
     # The layout analysis is part of the generator, not a plugin: it runs

@@ -22,6 +22,9 @@ RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example
 CORE_STAGES = {
     'menu.py': "the theme's menu",
     'title_submenu.py': 'the heading ids (configuration key title_id:)',
+    'auto_wrap.py': 'the wrapping of a page in the template of its theme',
+    'redirection_first_page.py': 'the index of a site that has none',
+    'cache_video.py': "the transcoded videos (set 'cache_video_directory:' to ask for them)",
 }
 
 RUNTIME_KEYS = frozenset((
@@ -53,14 +56,11 @@ class Config:
     source_directory: str = 'src_site/'
     site_directory: str = '.site/'
     theme: str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
-    # What a bundled theme needs to render a project written in LHTML:
-    # auto_wrap puts a source without {% block content %} in the template of
-    # the theme (without it the page is a bare fragment), and
-    # redirection_first_page writes the index of a site that has none. The
-    # menu of the theme and the heading ids are stages of the build
-    # (lib/menu.py, lib/headings.py): a project does not list them.
-    plugin: list[str] = field(default_factory=lambda: ['plugins/auto_wrap.py',
-                                                       'plugins/redirection_first_page.py'])
+    # Extensions, and nothing else: everything a bundled theme needs to
+    # render a project written in LHTML is a stage of the build now
+    # (lib/wrap.py, lib/headings.py, lib/menu.py, lib/index_page.py), so the
+    # default is empty and a project lists only what is its own.
+    plugin: list[str] = field(default_factory=list)
     debug: bool = False
     level_print: int = 0
     title_id: bool = True

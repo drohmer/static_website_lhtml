@@ -40,7 +40,7 @@ def test_nested_fixed_element_lines_and_changes(tmp_path):
     source.mkdir(parents=True)
     page = source / 'index.html.j2'
     page.write_text("= Title\n\ndiv::[font-size:85%;]\nA line of text that runs under the box\n"
-                    "::[position:fixed; top:60px; left:100px; width:300px; height:80px; "
+                    "::[position:fixed; top:170px; left:100px; width:300px; height:80px; "
                     "background-color:rgb(200,0,0);] ::\n::\n")
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
@@ -52,7 +52,7 @@ def test_nested_fixed_element_lines_and_changes(tmp_path):
     assert '| 1 | 1 | title |' in report                     # line of the source (data-lhtml-src)
     assert 'in #2 |' in report                              # the fixed box, measured on its own
     assert 'HIDDEN TEXT #2 under #3' in report or 'COLLISION #2 × #3' in report
-    page.write_text(page.read_text().replace('top:60px', 'top:550px'))
+    page.write_text(page.read_text().replace('top:170px', 'top:660px'))
     assert run().returncode == 0
     changes = (tmp_path / '.layout/changes.md').read_text()
     assert '1 changed' in changes and 'moved by (+0, +490) px' in changes
@@ -147,7 +147,7 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
         "<p>A short paragraph that wraps in this narrow column</p>\n\n</div>\n")
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
-                                      'plugin': ['plugins/auto_wrap.py'],
+                                      'plugin': [],
                                       'theme': str(REPO / 'themes/slides')}))
     run = lambda *extra: subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), *extra],
                                         capture_output=True, text=True, timeout=120)
@@ -210,7 +210,7 @@ def test_svg_checks_edge_cases(tmp_path):
     (source / 'inline/assets/a.svg').write_text('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" width="100" height="100"><rect width="10" height="10"/></svg>')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
-                                      'plugin': ['plugins/auto_wrap.py'],
+                                      'plugin': [],
                                       'theme': str(REPO / 'themes/slides')}))
     start = time.monotonic()
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
@@ -283,7 +283,7 @@ def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path)
         '= Legacy\n<script>setTimeout(() => { const el = document.createElement("p"); '
         'el.textContent = "Legacy delayed setup"; document.body.append(el); }, 300);</script>')
     config = tmp_path / 'configure.yaml'
-    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': ['plugins/auto_wrap.py'],
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
                                       'theme': str(REPO / 'themes/slides')}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
                             cwd=REPO, capture_output=True, text=True, timeout=90)
