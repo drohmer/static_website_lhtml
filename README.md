@@ -13,7 +13,7 @@ pip install -r requirements.txt
 **Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
 
 **Required**, and that is all a site of HTML pages or slides needs:
-`lhtml-markup` (2.5 or later), `Jinja2`, `jinja-markdown`, `pytidylib`,
+`lhtml-markup` (3.0 or later), `Jinja2`, `jinja-markdown`, `pytidylib`,
 `pyyaml`, `rich` - installed by the `pip install` above. No Node, no browser,
 no other program.
 
@@ -379,7 +379,7 @@ sources or yours. A source must not contain the site. `--watch` also watches the
 projects, the directories the deck points to. A page of another project is
 rendered in this site: Jinja `extends`/`include` resolve from the sources of
 the project, then from the root of the other projects, then from this site
-(theme); LHTML `include::` from the page directory.
+(theme).
 
 **Repeated slides and parameters.** Naming the same page explicitly again
 creates another occurrence: it is generated next to the first one
@@ -996,6 +996,7 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 - The menu of the theme and the heading ids are no longer plugins: remove `plugins/menu.py` and `plugins/title_submenu.py` from `plugin:`. The build runs them itself, and the theme declares whether it has a menu (`toc:` in its `theme.yaml`). The extra page settings the menu carried move from `plugin_arg: menu: keys:` to `toc: keys:` of the theme. Both old spellings are refused by name.
 - The layout report is no longer a plugin: remove `plugins/layout_report.py` from `plugin:` and run the build with `--layout`. Its options move from `plugin_arg: layout_report:` to the configuration key `layout:`. Both old spellings are refused by name, with the change to make; `--check-config` reports them without building anything.
 - `generate_pdf.py` no longer has to be last in the plugin list: it asks for the HTML it rendered not to be published instead of deleting the site directory, so a stage that runs after it (the layout analysis, another plugin) still has a site to read.
+- LHTML 3.0 reads no file: `include::` is refused, with the file it named. Include with Jinja instead, `{% include "part.html" %}` (the path is relative to the sources). A poster is no longer looked for next to a video: write it, `video::clip.mp4{poster="clip.jpg"}`. `wrap-auto` and `directory_include` are no longer passed to LHTML: the theme wraps the page.
 - Heading anchors keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
 
 ## Tests

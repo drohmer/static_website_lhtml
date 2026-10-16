@@ -1,6 +1,6 @@
-"""Templates and LHTML includes read by a build: the files each page
-depends on, for --only (lib/dependencies.py)."""
-from contextlib import contextmanager
+"""Templates read by a build: the files each page depends on, for --only
+(lib/dependencies.py). LHTML reads no file (LHTML 3), so Jinja's loader is
+the only reader to track."""
 from pathlib import Path
 
 from jinja2 import BaseLoader
@@ -30,33 +30,3 @@ class TrackingLoader(BaseLoader):
             if self.mark and any(path.is_relative_to(root) for root in self.roots):
                 text = self.mark(text, str(path))
         return text, filename, uptodate
-
-
-@contextmanager
-def lhtml_includes(used):
-    """Record the text includes LHTML reads; code and verbatim includes stay
-    untouched.
-
-    LHTML exposes no source-loader hook yet. This scoped adapter restores its
-    function even when conversion fails. Generator builds are single-threaded.
-    """
-    from lhtml import process
-    original = process.process_include_recursive
-    original_read = process.read_source
-
-    def tracked(text, directories, stores, _stack=()):
-        if _stack:
-            used.add(str(Path(_stack[-1]).resolve()))
-        return original(text, directories, stores, _stack)
-
-    def read_tracked(filename):
-        used.add(str(Path(filename).resolve()))
-        return original_read(filename)
-
-    process.read_source = read_tracked
-    process.process_include_recursive = tracked
-    try:
-        yield
-    finally:
-        process.process_include_recursive = original
-        process.read_source = original_read

@@ -155,7 +155,6 @@ def make_manifest(meta, entry, runtime_urls=()):
     parser.feed(html.read_text(encoding='utf-8'))
     urls = set(parser.urls) | set(runtime_urls)
     inputs = set(meta.get('template_dependencies', {}).get(name, []))
-    inputs.update(meta.get('include_dependencies', {}).get(name, []))
     artifacts = {name: file_hash(html)}
     external = []
     for url in sorted(urls):

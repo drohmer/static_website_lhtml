@@ -1145,9 +1145,9 @@ can express. **Removing one of the two removed the question the registry
 would have answered.** If a second extension ever needs ordering against a
 first, it is a line of configuration, not a system.
 
-### The corpus: four projects, measured (October 2026)
+### The corpus: five projects, measured (October 2026)
 
-Four real projects were measured against this note before N1 starts. None of
+Five real projects were measured against this note before N1 starts. None of
 them runs this generator: each vendors its own copy, of three vintages.
 
 | Project | Sources | Copy of the generator | How it builds |
@@ -1155,7 +1155,19 @@ them runs this generator: each vendors its own copy, of three vintages.
 | a talk (`soiree_mathematique`) | 197 | 2026-10-10, has `deck`, `--layout` | `configure.yaml` + `deck.yaml`, one deck |
 | a course, slides (`epita_ani3d` lecture) | 182 | `ad1490a`, 2026-09-27 | a `generate.py` of the project |
 | a course, lab website (`epita_ani3d` lab) | 13 | `ad1490a`, 2026-09-27 | `configure.yaml`, one site |
-| a course, slides (`csc_43043`) | 893 | 2026-01, **its own copy of LHTML** in `lib/lhtml` | `justfile` + three scripts |
+| a course, slides (`csc_43043`) | 893 | 2026-01, with a copy of LHTML in `lib/lhtml` | `justfile` + three scripts |
+| a library documentation (`cgp_documentation`) | 42 | 2026-01, the same | `configure.yaml`, one site, both extensions |
+
+The copy of LHTML in `lib/lhtml` is dead code wherever LHTML is installed:
+the generator of that vintage puts it at the *end* of `sys.path`, so the
+installed package wins. All five build with LHTML 2.5.1.
+
+The fifth project was added after the first four were measured, and it is
+the one that exercises what the others do not: `include::` 4 times (two
+HTML schematics, two C++ headers inside `code::`), the `code_include`
+extension 19 times (`includeadv::`), and `pre_include` with a file of
+macros. Its build runs `git pull` on the repository it documents; the copy
+in the corpus has no remote, so its code stays where it was.
 
 What it changes for the steps below:
 
@@ -1170,14 +1182,12 @@ What it changes for the steps below:
   talk, written a second time. N2 is therefore not "PDF as a target" of one
   site: it is **a project of N decks, each built to the targets it asks for**,
   and the wrapper scripts are the measure of success - they must disappear.
-- **Of the four reads of N1, two are unexercised.** Over 1285 sources:
-  `include::` 0 times, a `-poster.jpg` 0 times; videos 266 files, referenced
-  by `videoplay::` (280), `media::` (77) and `video::` (48). The loader is
-  still needed - it is what makes `--only` honest without the patch of
-  `lib/tracking.py` - but the media resolver carries the weight. Since
-  compatibility is not a constraint, `include::` (which Jinja already does)
-  and the poster convention are candidates for removal from LHTML rather
-  than for an interface.
+- **Of the four reads of N1, two are barely exercised.** Over 1327 sources:
+  `include::` 4 times, all in the documentation, a `-poster.jpg` 0 times;
+  videos 266 files, referenced by `videoplay::` (280), `media::` (77) and
+  `video::` (48). Since compatibility is not a constraint, `include::`
+  (which Jinja already does) and the poster convention are removed from
+  LHTML rather than given an interface (N1).
 - **`::` is not only LHTML's.** `std::` appears 440 times in the C++ course,
   inside code. The opaque fragments of N5 are not a refinement: on the
   largest corpus, code (`code::`, 802) and mathematics (`\(`, 2452) are where
@@ -1189,14 +1199,14 @@ What it changes for the steps below:
   the corpus), `img::` (1486), `code::`: a layout vocabulary that replaces
   nested `div::` is the larger lever.
 - **Migration is a tool, not a paragraph.** Section 8 counted on a project
-  migrating when its copy is synced; four copies of three vintages, one of
-  them with a fork of LHTML, will not be synced by hand. A major version
+  migrating when its copy is synced; five copies of three vintages will not
+  be synced by hand. A major version
   needs a command that rewrites a project's configuration, deletes its
   wrapper, and says what it could not translate.
 
-The LHTML of the GitHub repository (`2.5.1`, 246 tests) is identical to the
+The LHTML of the GitHub repository (`2.5.1`, 321 tests) is identical to the
 copy under `codes/lhtml/lhtml`, which is not a git checkout: N1 and N5 start
-from a clone.
+from a clone (`codes/lhtml/repo`).
 
 ### Next
 
@@ -1207,15 +1217,15 @@ changed that the corpus cannot check.** The steps are N0..N6; the old
 numbers of the review are given where they help.
 
 LHTML is a separate repository, `github.com/drohmer/lhtml` (the package
-source is under `src/lhtml/`, its 246 tests under `test/`). N1 and N5 are
+source is under `src/lhtml/`, its tests under `test/`). N1 and N5 are
 work in that repository, released before the generator can use them; N1 is
 a major version of LHTML, since it removes syntax.
 
-**N0. The corpus under test.** Copies of the sources of the four projects,
+**N0. The corpus under test.** Copies of the sources of the five projects,
 outside this repository, each built **with the copy of the generator it
 vendors today**, and the result kept as its reference: the files, their
 paths, and a fingerprint of the HTML once the names a rebuild changes on
-its own are masked (the method of step 3). Two of the four are not built by
+its own are masked (the method of step 3). Two of the five are not built by
 a configuration but by a script; the reference is what the script
 produces, PDF included. This is the guarantee every later step is checked
 against: N2 and N3 must give the same sites, N5 the same HTML. It costs no
@@ -1227,7 +1237,7 @@ pages.
 copies are APFS clones. `build_reference.sh` builds a project with its own
 copy, `run_twice.sh` builds it twice and compares, and `tests/corpus.py`
 writes and compares the fingerprints. Each project was built twice in a row
-and gives the same site: 424, 888, 2876 and 8746 files, the two courses in
+and gives the same site: 424, 888, 2876, 8746 and 419 files, the two courses in
 75 s and 4 min 30 with their PDFs. What it took, and what it found:
 
 - **A render is not compared byte for byte.** The PDFs and the images of
@@ -1248,29 +1258,60 @@ and gives the same site: 424, 888, 2876 and 8746 files, the two courses in
   by the spacing of a `<video>` tag. A fingerprint records the versions, and
   `compare` says when they differ.
 
-**N1. LHTML: less to read, then a loader for what is left** (the old N1,
-smaller). First the deletions, both unexercised over 1285 sources:
+**N1. LHTML reads no file during a build** (the old N1, reversed: a
+deletion instead of an interface). LHTML 3.0, since it removes syntax.
 
-- `include::`, which Jinja already does with a provenance the generator
-  tracks (step 6b). With it go `find_file`, `_expand_includes_raw`, the
-  include cycle error and the include half of `lib/tracking.py`.
-- the poster convention (`<name>-poster.jpg`, `export_html.py:131`): a
-  poster is an attribute the source can write, not a file LHTML probes for.
+What LHTML reads during a build of the generator, measured before deciding:
 
-What is left are two reads: the **source** and the **macro files**
-(`pipeline.py:196` resolves them, `macros.py:238` opens them), and one
-resolution, the **video variants**. The loader gives the content, the
-canonical identity of the source (what the dependency store and the
-provenance of a block both need), the source a relative path is resolved
-from, and explicit errors. The media resolver is a callback the generator
-passes: given the `src` of a video, the list of `<source>` to write. LHTML
-stops deciding the cache directory (`CACHE_VIDEO_DIR`) and the `assets/`
-convention; they stay where step 8c put them, in `lib/video_cache.py`,
-because **changing the theme must not change the identity of the cache**.
-`lib/tracking.py` is deleted.
+| Read | Where | Corpus (1285 sources) |
+|---|---|---|
+| `include::`, in text and inside code blocks | `process_include_recursive`, `find_file`, `read_source` | 0 |
+| the poster `<name>-poster.jpg` | `export_html.py:131` | 0 files |
+| the video variants of `cache_video_codecs/` | `export_html.py:139-150` | 405 videos |
+| the macro files | `macros.py:238` | never: the generator passes the macros as a mapping |
 
-Practical: the clone is the starting point (`codes/lhtml/lhtml` is a copy,
-not a checkout), installed with `pip install -e`.
+And `lib/tracking.py` patches two functions, both for `include::`. So:
+
+- `include::` is removed, with `find_file`, the include expansion, its cycle
+  error and the `directory_include` option. Jinja includes, with a
+  provenance the generator records (step 6b).
+- the poster convention is removed: a poster is an attribute the source
+  writes, not a file LHTML probes for.
+- the video variants are a **callback**, `media(src) -> [(url, mime), ...]`,
+  that the caller passes; without it LHTML writes the source as given.
+  `CACHE_VIDEO_DIR` and the `assets/` convention leave LHTML for
+  `lib/video_cache.py`, because **changing the theme must not change the
+  identity of the cache**.
+
+The source loader the review asked for has nothing left to load: the text
+comes from Jinja, already tracked by `TrackingLoader`, and the macros from
+the configuration. `lhtml_includes`, the patch, is deleted; reading a file
+remains a detail of LHTML used alone, from its command line, with no
+interface. `wrap-auto` and `directory_include` leave `LHTML_OPTIONS`.
+
+Checked by the tests of both repositories and by the corpus (N0), whose HTML
+must not change but where `include::` is written.
+
+*Done* (2026-10-16), LHTML 3.0.0 on the branch `v3-no-file-reads` of the
+clone, not released. LHTML loses `include::` (refused by name, with the
+Jinja way in the message), the poster probe and the variant probe, and
+gains `media`; a tag handler receives the context of the run. The generator
+gives `lib/video_cache.media(page_directory)` to LHTML, owns
+`CACHE_VIDEO_DIR`, and `lhtml_includes` is deleted with the
+`include_dependencies` it fed. 320 tests for LHTML, 293 for the generator,
+the 12 browser tests; the example site byte-identical to the previous
+commit, its transcoded variants included.
+
+The corpus cannot be built by this generator before N3, so it was checked
+one level down: every call of `lhtml.run` of the five reference builds is
+recorded (914 calls, `record_calls.sh`) and replayed with LHTML 3 and a
+`media` that does what LHTML 2 did on its own (`replay_calls.py`). 910 give
+the same HTML; the 4 others are the `include::` of the documentation, now
+refused. Those four migrate to Jinja: `{% include %}` for the two
+schematics, which are under the sources; the two C++ headers are outside
+them, in the repository the documentation clones, which is the job of
+`code_include` - N4 decides whether that stays an extension or becomes a
+Jinja function of the core.
 
 **N2. A project is decks, each built to targets** (absorbs the old N2,
 "PDF as a target"). The two slide courses say what the generator lacks:

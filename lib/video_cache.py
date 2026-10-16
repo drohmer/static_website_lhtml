@@ -1,11 +1,9 @@
 """Transcoded variants of the videos of a project, written next to them.
 
-A core asset stage, not a plugin. It changes what a core stage emits
-through a side channel: LHTML probes `<assets>/cache_video_codecs/` when it
-writes a `<video>` and adds a `<source>` per variant it finds there
-(lhtml/export_html.py). A plugin that silently changes the output of the
-engine is not an extension; it is a stage of the build that was not
-declared as one.
+A core asset stage, not a plugin. LHTML writes a `<video>` with the sources
+`media(page_directory)` lists: the variants found in
+`<assets>/cache_video_codecs/` of the published site, the source as written
+otherwise. LHTML probes no file itself (LHTML 3).
 
 The stage runs when a project says where its cache lives:
 
@@ -15,22 +13,20 @@ and does nothing otherwise. The previous plugin fell back to a default
 directory and printed that it had done so; a project that wants transcoded
 videos says where they go, and one that does not pays nothing.
 
-What is still undeclared, and belongs to the LHTML boundary (design note
-4.4): the name of the cache directory, shared with LHTML through an
-imported constant, and the rule that only a directory named `assets` is
-probed at all.
+The name of the cache directory and the rule that only a directory named
+`assets` has variants are this module's: changing the theme does not change
+the identity of the cache.
 """
 import os
 import pathlib
 import shutil
 from multiprocessing import Pool
 
-from lhtml.export_html import CACHE_VIDEO_DIR
-
 from lib.structure import built_pages
 from lib.video_convert import video_convert
 
 ASSET_DIRECTORY = 'assets/'
+CACHE_VIDEO_DIR = 'cache_video_codecs/'
 VIDEO_SUFFIXES = ('.mp4', '.webm', '.mkv')
 CONVERTER = 'ffpb'
 THREADS = '16'
@@ -39,6 +35,25 @@ MAX_JOBS = 4            # ffpb is already threaded: a few at a time, not one per
 # What is produced for each video, and by what.
 VARIANTS = {'h264': ('-h264.mp4', video_convert.convert_video_mp4_h264),
             'vp9': ('-vp9.webm', video_convert.convert_video_webm_vp9)}
+
+# The sources a <video> offers, in the order the browser tries them. -h265 is
+# not produced here any more, but a cache made before may hold it.
+SOURCES = [('-vp9.webm', 'video/webm'), ('-h265.mp4', 'video/mp4'), ('-h264.mp4', 'video/mp4')]
+
+
+def media(page_directory):
+    """The resolver given to LHTML for a page whose published directory is
+    `page_directory`: media(src) -> [(url, mime type)] of the variants that
+    exist next to a video of an assets/ directory, [] for the source as written."""
+    def sources(src):
+        stem, _ = os.path.splitext(src)
+        directory, name = os.path.dirname(stem), os.path.basename(stem)
+        if os.path.basename(directory) != ASSET_DIRECTORY.rstrip('/'):
+            return []
+        variants = os.path.join(directory, CACHE_VIDEO_DIR)
+        return [(os.path.join(variants, name + suffix), mime) for suffix, mime in SOURCES
+                if os.path.isfile(os.path.join(page_directory, variants, name + suffix))]
+    return sources
 
 
 def _videos_of(meta, pages):

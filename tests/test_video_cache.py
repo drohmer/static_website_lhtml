@@ -1,9 +1,9 @@
 """The transcoded variants of the videos, and the contract with LHTML.
 
-LHTML probes `<assets>/cache_video_codecs/` when it writes a `<video>` and
-adds a `<source>` per variant it finds (lhtml/export_html.py). These tests
-pin that contract from the outside, with the variants already in place, so
-they need no transcoder installed.
+LHTML writes a `<source>` per entry that the generator's resolver lists
+(lib/video_cache.media); it probes no file itself. These tests pin that
+contract, with the variants already in place, so they need no transcoder
+installed.
 """
 from pathlib import Path
 import subprocess
@@ -13,7 +13,9 @@ import unittest
 
 import yaml
 
-from lhtml.export_html import CACHE_VIDEO_DIR
+import lhtml
+
+from lib.video_cache import CACHE_VIDEO_DIR, media
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -73,3 +75,28 @@ class VideoCacheTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MediaResolverTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='lhtml-media-')
+        self.addCleanup(temp.cleanup)
+        self.page = Path(temp.name)
+        self.variants = self.page / 'assets' / CACHE_VIDEO_DIR
+        self.variants.mkdir(parents=True)
+
+    def test_variants_listed_in_the_order_the_browser_tries_them(self):
+        for suffix in ('-h264.mp4', '-vp9.webm'):
+            (self.variants / f'clip{suffix}').write_bytes(b'')
+        self.assertEqual(media(str(self.page))('assets/clip.mp4'), [
+            ('assets/cache_video_codecs/clip-vp9.webm', 'video/webm'),
+            ('assets/cache_video_codecs/clip-h264.mp4', 'video/mp4')])
+
+    def test_no_variant_keeps_the_source_as_written(self):
+        html = lhtml.run('video::assets/clip.mp4\n', {'media': media(str(self.page))})
+        self.assertIn('<source src="assets/clip.mp4" type="video/mp4">', html)
+
+    def test_only_a_video_of_an_assets_directory_has_variants(self):
+        (self.page / 'other' / CACHE_VIDEO_DIR).mkdir(parents=True)
+        (self.page / 'other' / CACHE_VIDEO_DIR / 'clip-h264.mp4').write_bytes(b'')
+        self.assertEqual(media(str(self.page))('other/clip.mp4'), [])

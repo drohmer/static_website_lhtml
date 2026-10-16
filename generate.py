@@ -28,7 +28,7 @@ from lib import generator_tool
 from lib import lint
 from lib import dependencies
 from lib import source_map
-from lib.tracking import TrackingLoader, lhtml_includes
+from lib.tracking import TrackingLoader
 from lib import source_scan
 from lib import theme
 from lib import menu
@@ -477,8 +477,9 @@ def prepare_design(meta, log):
     log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
 
 
-# Options of the generator given to LHTML (lhtml.run reads no other key)
-LHTML_OPTIONS = ('wrap-auto', 'title', 'css', 'js', 'line-breaks', 'directory_include', 'macros')
+# Options of the generator given to LHTML (lhtml.run reads no other key).
+# Not `wrap-auto`: the theme wraps the page (lib/wrap.py), LHTML would wrap it twice.
+LHTML_OPTIONS = ('title', 'css', 'js', 'line-breaks', 'macros')
 
 
 def render_lhtml(meta, selected, log, failed_before=()):
@@ -502,15 +503,12 @@ def render_lhtml(meta, selected, log, failed_before=()):
             input_html = fid.read()
 
         options = {k: meta[k] for k in LHTML_OPTIONS if k in meta}
-        options['current_directory'] = meta['site_directory'] + page.site_directory
+        options['media'] = video_cache.media(meta['site_directory'] + page.site_directory)
 
         try:
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
-                included = set()
-                with lhtml_includes(included):
-                    output_html = lhtml.run(input_html, options)
-                meta.setdefault('include_dependencies', {})[page.site_html] = sorted(included)
+                output_html = lhtml.run(input_html, options)
             for warning in caught:          # with the page they come from
                 log.warning(f'{page.label}: {warning.message}')
             if meta.get('source_map'):
@@ -807,7 +805,7 @@ def generate_site(meta, selected, built):
     headings.run(meta)
     wrap.run(meta)
     # Transcoded videos next to the assets, before LHTML writes the <video>
-    # tags that look for them (lib/video_cache.py)
+    # tags whose sources video_cache.media lists
     video_cache.run(meta)
     log.ok_elapsed()
 
@@ -876,8 +874,9 @@ def generate_site(meta, selected, built):
 
 
 def main():
-    if not hasattr(lhtml, 'registry_with_macros'):
-        sys.exit('static_website_lhtml requires lhtml-markup >= 2.5 (pip install -U lhtml-markup)')
+    if int(lhtml.__version__.split('.')[0]) < 3:
+        # LHTML 2 ignores the `media` resolver and expands include:: on its own
+        sys.exit('static_website_lhtml requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')
     args = parse_arguments()
     if args.serve or args.watch:
         from lib.development import develop
