@@ -413,7 +413,7 @@ def scaffold(entries, source_directory):
         for key, value in e.meta.items():
             if key != 'title':
                 lines += [f'{{# {line} #}}' for line in f'{key}: {value}'.replace('#}', '# }').splitlines()]
-        page.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8')
+        page.write_text('\n'.join(lines).rstrip() + '\n', encoding='utf-8', newline='\n')
         created.append(str(page))
     return created
 

@@ -52,6 +52,7 @@ import time
 import traceback
 
 from lib import dependencies
+from lib.filesystem import shown
 from lib.configuration import ConfigError
 from lib.layout.analysis import analyse, deck_norms
 from lib.layout.findings import count_problems
@@ -97,7 +98,7 @@ def _same_source(report, page, meta):
             source = json.load(fid).get('source')
     except (OSError, ValueError):
         return False
-    return source == os.path.relpath(page['source'], meta.get('config_directory') or '.')
+    return source == shown(page['source'], meta.get('config_directory') or '.')
 
 
 def run(meta):
@@ -214,11 +215,11 @@ def _measure_and_report(meta):
         entry = entries[p['name']]
         if p['name'] not in remeasured:         # retained measure: its validity is refreshed, not its geometry
             layout['freshness'] = dependencies.freshness(layout.get('dependencies'), meta, entry)
-            with open(layout_path, 'w', encoding='utf-8') as fid:
+            with open(layout_path, 'w', encoding='utf-8', newline='\n') as fid:
                 json.dump(layout, fid, indent=1)
-            with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
+            with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
                 fid.write(page_markdown(p['name'], layout['source'], layout))
-            rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
+            rows.append((p['name'], shown(os.path.join(p['out'], 'layout.md'), output_dir),
                          layout['analysis']))
             continue
         analyse(layout, options['threshold'], norms, limits, options.get('design_rules'))
@@ -226,31 +227,31 @@ def _measure_and_report(meta):
             layout['analysis']['lint'] = meta['lint_findings'][p['source']]
         elif linter is not None and os.path.isfile(p['source']):
             layout['analysis']['lint'] = [f.as_dict() for f in linter.lint_file(p['source'], p['layout'])]
-        layout['source'] = os.path.relpath(p['source'], meta.get('config_directory') or '.')
+        layout['source'] = shown(p['source'], meta.get('config_directory') or '.')
         # the files the page depends on, to know whether a retained report is still valid
         meta.setdefault('runtime_resources', {})[p['name']] = layout.get('resources', [])
         layout['dependencies'] = dependencies.make_manifest(meta, entry, layout.get('resources', []))
         layout['freshness'] = dependencies.freshness(layout['dependencies'], meta, entry)
-        with open(layout_path, 'w', encoding='utf-8') as fid:
+        with open(layout_path, 'w', encoding='utf-8', newline='\n') as fid:
             json.dump(layout, fid, indent=1)
-        with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace') as fid:
+        with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
             fid.write(page_markdown(p['name'], layout['source'], layout))
-        rows.append((p['name'], os.path.relpath(os.path.join(p['out'], 'layout.md'), output_dir),
+        rows.append((p['name'], shown(os.path.join(p['out'], 'layout.md'), output_dir),
                      layout['analysis']))
 
-    with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace') as fid:
+    with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
         reference = os.path.join(meta['config_directory'], '.structure', 'design.md')
-        fid.write(summary_markdown(rows, norms, design=os.path.relpath(reference, output_dir)
+        fid.write(summary_markdown(rows, norms, design=shown(reference, output_dir)
                                    if loaded_design and any(loaded_design.values()) else None))
     changes = [(p['name'], lines) for p, _, layout in measured if p['name'] in remeasured
                and p['name'] in previous_layouts
                and (lines := layout_changes(previous_layouts[p['name']], layout))]
-    with open(os.path.join(output_dir, 'changes.md'), 'w', encoding='utf-8') as fid:
+    with open(os.path.join(output_dir, 'changes.md'), 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(changes_markdown(changes, len(pages)))
-    with open(os.path.join(output_dir, 'deck.json'), 'w', encoding='utf-8') as fid:
+    with open(os.path.join(output_dir, 'deck.json'), 'w', encoding='utf-8', newline='\n') as fid:
         json.dump(norms, fid, indent=1)
     if options['images'] and measured:
-        write_contact_sheets(output_dir, [(p['name'], os.path.relpath(p['out'], output_dir), layout['analysis'])
+        write_contact_sheets(output_dir, [(p['name'], shown(p['out'], output_dir), layout['analysis'])
                                           for p, _, layout in measured],
                              measured[0][2]['viewport'], options, log,
                              changed={k for k, (p, _, _) in enumerate(measured) if p['name'] in remeasured}
@@ -259,8 +260,8 @@ def _measure_and_report(meta):
     n_problems = sum(count_problems(r[2]) for r in rows)
     if previous_layouts:
         log.keyvalue('info', f"Layout changes: {len(changes)} page(s) changed -> "
-                             f"{os.path.relpath(os.path.join(output_dir, 'changes.md'))}", indent_level=2)
+                             f"{shown(os.path.join(output_dir, 'changes.md'))}", indent_level=2)
     log.keyvalue('info', f"Layout report: {len(pages)} measured, {len(rows)} pages, {n_problems} problems -> "
-                         f"{os.path.relpath(os.path.join(output_dir, 'summary.md'))}", indent_level=2)
+                         f"{shown(os.path.join(output_dir, 'summary.md'))}", indent_level=2)
     if len(rows) < len(pages) + len(previous):
         raise RuntimeError(f'layout measurement failed for {len(pages) + len(previous) - len(rows)} page(s)')

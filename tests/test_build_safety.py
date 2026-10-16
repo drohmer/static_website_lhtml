@@ -186,7 +186,7 @@ def test_nothing_private_of_the_project_reaches_the_site(tmp_path):
     (source / '.private/x.txt').write_text('PRIVATE_DIRECTORY')
     (tmp_path / 'deck.yaml').write_text(yaml.safe_dump(
         {'slides': ['a'], 'title': 'T'}))
-    os.symlink(tmp_path, source / 'project_link')           # the project, from the sources
+    os.symlink(tmp_path, source / 'project_link', target_is_directory=True)           # the project, from the sources
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'deck': 'deck.yaml'}))
 

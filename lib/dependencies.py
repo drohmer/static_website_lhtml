@@ -252,7 +252,8 @@ class BuildStore:
                 self.pages[name] = make_manifest(meta, entry, meta.get('runtime_resources', {}).get(name, []))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'schema_version': SCHEMA, 'pages': self.pages}, indent=1))
+        temporary.write_text(json.dumps({'schema_version': SCHEMA, 'pages': self.pages}, indent=1),
+                             encoding='utf-8', newline='\n')
         temporary.replace(self.path)
 
     def refresh_assets(self, meta, built):

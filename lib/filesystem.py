@@ -3,10 +3,21 @@
 import heapq
 import os
 import shutil
+from pathlib import Path
 
 
 # Directories of a build in progress or of a backup (lib/build_output.py)
 BUILD_DIRECTORIES = ('.site-build-', '.site-backup-')
+
+
+def shown(path, start=None):
+    """A path as a message or a report writes it: with '/', on Windows too,
+    relative to `start` (the current directory by default) when it can be,
+    absolute otherwise (another drive)."""
+    try:
+        return Path(os.path.relpath(path, start or os.curdir)).as_posix()
+    except ValueError:
+        return Path(path).as_posix()
 
 
 def read_text(path):
@@ -17,7 +28,8 @@ def read_text(path):
         with open(path, encoding='utf-8') as stream:
             return stream.read()
     except UnicodeDecodeError as exc:
-        raise ValueError(f"'{path}' is not UTF-8 text (byte {exc.start}): save it in UTF-8") from None
+        raise ValueError(f"'{Path(path).as_posix()}' is not UTF-8 text (byte {exc.start}): "
+                         f"save it in UTF-8") from None
 
 
 def directory_name_clean(d_in):
@@ -82,7 +94,8 @@ def find_files_in_hierarchy(src_dir, condition, max_depth=None, exclude=()):
             for name in sorted(os.listdir(directory)):
                 path = os.path.join(directory, name)
                 if os.path.isfile(path) and condition(name):
-                    local = os.path.relpath(directory, root)
+                    # a page is named by a POSIX path, '/' on Windows too
+                    local = Path(os.path.relpath(directory, root)).as_posix()
                     if local == '.':
                         local = ''
                     files_found.append({'path': FilepathRelative(
@@ -135,14 +148,17 @@ def copy_tree(source, target, ignore=None, exclude=()):
     def copy_link(path, destination):
         link = os.readlink(path)
         if os.path.lexists(destination):
-            os.remove(destination)
+            try:
+                os.remove(destination)
+            except (IsADirectoryError, PermissionError):   # Windows: a link to a directory
+                os.rmdir(destination)
         if os.path.exists(path):
             mirrored = os.path.normpath(os.path.join(os.path.dirname(path), link))
             if os.path.isabs(link) or not (_inside(mirrored, root) and
                                            os.path.realpath(mirrored) == os.path.realpath(path)):
                 shutil.copy2(path, destination)     # the link would lead out of the copy
                 return
-        os.symlink(link, destination)
+        os.symlink(link, destination, target_is_directory=os.path.isdir(path))
 
     def copy(directory, destination, ancestors):
         os.makedirs(destination, exist_ok=True)
@@ -192,5 +208,5 @@ def write_file(path, text):
     written through)."""
     if os.path.islink(path):
         os.remove(path)
-    with open(path, 'w', encoding='utf-8') as fid:
+    with open(path, 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(text)

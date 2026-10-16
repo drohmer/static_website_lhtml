@@ -88,10 +88,10 @@ def run(meta):
             position = it.end()
         file_content = ''.join(parts) + file_content[position:]
 
-        with open(file_path, 'w', encoding='utf-8') as fid:
+        with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
             fid.write(file_content)
 
-    with open(summary_path, 'w', encoding='utf-8') as fid:
+    with open(summary_path, 'w', encoding='utf-8', newline='\n') as fid:
         json.dump(title_id_summary, fid, indent=4)
 
     for entry in pages:
@@ -99,9 +99,9 @@ def run(meta):
             continue
         dirname = meta['site_directory'] + entry['dir']
         headings = title_id_summary[entry['dir'] + entry['filename']]
-        with open(dirname + entry['filename'] + '.title_id.json', 'w', encoding='utf-8') as fid:
+        with open(dirname + entry['filename'] + '.title_id.json', 'w', encoding='utf-8', newline='\n') as fid:
             json.dump(headings, fid, indent=4)
         # Preserve the old URL for a directory index or a single-page folder.
         if entry['filename'] == 'index.html' or pages_per_directory[entry['dir']] == 1:
-            with open(dirname + 'title_id.json', 'w', encoding='utf-8') as fid:
+            with open(dirname + 'title_id.json', 'w', encoding='utf-8', newline='\n') as fid:
                 json.dump(headings, fid, indent=4)

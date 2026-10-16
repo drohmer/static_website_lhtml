@@ -17,8 +17,8 @@ class ProjectBuildTests(DeckProjectsTests):
 
     def test_linked_assets_of_another_project_are_copied(self):
         self.write('shared/s.sass', 'a\n  color: red\n')
-        os.symlink(self.root / 'shared', self.root / 'course/src/05_b/01_c/style')
-        os.symlink('../../../../shared', self.root / 'course/src/05_b/01_c/media')
+        os.symlink(self.root / 'shared', self.root / 'course/src/05_b/01_c/style', target_is_directory=True)
+        os.symlink(str(Path('../../../../shared')), self.root / 'course/src/05_b/01_c/media', target_is_directory=True)
         self.write('course/src/05_b/01_c/.env', 'secret')
         self.build({'sources': {'course': '../course/src'}, 'slides': ['01_a', 'course:05_b/01_c']})
         page = self.site / 'course/05_b/01_c'
@@ -91,7 +91,7 @@ class SiteDiscoveryTests(DeckProjectsTests):
         shutil.copytree(REPO / 'themes/slides', theme)
         shared.parent.mkdir()
         shutil.move(theme / 'js/menu.js', shared)
-        os.symlink('../../shared/menu.js', theme / 'js/menu.js')
+        os.symlink(str(Path('../../shared/menu.js')), theme / 'js/menu.js')
         before = shared.read_text()
         config = yaml.safe_load(self.config.read_text())
         config['theme'] = str(theme)
@@ -102,7 +102,7 @@ class SiteDiscoveryTests(DeckProjectsTests):
         self.assertIn('Plan (2)', (self.site / 'theme/js/menu.js').read_text())
 
     def test_a_link_to_the_site_is_not_discovered(self):
-        os.symlink('../site', self.root / 'talk/src/out')
+        os.symlink(str(Path('../site')), self.root / 'talk/src/out', target_is_directory=True)
         config = yaml.safe_load(self.config.read_text())
         config['debug'] = True
         del config['deck']                                  # all the pages of the sources

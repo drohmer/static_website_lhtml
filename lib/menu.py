@@ -60,5 +60,5 @@ def run(meta):
         content = fid.read()
     content = content.replace(PLACEHOLDER, json.dumps(table_of_contents(meta, manifest)))
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    with open(target, 'w', encoding='utf-8') as fid:
+    with open(target, 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(content)

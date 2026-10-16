@@ -22,7 +22,7 @@ def remove_controls(meta, structure):
         new_content = re.sub(r'(<video .*?)controls(.*?)>', r'\1\2>', file_content)
         new_content = new_content.replace('{controls}', '')
 
-        with open(filepath, 'w', encoding='utf-8') as fid:
+        with open(filepath, 'w', encoding='utf-8', newline='\n') as fid:
             fid.write(new_content)
 
 

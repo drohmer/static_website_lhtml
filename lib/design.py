@@ -290,6 +290,6 @@ def write_design(meta, design):
     from lib.structure import documents_directory
     site = Path(meta['site_directory'])
     (site / CSS_PATH).parent.mkdir(parents=True, exist_ok=True)
-    (site / CSS_PATH).write_text(design_css(design), encoding='utf-8')
-    (documents_directory(meta) / REFERENCE_NAME).write_text(design_markdown(design), encoding='utf-8')
+    (site / CSS_PATH).write_text(design_css(design), encoding='utf-8', newline='\n')
+    (documents_directory(meta) / REFERENCE_NAME).write_text(design_markdown(design), encoding='utf-8', newline='\n')
     return site / CSS_PATH

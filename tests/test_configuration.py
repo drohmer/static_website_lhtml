@@ -1,6 +1,7 @@
 """Configuration precedence, diagnostics, and non-destructive path validation."""
 from pathlib import Path
 from types import SimpleNamespace
+import os
 import re
 import subprocess
 import sys
@@ -137,7 +138,7 @@ class ConfigurationTests(unittest.TestCase):
         self.write(plugin=['plugin.py'])
         result = self.cli('--check-config', '--clean')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn(str(plugin), result.stdout)
+        self.assertIn(plugin.as_posix(), result.stdout)
         self.assertEqual(marker.read_text(), 'keep')
         self.write(site_directory='fresh')
         self.assertEqual(self.cli('--check-config').returncode, 0)
@@ -194,7 +195,8 @@ class ConfigurationTests(unittest.TestCase):
         not_executable = self.root / 'plain'
         not_executable.write_text('')
         not_executable.chmod(0o644)
-        for value in ('missing-chrome', '   ', 42, str(not_executable)):
+        # Windows has no executable bit: a file found is taken as executable
+        for value in ('missing-chrome', '   ', 42) + ((str(not_executable),) if os.name != 'nt' else ()):
             self.write(chrome=value)
             with self.assertRaises(ConfigError):
                 load_config(self.file)
@@ -210,7 +212,7 @@ class ReservedKeysAndWatchTests(unittest.TestCase):
         written = {}
         for file in [REPO / 'generate.py', *sorted((REPO / 'lib').rglob('*.py')),
                      *sorted((REPO / 'plugins').glob('*.py'))]:
-            for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text()):
+            for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text(encoding='utf-8')):
                 written.setdefault(match.group(1), file.name)
         unreserved = {key: name for key, name in written.items() if key not in known}
         self.assertEqual(unreserved, {}, f'add these keys to RUNTIME_KEYS: {unreserved}')

@@ -104,7 +104,7 @@ class Page:
             with open(self.src, encoding='utf-8') as fid:
                 return fid.read()
         except UnicodeDecodeError as exc:
-            raise ValueError(f"'{self.src}' is not UTF-8 text (byte {exc.start}): "
+            raise ValueError(f"'{Path(self.src).as_posix()}' is not UTF-8 text (byte {exc.start}): "
                              f"save it in UTF-8") from None
 
     @cached_property
@@ -254,6 +254,6 @@ def place(pages, site_directory, project_assets=False, transform=None, source_tr
         if transform is None and source_transform is None:
             shutil.copy2(page.src, site + page.site_template)
         else:
-            with open(site + page.site_template, 'w', encoding='utf-8') as fid:
+            with open(site + page.site_template, 'w', encoding='utf-8', newline='\n') as fid:
                 fid.write(source_transform(page.text, page.src) if source_transform else transform(page.text))
     return warnings

@@ -1404,6 +1404,32 @@ install path. Done when both suites pass there and a project of the corpus
 builds the same site on both systems - a script that runs the suites over
 SSH keeps it so.
 
+*Done* (2026-10-16). Both suites pass on Windows (LHTML 294, the generator
+289, 16 skipped: Chrome and Node.js are not installed there), and the
+example site built there is identical to the one built on macOS (304
+files). What it took:
+
+- the names of the pages are POSIX paths from the walk of the sources
+  (`filesystem.find_files_in_hierarchy`), and so are the URLs of the video
+  variants (`video_cache.media`) and the directories of the configuration
+  (`source_directory`, `config_directory`, ... end with `/`, written with
+  `/`: Windows reads them);
+- a path in a message or a report goes through `filesystem.shown`: relative
+  when it can be, with `/`;
+- every text file is written with `newline='\n'`: the only differences
+  between the two sites were CRLF;
+- the build lock locks a byte far from the pid it writes (on Windows a
+  locked byte cannot be written, even by its owner);
+- a link to a directory is recreated as one (`target_is_directory`), and
+  removed with `rmdir`;
+- the tests: UTF-8 given where they read or write non-ASCII text, links to
+  directories created as such and with native separators, Node.js tests
+  skipped without Node.js, the executable bit not tested where there is
+  none, and one Chrome test that lacked the `LHTML_BROWSER_TEST` gate.
+
+`tests/windows.sh <ssh host>` copies both checkouts there and runs the two
+suites.
+
 **C. What the two commands print.** Today the generator prints a banner,
 six stages with `[OK] 0.0s` whatever they did, paths cut at 80 columns
 (the console of `rich` in a pipe), and no conclusion: neither the number

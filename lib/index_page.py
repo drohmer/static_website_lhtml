@@ -35,5 +35,5 @@ def run(meta):
     html = create_html_redirection(url)
 
     redirection_path = meta['site_directory'] + '/index.html'
-    with open(redirection_path, 'w', encoding='utf-8') as fid:
+    with open(redirection_path, 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(html)

@@ -76,5 +76,5 @@ def run(meta):
             content = template_auto_wrap.format(title=json.dumps(title[0] if title else '', ensure_ascii=False),
                                                 settings=settings, content=file_content[len(settings):],
                                                 template=manifest['template'], block=manifest['content_block'])
-            with open(file_path, 'w', encoding='utf-8') as fid:
+            with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
                 fid.write(content)

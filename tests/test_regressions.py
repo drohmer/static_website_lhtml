@@ -1,6 +1,7 @@
 """Regression checks: python3 -m unittest discover -s tests -v."""
 import os
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -117,6 +118,7 @@ class GeneratorRegressions(unittest.TestCase):
         page = (self.site / 'a/index.html').read_text()
         self.assertRegex(page, r"<title>\s*Angles d(&#39;|')Euler \(x/y/z\)\s*</title>")
 
+    @unittest.skipUnless(shutil.which('node'), 'needs Node.js')
     def test_menu_escapes_metadata_and_retains_flags(self):
         self.page('a/index.html.j2', 'First')
         title = 'Le mode "debug"\nC:\\docs'
@@ -132,6 +134,7 @@ class GeneratorRegressions(unittest.TestCase):
         self.assertEqual(menu[0]['hide-toc'], 'True')
         self.assertEqual(menu[0]['level-toc'], '2')
 
+    @unittest.skipUnless(shutil.which('node'), 'needs Node.js')
     def test_each_page_has_its_own_heading_summary(self):
         config = yaml.safe_load(self.config.read_text())
         config['plugin'] = []

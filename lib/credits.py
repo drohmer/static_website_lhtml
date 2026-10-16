@@ -22,10 +22,10 @@ LHTML characters are escaped (`__init__` is not made italic). Each build writes:
 from __future__ import annotations
 
 import html
-import os
 import re
 
 from lib import source_scan
+from lib.filesystem import shown
 
 FIELDS = ('author', 'source', 'license', 'url', 'note')
 TEXT_FIELDS = ('author', 'source', 'license')
@@ -120,7 +120,7 @@ def credits_markdown(pages, credits_of, base, macros=None):
            '## Slides', '', '| n | page | title | source | origin |', '|---|---|---|---|---|']
     for n, page in enumerate(pages, 1):
         origin = page.settings.get('origin') or (f'project {page.source.name}' if page.source.name else '')
-        out.append(f'| {n} | {page.site_html} | {_cell(page.title)} | `{os.path.relpath(page.src, base)}` | {_cell(origin)} |')
+        out.append(f'| {n} | {page.site_html} | {_cell(page.title)} | `{shown(page.src, base)}` | {_cell(origin)} |')
     credited = all_credits(pages, credits_of)
     out += ['', f'## Credits ({len(credited)})', '', '| page | file | author | source | license |', '|---|---|---|---|---|']
     for c in credited:
@@ -154,7 +154,7 @@ def todo_markdown(planned_figures, planned_slides, base):
     """.structure/todo.md: planned figures and slides."""
     out = ['# To do', '', f'## Planned figures ({len(planned_figures)})', '',
            'The `placeholder::` of the pages.', '']
-    out += [f'- `{os.path.relpath(page.src, base)}:{line}` ({page.site_html}): {text or "-"}'
+    out += [f'- `{shown(page.src, base)}:{line}` ({page.site_html}): {text or "-"}'
             for page, line, text in planned_figures]
     out += ['', f'## Planned slides ({len(planned_slides)})', '',
             'Entries of the deck with a title and no source yet (`--scaffold` creates them).', '']

@@ -3,7 +3,7 @@ the deck, changes.md between two builds, and the HTML of the contact sheets.
 
 Text in, text out: nothing here writes a file (lib/layout/measure.py does).
 """
-import os
+import posixpath
 
 from lib.layout.analysis import _rect
 from lib.layout.findings import count_problems, count_warnings, findings
@@ -288,7 +288,7 @@ def summary_markdown(rows, norms=None, design=None):
     if design:
         lines.append(f'Macros, layouts and tokens of the design (use them instead of inline styles): '
                      f'`{design}`. Procedure for editing the slides: '
-                     f'`{os.path.join(os.path.dirname(design), "agents.md")}`.\n')
+                     f'`{posixpath.join(posixpath.dirname(design), "agents.md")}`.\n')
     if norms:
         lines.append(norms_markdown(norms))
     debt = sum(len(r[2].get('lint', [])) for r in rows)

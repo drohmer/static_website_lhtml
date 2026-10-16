@@ -211,7 +211,7 @@ class DeckProjectsTests(unittest.TestCase):
     def write(self, name, text):
         path = self.root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
 
     def build(self, deck_data, *args, ok=True):
         (self.root / 'talk/deck.yaml').write_text(yaml.safe_dump(deck_data))
@@ -407,7 +407,7 @@ class DeckBuildEdgeCaseTests(DeckProjectsTests):
         for name in ('a', 'b'):
             self.write(f'shared/{name}/index.html.j2', '{% extends "theme/template/base.html" %}'
                                                        '{% block content %}= S{% endblock %}\n')
-        (self.root / 'talk/src/shared').symlink_to(self.root / 'shared')
+        (self.root / 'talk/src/shared').symlink_to(self.root / 'shared', target_is_directory=True)
         self.build({'slides': ['01_a', 'shared/a']})
         self.assertTrue((self.root / 'shared/a/index.html.j2').is_file())
         self.assertTrue((self.root / 'shared/b/index.html.j2').is_file())
@@ -422,7 +422,7 @@ class DeckBuildEdgeCaseTests(DeckProjectsTests):
         import datetime
         structure = self.build({'slides': ['02_raw', {'path': '01_a', 'title': 'Fête 🎉',
                                                       'date': datetime.date(2026, 10, 4)}]})
-        self.assertIn('<title> Party 🎉 </title>', (self.site / '02_raw/index.html').read_text())
+        self.assertIn('<title> Party 🎉 </title>', (self.site / '02_raw/index.html').read_text(encoding='utf-8'))
         self.assertEqual(structure[1]['title'], 'Fête 🎉')
 
     def test_sitemap_ids_of_the_project_are_stable(self):

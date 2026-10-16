@@ -79,7 +79,7 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         if changed is not None and not any((i - 1) * per_sheet <= k < i * per_sheet for k in changed):
             continue
         html_path = os.path.abspath(os.path.join(output_dir, f'contact_{i:02d}.html'))
-        with open(html_path, 'w', encoding='utf-8', errors='replace') as fid:
+        with open(html_path, 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
             fid.write(html)
         sheets.append({'html': html_path, 'png': html_path[:-len('.html')] + '.png'})
     if not sheets:

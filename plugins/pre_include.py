@@ -20,5 +20,5 @@ def pre_process(meta):
 
         new_file_content = '\n'.join(content_to_include) + '\n' + file_content
 
-        with open(file_path, 'w', encoding='utf-8') as fid:
+        with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
             fid.write(new_file_content)

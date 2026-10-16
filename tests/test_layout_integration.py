@@ -272,6 +272,7 @@ def test_a_navigation_in_two_corners_does_not_reserve_the_whole_page(tmp_path):
     assert layout['analysis']['reserved'] == []
 
 
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
 def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path):
     source = tmp_path / 'src'
     source.mkdir()

@@ -18,6 +18,7 @@ The name of the cache directory and the rule that only a directory named
 the identity of the cache.
 """
 import os
+import posixpath
 import pathlib
 import shutil
 from multiprocessing import Pool
@@ -45,13 +46,13 @@ def media(page_directory):
     """The resolver given to LHTML for a page whose published directory is
     `page_directory`: media(src) -> [(url, mime type)] of the variants that
     exist next to a video of an assets/ directory, [] for the source as written."""
-    def sources(src):
-        stem, _ = os.path.splitext(src)
-        directory, name = os.path.dirname(stem), os.path.basename(stem)
-        if os.path.basename(directory) != ASSET_DIRECTORY.rstrip('/'):
+    def sources(src):              # src and the urls are URLs: '/' on Windows too
+        stem, _ = posixpath.splitext(src)
+        directory, name = posixpath.dirname(stem), posixpath.basename(stem)
+        if posixpath.basename(directory) != ASSET_DIRECTORY.rstrip('/'):
             return []
-        variants = os.path.join(directory, CACHE_VIDEO_DIR)
-        return [(os.path.join(variants, name + suffix), mime) for suffix, mime in SOURCES
+        variants = posixpath.join(directory, CACHE_VIDEO_DIR)
+        return [(posixpath.join(variants, name + suffix), mime) for suffix, mime in SOURCES
                 if os.path.isfile(os.path.join(page_directory, variants, name + suffix))]
     return sources
 

@@ -199,5 +199,5 @@ def mid_process(meta):
 
         parts.append(file_content[prev:])
 
-        with open(file_path, 'w', encoding='utf-8') as fid:
+        with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
             fid.write(''.join(parts))

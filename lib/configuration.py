@@ -105,8 +105,8 @@ class BuildContext:
         # Plugins keep a real, mutable dict, but never mutate the configuration.
         self.meta = self.config.to_meta()
         self.meta.update(config_file=str(self.config_file),
-                         config_directory=str(self.config_file.parent) + '/',
-                         lib_directory=str(GENERATOR_DIRECTORY) + '/',
+                         config_directory=self.config_file.parent.as_posix() + '/',
+                         lib_directory=GENERATOR_DIRECTORY.as_posix() + '/',
                          path_config='', args=self.args, log=self.log,
                          plugin_paths=self.plugin_paths)
 
@@ -258,7 +258,7 @@ def load_config(filename, debug_override=None):
             if renamed.is_dir():
                 warnings.append(f"'{directory}' was renamed; using '{renamed}'. Update '{key}'.")
                 directory = renamed
-        values[key] = str(directory.resolve()) + '/'
+        values[key] = directory.resolve().as_posix() + '/'     # '/' on Windows too
     if debug_override is not None:
         values['debug'] = debug_override
     return Config(**values, extras=copy.deepcopy(extras)), path, warnings

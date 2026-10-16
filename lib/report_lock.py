@@ -24,7 +24,12 @@ except ImportError:                     # pragma: no cover - Windows
     try:
         import msvcrt
 
+        # The lock is a byte far beyond the pid written at the start of the
+        # file: on Windows a locked byte cannot be written, even by its owner.
+        _OFFSET = 1 << 30
+
         def _take(stream):
+            stream.seek(_OFFSET)
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as error:    # EACCES: the file is locked by another build
@@ -32,7 +37,7 @@ except ImportError:                     # pragma: no cover - Windows
 
         def _release(stream):
             try:
-                stream.seek(0)
+                stream.seek(_OFFSET)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
             except OSError:
                 pass

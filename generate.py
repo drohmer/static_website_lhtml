@@ -211,7 +211,7 @@ def select_pages(meta, log, scaffold=False):
     result = deck.apply_deck(loaded_deck, found)
     if scaffold and result.missing:
         for path in deck.scaffold(result.missing, meta['source_directory']):
-            log.keyvalue('info', f'Deck: created {os.path.relpath(path)}', indent_level=1)
+            log.keyvalue('info', f'Deck: created {filesystem.shown(path)}', indent_level=1)
         return select_pages(meta, log)
     for warning in result.warnings:
         log.warning(f'Deck: {warning}')
@@ -290,7 +290,7 @@ def prepare_data(meta, selected, built, log):
     if made or cached:
         log.keyvalue('info', f'Figures: {made} made, {cached} from the cache', indent_level=1)
     for script, error in errors:
-        log.warning(f"Figure not made: {os.path.relpath(script, dir_site)}: {error}")
+        log.warning(f"Figure not made: {filesystem.shown(script, dir_site)}: {error}")
 
     log.debug(f"Found {len(selected)} template files")
     sitemap = generator_tool.extract_titles(selected)
@@ -318,11 +318,11 @@ def write_credits_and_todo(meta, selected, log):
     documents = documents_directory(meta)
     text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'],
                                                        meta['macros'])
-    with open(documents / 'credits.md', 'w', encoding='utf-8') as fid:
+    with open(documents / 'credits.md', 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(text)
     planned_figures = credits.placeholders(selected)
     planned_slides = meta.get('planned_slides') or []
-    with open(documents / 'todo.md', 'w', encoding='utf-8') as fid:
+    with open(documents / 'todo.md', 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(credits.todo_markdown(planned_figures, planned_slides, meta['config_directory']))
     log.debug(f'Credits: {credited} credited, {missing} image(s) without credit ({documents}/credits.md)')
     if planned_figures or planned_slides:
@@ -625,7 +625,7 @@ def render_files(meta, files, log):
     finally:
         os.remove(listing)
     for entry in entries:
-        log.keyvalue('info', f"{os.path.relpath(entry['file'])} -> {os.path.relpath(entry['png'])}")
+        log.keyvalue('info', f"{filesystem.shown(entry['file'])} -> {filesystem.shown(entry['png'])}")
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +756,7 @@ def lint_pages(selected, loaded_design, log, details=False):
     total = sum(map(len, found.values()))
     if details:
         for src, findings in found.items():
-            path = os.path.relpath(src)
+            path = filesystem.shown(src)
             for f in findings:
                 log.plain(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
     pages_with = sum(1 for findings in found.values() if findings)
@@ -782,7 +782,7 @@ def generate_site(meta, selected, built):
     log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
 
     meta['page_contexts'] = {p.site_html: {'page': p.site_html,
-        'source': os.path.relpath(p.src, meta['config_directory']),
+        'source': filesystem.shown(p.src, meta['config_directory']),
         'occurrence': p.occurrence, 'params': p.params, 'deck_line': p.deck_line} for p in selected}
 
     # Data preparation
