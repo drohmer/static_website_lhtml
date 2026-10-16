@@ -210,7 +210,12 @@ video measured before it loaded has the default box of the browser, and
 every check of that page is then computed on a rectangle the slide never
 shows.
 
-An intended overlap (an inset over a figure) takes the class `overlay`.
+An intended overlap (an inset over a figure) takes the class `overlay`: it
+is listed under `Notes` as `INTENTIONAL OVERLAP`, not as a problem. A block
+laid over the page that way is also left out of the checks that compare it
+with the layout of the content (`OUT OF AREA`, `NEAR-ALIGNED`, the design
+roles), and still checked against the pixels of what is drawn (collisions,
+hidden text, `RESERVED AREA`).
 
 ## Comments of the author
 

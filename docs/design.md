@@ -678,8 +678,10 @@ plugins/        extensions: pre_include, code_include
 themes/         each with its manifest (rendered files, page settings, root, reserved, template)
 ```
 
-`lib/layout/` exists, with all of its files. `tools/` is gone: both scripts
-it held were dead code.
+`lib/layout/` exists, with all of its files, and `lib/theme.py` with the
+manifest of section 4.0 (step 8a). `lib/targets/` and `lib/analyses/` do
+not exist yet: they are steps 7 and 9. `tools/` is gone: both scripts it
+held were dead code.
 
 
 ## 7. Scale
@@ -909,20 +911,33 @@ of configuration, not a system.
 
 ### Next
 
+**8 comes before 7**, against the order this list was written in, for two
+reasons. The rule of this section: at equal value, what deletes a special
+case comes before what adds a concept - 8 deletes, 7 adds a notion of
+target. And 7 depends on 8: "its own theme" is a declaration of the theme
+contract (section 4.0 already says the theme selects the PDF variant), so
+doing 7 first would mean inventing a parallel notion of target and
+refolding it one step later.
+
+8b. **The stages that depend on the theme manifest.** Four plugins become
+   core stages: `menu.py` (section 4.1 says why it does not disappear into
+   Jinja), `title_submenu.py`, `cache_video.py`, and
+   `redirection_first_page.py` as the `index:` stage. `auto_wrap.py` reads
+   the manifest since 8a; what remains is for it to stop being a plugin
+   too. Then `plugins/` holds `pre_include` and `code_include`, and the
+   declared positions of those two are a line of configuration - which is
+   the condition the deferred step 2 was waiting for.
+
 7. **PDF as a target**: its own theme, its own source transforms, its own
-   deliverables, and publication by the explicit list of section 3.2
-   instead of `shutil.rmtree(site_dir)`. Deletes the "put `generate_pdf.py`
-   last" rule and the `if staging.is_dir()` of `build_output.py`. Separate
-   from step 4 because it carries the publication contract, which step 4
-   does not touch.
-8. **The stages that depend on the theme manifest**: `menu`,
-   `title_submenu`, `index`, the video cache - and the declared positions of
-   the two extensions that remain (see Deferred above). `auto_wrap` already
-   reads the manifest; what remains is for it to stop being a plugin.
+   deliverables. Its publication half is already done (step 4: `generate_pdf`
+   declares `publish_site = False` instead of deleting the site directory,
+   and "put `generate_pdf.py` last" is no longer a rule anyone has to know).
+   What remains of the publication contract here is the explicit list of
+   section 3.2 and the `if staging.is_dir()` of `build_output.py`.
 9. **The extension transformation contract** (section 4.2), once the engine
    owns the writes everywhere else.
 
-Expect test churn: 14 of the 22 test files mention plugins. "Each step keeps
+Expect test churn: 15 of the 23 test files mention plugins. "Each step keeps
 the suite green" is the goal, not a free property.
 
 ### Small debts, cheap, not worth a step of their own

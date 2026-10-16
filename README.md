@@ -264,8 +264,8 @@ static_website_lhtml/
     assets/                # Node scripts of the PDF export and of the layout report
     video_convert/         # Video conversion utilities (ffmpeg)
   tests/                   # pytest suite
-  themes/
-    webpage-frame/         # Default web page theme
+  themes/                  # each with theme.yaml (contract with the build)
+    webpage-frame/         #   and, for the slides, design.yaml (tokens, macros)
     slides/                # Presentation slides theme
     slides-pdf/            # PDF export slides theme
   docs/agents.md           # Procedure for AI agents writing slides (copied into .structure/)
@@ -280,7 +280,11 @@ Three built-in themes are available:
 - **`slides/`** — Presentation slides for browser display
 - **`slides-pdf/`** — Presentation slides optimized for PDF export
 
-Themes use Jinja2 template inheritance. The base template (`template/base.html`) provides blocks that content pages can override.
+Themes use Jinja2 template inheritance. The base template provides blocks
+that content pages can override; which template and which block is what the
+theme declares in its `theme.yaml`, with what the layout analysis must take
+as the content of a page - see
+[Theme: what it declares about the build](#theme-what-it-declares-about-the-build).
 
 ## Writing slides with an AI agent
 
