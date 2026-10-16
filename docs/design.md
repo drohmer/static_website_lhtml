@@ -345,6 +345,97 @@ takes a declared extension point, or this note must state that custom outputs
 are out of scope and that such users run their own script on the finished
 site - which then requires the core to guarantee that a finished site exists.
 
+### 4.4 The LHTML boundary, and the document tree
+
+The same argument as 4.2, applied to the markup engine. `lhtml.run(text,
+meta)` promises text in, text out. It reads the file system in three places:
+the includes (`read_source`, recursive), the video variants (`os.path.isdir`
+on `assets/cache_video_codecs/`, and only when the directory is literally
+named `assets`), and through them the project's own conventions. The
+generator passes `current_directory = site_directory + page.site_directory`,
+so the conversion of the markup depends on the state of the half-written
+output directory at the moment of the call.
+
+What that costs is not style. The generator cannot see what LHTML read, so
+it **replaces two module functions at run time** (`lib/tracking.py`:
+`process.read_source`, `process.process_include_recursive`) to find out, and
+the correctness of `--only` - which pages to rebuild - rests on that patch.
+The comment admits the cause: "LHTML exposes no source-loader hook yet". If
+either function is renamed or inlined, nothing raises; a stale page is
+published. The same undeclared split already cost 4.6 MB of pre-converted
+videos shipped under the directory name LHTML used before, never read,
+nothing said (5.3).
+
+The boundary: **LHTML does not touch the disk.** Not by purism - it has a
+CLI and must stay usable alone - but through callbacks the caller provides,
+the CLI passing the defaults: `read(filename) -> text` for the includes (the
+hook the patch is asking for, turned into an argument) and
+`media_sources(src) -> [(url, mime)]` for the videos. The `assets`
+convention and the cache directory then live in the theme manifest (4.0).
+
+**And the deeper form of it: a document tree.** `lib/source_scan.py` says
+in its own docstring that the lint, the source map, the credits and the
+placeholders find LHTML's zones *with LHTML's own regular expressions*, "so
+that they agree with it on what is code and what is text". Six consumers of
+the generator need LHTML's parse; none can have it, so they rebuild it.
+That is `source_scan.py` (159 lines) and `source_map.py` (327), which
+injects invisible characters into the text, lets them travel through Jinja
+and LHTML, and reads them back out of the HTML - and every rule about where
+a marker may sit on a line so that LHTML still reads that line the same way.
+
+There is nothing to export today: `pipeline.run` is seven text-to-text
+passes over one string (`process_yaml`, `process_include_recursive`,
+`process_title`, `process_listing`, `process_bold`, `process_italic`,
+`process_tag`), with a `ProtectionStores` of placeholders so the passes can
+hide text from each other. The placeholder machinery is the symptom. So a
+structured output is not a format to add; it is the core model to replace,
+and it should be said plainly before anyone calls it cheap.
+
+**What a probe measured, before committing to it.** The risk was located in
+the ~159 lines that decide which `::` is a tag (`process_tag`,
+`_dispatch_tag`, `_adjust_bare_tag`, `_is_tag_boundary`): a parser decides
+that differently, and that is where the two would disagree. Instrumenting
+those functions over three corpora:
+
+| corpus | decisions | rejections |
+|---|---|---|
+| a deck of 78 pages | 2336 | **0** |
+| the example site | 303 | **0** |
+| LHTML's own test suite (321 tests) | 736 | **11** |
+
+On content anyone actually wrote, the heuristics never fire. The 11
+rejections and 5 extent rewrites are 16 sites in four families:
+
+- **the closing `::` of a valued tag** (`gap::l::`, `box::warn::`): 3 sites.
+  This is grammar, not a heuristic - a parser with a state is right by
+  construction where the current code uses a lookbehind on `:`;
+- **word boundaries** (`a[::2]`, `std::chrono`, `obj.link::`): 6 sites, one
+  lexer rule;
+- **the extent of a bare `::`** (`::nl.`, `::,`, `::::[...]::`): 5 sites,
+  the awkward family - a token whose extent depends on what follows it, to
+  be ported case by case against the tests;
+- **`::` glued to a placeholder** in highlighted C++: 2 sites, which exist
+  only because protection is a text pass leaving sentinels in the stream.
+  A tree never descends into a code node, and the family disappears.
+
+So the risk is bounded: 16 sites, 2 deleted by the tree, 3 where a parser is
+better than the status quo, 11 straightforward ports under existing tests.
+And the test suite is the specification: 196 of its 246 tests call the public
+API and **none** call an internal function, so a change of model that
+preserves the HTML leaves them green.
+
+**One consequence to record, because it contradicts the obvious plan.** A
+byte-comparison oracle on the real deck was the proposed safety net; the
+probe shows the deck would catch none of these - it never triggers one of
+them. The net is the 321 tests, the 18 golden files, and adversarial
+fixtures to add. The deck oracle stays useful for the rest: titles, lists,
+macros, line breaks.
+
+Not measured, and stated as a judgement: the 86 lines of
+`process_line_breaks` and its helpers, which guess structure from flat text
+(`_is_structure_line`, `_preformatted_depth_change`), should disappear with
+a tree.
+
 
 ## 5. The layout analysis as a product
 
@@ -979,7 +1070,9 @@ to check it against. They stay in section 5.3.
 - `lhtml-markup` is an undeclared part of this architecture: `LHTML_OPTIONS`
   includes `wrap-auto`, which overlaps `auto_wrap`, and `CACHE_VIDEO_DIR` is
   duplicated on both sides. Deciding what is core here is partly deciding
-  what belongs in LHTML.
+  what belongs in LHTML. Section 4.4 states the boundary and measures what
+  the document tree would cost; what is still open is **when** it is done,
+  since it is larger than any step of section 10.
 - Every stage promoted to core inherits an `--only` variant: which ones can
   be made partial honestly, and which ones always run (section 3.1 says the
   build widens itself rather than guess, but not yet which stages are cheap
