@@ -1085,6 +1085,30 @@ refolding it one step later.
 Expect test churn: 15 of the 23 test files mention plugins. "Each step keeps
 the suite green" is the goal, not a free property.
 
+### The authoring surface
+
+A page says what it is in its **front matter**, the YAML at its top, which
+LHTML has read and removed all along (`process_yaml`) and the build had
+never read. Before it, a page setting was a Jinja statement in the page
+({% set layout = 'stack' %}, 78 of the 154 slides of the reference deck) or
+a `config.yaml` next to it - a file per directory, for a setting of one
+page. The front matter joins the chain where it belongs: the directory,
+then the page, then the deck entry, which arranges the talk and keeps the
+last word.
+
+The Jinja form still works, and the lint does not flag it: a
+`{% set layout %}` picks a layout *of* the design vocabulary - it is a
+style, not a defect, and 78 findings on a deck would be noise rather than
+help. What the documentation now teaches is the front matter.
+
+Still open on this surface, and larger: **276 `gap::` over 94 of those 154
+slides**, two per slide that has one. That is vertical spacing written by
+hand, which is what section 5.3 says the design vocabulary exists to
+forbid - respected to the letter by giving the spacing a token name, and
+broken in substance. The fix is not to remove `gap::` but to make it rare:
+a layout spaces its parts. The measure of success is hard and already
+available - that count must collapse.
+
 ### Small debts, cheap, not worth a step of their own
 
 - `meta['headings']` is written by `plugins/title_submenu.py` and read by

@@ -108,14 +108,36 @@ class Page:
                              f"save it in UTF-8") from None
 
     @cached_property
+    def front_matter(self):
+        """The settings the page writes about itself, in YAML at its top:
+
+            ---
+            layout: stack
+            ---
+            = Title
+
+        LHTML already reads this form and removes it (`process_yaml`); what
+        was missing was the build reading it too, so that a page can say
+        what it is without a Jinja statement ({% set layout = 'stack' %})
+        or a config.yaml sitting next to it for one page out of five."""
+        from lhtml import process_yaml
+        try:
+            return process_yaml(self.text)[1] or {}
+        except Exception:               # malformed YAML: not a front matter
+            return {}
+
+    @cached_property
     def scan(self):
         """Its zones and its text read as LHTML (lib/source_scan.py), computed once."""
         return source_scan.Scan(self.text)
 
     @property
     def settings(self):
-        """Its settings: its config.yaml, then its deck entry (which takes precedence)."""
-        return {**self.config, **self.meta}
+        """Its settings, from the least specific to the most: the config.yaml
+        of its directory, the front matter of the page itself, then its deck
+        entry - the deck is where a talk is arranged, so it has the last
+        word over what a page says about itself."""
+        return {**self.config, **self.front_matter, **self.meta}
 
     @property
     def site_directory(self):

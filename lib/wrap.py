@@ -42,6 +42,15 @@ WRAPPED = re.compile(r'{%-?\s*(?:block\s+content|extends)\b')
 DOCUMENT = re.compile(r'\A\s*(?:<!doctype\b|<html\b)', re.IGNORECASE)
 
 
+def strip_front_matter(text):
+    """The source without the YAML settings at its top, if it has any."""
+    from lhtml import process_yaml
+    try:
+        return process_yaml(text)[0]
+    except Exception:               # malformed YAML: not a front matter
+        return text
+
+
 def wrapped(text):
     """Whether a source already places itself: the theme leaves it alone."""
     return bool(WRAPPED.search(text) or DOCUMENT.match(text))
@@ -56,6 +65,11 @@ def run(meta):
             file_content = fid.read()
 
         if not wrapped(file_content):
+            # The front matter is read as the settings of the page
+            # (lib/pages.py) and removed here: once the page is placed in
+            # the template, it is no longer at the top of the document, and
+            # LHTML only removes one that is.
+            file_content = strip_front_matter(file_content)
             settings = leading_settings(file_content)
             # The title of a page is one line: it goes in <title> and in the
             # menu. A deck entry may hold several (lib/deck.py keeps the

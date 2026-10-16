@@ -203,7 +203,7 @@ Each page is rendered by Jinja2 with:
 | `linkTo_<id>` | `<a href="...">` to that page |
 | `params` | Parameters of the occurrence given by the deck (`params.current`), empty otherwise |
 | `page` | Metadata of the page: its `config.yaml` and deck entry (`page.notes`, `page.layout`), title, place in the site |
-| `layout` | Layout of the page, when the page sets it (`{% set layout = 'side' %}`, see [Design](#design-tokens-macros-and-layouts)) |
+| `layout` | Layout of the page, when the page sets it with `{% set layout = 'side' %}` (the front matter sets `page.layout` instead, see [Design](#design-tokens-macros-and-layouts)) |
 | `credit(file)`, `credits` | Credit of a file of the page, credits of all the pages (see [Credits](#credits-origin-of-the-slides-figures-in-code)) |
 | keys of `keywords` | Values of the configuration (`params`, `page`, `credit`, `credits` are reserved) |
 
@@ -481,16 +481,24 @@ Macros of the slide themes: `gap::` (`gap::s`, `gap::l`, `gap::xl`),
 Brackets still work for exceptions; the classes, style and attributes of
 the source are added to those of the macro.
 
-**Layouts.** A page chooses a layout with `{% set layout = 'side' %}` at its
-top (only blank lines, comments, other `{% set %}` and `{% import %}` may come
-before it: elsewhere it is ignored, and the lint says so; a page that writes
-its own `{% extends %}` sets it outside its `{% block %}`), or with
-`layout: side` in its `config.yaml` or its deck entry; the
-theme then places and sizes its blocks, and `media::` holds its figures,
-fitted in the area of the layout: no positions, widths or spacers to write.
+**Layouts.** A page chooses a layout in its **front matter**, the YAML at
+its very top; the theme then places and sizes its blocks, and `media::`
+holds its figures, fitted in the area of the layout: no positions, widths
+or spacers to write.
+
+A page setting can be written in three places, from the least specific to
+the most: the `config.yaml` of its directory, the front matter of the page
+itself, and its deck entry - the deck is where a talk is arranged, so it
+has the last word over what a page says about itself. A page may also set
+`layout` as a Jinja variable (`{% set layout = 'side' %}` at its top, only
+blank lines, comments, other `{% set %}` and `{% import %}` before it; a
+page that writes its own `{% extends %}` sets it outside its `{% block %}`),
+which the theme reads directly and which therefore wins over all three.
 
 ```
-{% set layout = 'side' %}
+---
+layout: side
+---
 = Forward kinematics
 
 * Each joint angle is set by hand

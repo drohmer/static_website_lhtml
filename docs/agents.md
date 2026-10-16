@@ -52,10 +52,16 @@ slides named.
 4. Write the slides, then build and check them as for an edit.
 
 **Writing or editing a slide.**
-1. Choose a layout (see below) and put it at the top of the page:
-   `{% set layout = 'side' %}`. Only blank lines, comments, `{% set %}` and
-   `{% import %}` may come before it; elsewhere it is ignored (the lint says so).
-   A page that writes its own `{% extends %}` sets it outside its `{% block %}`.
+1. Choose a layout (see below) and put it in the front matter, the YAML at
+   the very top of the page:
+
+       ---
+       layout: side
+       ---
+       = Title of the slide
+
+   The front matter is the first thing in the file, between two lines of
+   three dashes. It is read as the settings of the page and never printed.
 2. Write the content with the macros of `design.md`. Do not write positions,
    pixel sizes, spacers or font sizes.
 3. Run `--only <slide> --layout`, then read
