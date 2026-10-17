@@ -1777,6 +1777,32 @@ generator keeps reading its sources before Jinja (`source_scan`) and
 carrying provenance through Jinja (the source map). It deletes the rendered
 side of the source map (N6), not the source side.
 
+*The prototype* (2026-10-17, `lhtml/tree.py` of LHTML, `LHTML_TREE=1`
+runs `lhtml.run` through it). The stages are those of `run`, over the same
+intermediate text - so that what is a heading, an item or an element is
+decided exactly as `run` decides it - but each character keeps its origin
+(the source, or the markup a node wrote), and the elements are recorded as
+events; the tree is built from the events, and `render` writes the HTML from
+the tree alone. Compared with `run`:
+
+| | identical | different |
+|---|---|---|
+| LHTML's tests | 301 of 304 | 3: the handlers of 3.0, not kept |
+| the corpus, 914 calls | 912 | 2: the crossing of csc, closed in its item |
+| 80 000 fuzzed documents | 70 365 | 9 635, each a crossing, each warned |
+
+The warnings are the same, at the same places. The fuzzer found what the
+corpus could not: an unknown name (`lspan::`) whose element `run` skips
+whole, the line break `run` adds to a last list line, and the markup a
+`link::u[...]` label swallows (a bold, a heading, a list opened or closed
+inside it: the label is not protected, so the element writes that markup,
+and the node must not write it again). It is 1.7 times slower than `run`
+(0.96 s against 0.56 s for the corpus), the origin of each character being
+a Python list. What remains of the passes in it: the tag decisions still
+read the intermediate HTML (`<` ends a word, `>` before a name is a
+boundary), and the line breaks still guess structure from that text. Both
+are the next steps of the tree, not of its shape.
+
 **N6. The consumers migrated to the tree, one at a time** (the old N5).
 
 Three expectations of this note were corrected by the review, and 4.4
