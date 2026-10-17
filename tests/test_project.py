@@ -1,6 +1,7 @@
 """A project of several decks, each built to several targets (lib/project.py)."""
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -73,6 +74,27 @@ class PlanTests(ProjectTests):
                          [('01_a', None)])
         with self.assertRaisesRegex(ConfigError, "no deck '03_c'"):
             project.plan(config, only=['03_c'])
+
+    def test_a_destination_behind_a_symbolic_link_is_refused(self):
+        # .site/01_a/html -> src/01_a: the build would replace the sources
+        config = self.config(decks='directories', targets={'html': {'theme': 'slides'}})
+        (self.root / '_site/01_a').mkdir(parents=True)
+        (self.root / '_site/01_a/html').symlink_to(self.root / 'src/01_a', target_is_directory=True)
+        with self.assertRaisesRegex(ConfigError, 'is a symbolic link'):
+            project.plan(config)
+        result = self.build()
+        self.assertEqual(result.returncode, 1)
+        self.assertTrue((self.root / 'src/01_a/01_x/index.html.j2').is_file())       # the sources are kept
+        (self.root / '_site/01_a/html').unlink()
+        shutil.rmtree(self.root / '_site')
+        (self.root / '_site').symlink_to(self.root / 'elsewhere', target_is_directory=True)
+        (self.root / 'elsewhere').mkdir()
+        self.assertEqual(len(project.plan(self.config(decks='directories'))), 2)    # the site itself may be a link
+
+    def test_two_targets_exporting_a_pdf_are_refused(self):
+        with self.assertRaisesRegex(ConfigError, 'each exports a PDF to the same place'):
+            project.plan(self.config(decks='directories', targets={
+                'projector': {'theme': 'slides-pdf'}, 'print': {'theme': 'slides-pdf'}}))
 
     def test_target_chooses_the_targets(self):
         config = self.config(targets={'html': {'theme': 'slides'}, 'pdf': {'theme': 'slides-pdf'}})

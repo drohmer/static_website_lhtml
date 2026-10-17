@@ -18,6 +18,7 @@ site directory itself: a project of one site is a project of one deck.
 own configuration; the build of one of them is the build of a site.
 """
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from lib import theme
 from lib.configuration import ConfigError, Config
@@ -86,6 +87,10 @@ def plan(config, only=None, targets=None):
     elif only:
         pointers = {None: list(only)}
 
+    exports = [name for name, spec in chosen.items() if spec and theme.read(spec['theme'])['export']]
+    if len(exports) > 1:            # they would write the same <deck>.pdf and images/
+        raise ConfigError(f"targets {', '.join(exports)}: each exports a PDF to the same place "
+                          f"(<site>/<deck>/<deck>.pdf); keep one, or build them in two configurations")
     result = []
     for deck in names:
         if deck not in pointers:
@@ -102,5 +107,24 @@ def plan(config, only=None, targets=None):
             elif deck is not None and theme.read(config.theme)['export']:
                 # the export lands next to the site it renders: in the directory of the deck
                 changes.update(site_directory=site / 'pdf')
+            _check_destination(config.site_directory, changes['site_directory'])
             result.append(Build(deck, target, replace(config, **changes), pointers[deck]))
     return result
+
+
+def _check_destination(site, destination):
+    """A build replaces its destination: it must be a directory of the site
+    itself. None of the directories between the site and it may be a
+    symbolic link (.site/01_a/html -> src/01_a would have the build replace
+    the sources), nor may it resolve outside the site."""
+    site, destination = Path(site), Path(destination)
+    path = destination
+    while path != site and site in path.parents:
+        if path.is_symlink():
+            raise ConfigError(f"Unsafe output: '{path.as_posix()}' is a symbolic link; the build would "
+                              f"replace what it points to ({path.resolve().as_posix()})")
+        path = path.parent
+    resolved, root = destination.resolve(), site.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise ConfigError(f"Unsafe output: '{destination.as_posix()}' resolves outside the site "
+                          f"directory ({resolved.as_posix()})")
