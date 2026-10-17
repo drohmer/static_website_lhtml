@@ -1919,6 +1919,14 @@ not: a `small:: Notes` opener with text on its line, a `media::` written
 in an HTML attribute or a code block (not the media of the layout). The
 patterns of a project stay on the text, as written: they are about words.
 
+*The title of a page, done* (2026-10-17). `generator_tool.extract_title`
+takes the first heading of an LHTML page from its tree (after a `tocTitle`
+or `pageTitle`, as before); the reading of the headings moves to
+`source_scan.lhtml_headings`, shared with `lib/headings.py`. Its regular
+expression, `^=+ (.*?)$`, skipped a heading with attributes
+(`=(#intro) Introduction`) for the next one; no page of the corpus has
+one: the same title on its 1337 templates.
+
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint
 and the parse do not read the same document, and the ambiguity count of the

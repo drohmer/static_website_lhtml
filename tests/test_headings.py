@@ -2,6 +2,7 @@
 (lib/headings.py, lhtml.parse)."""
 import unittest
 
+from lib.generator_tool import extract_title
 from lib.headings import lhtml_headings
 
 
@@ -24,6 +25,18 @@ class LhtmlHeadings(unittest.TestCase):
 
     def test_a_page_lhtml_refuses_has_none(self):
         self.assertEqual(lhtml_headings('= T\ninclude::other.txt\n'), [])
+
+
+
+class PageTitle(unittest.TestCase):
+
+    def test_the_first_heading_of_the_tree(self):
+        # a heading with attributes is one (the regular expression took the next)
+        self.assertEqual(extract_title('=(#intro) Introduction\n== Next\n'), 'Introduction')
+        # nor a line of a code block or a comment
+        self.assertEqual(extract_title('code::[text]\n= Not\ncode::[-]\n<!--\n= Nor\n-->\n= Title\n'), 'Title')
+        self.assertIsNone(extract_title('no heading\n'))
+        self.assertEqual(extract_title("{% set pageTitle = 'Set' %}\n= Title\n"), 'Set')
 
 
 if __name__ == '__main__':

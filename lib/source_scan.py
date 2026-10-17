@@ -145,6 +145,26 @@ def document(source, macros=None):
     return scan(source).document(macros)
 
 
+# The start of an LHTML heading the tree found, to read its attributes as
+# written ((.c #id), Jinja included) and where its title starts
+HEADING_START = re.compile(r'(=+)(?:\((.*?)\))? ')
+
+
+def lhtml_headings(source):
+    """The headings of an LHTML page, those of its document tree: (start,
+    end, level, attributes as written, title as written). A page that LHTML
+    refuses has none here: its run reports why."""
+    tree = document(source)
+    text = scan(source).text
+    found = []
+    for node in tree.walk() if tree else ():
+        if node.kind == 'Heading':
+            start, end = node.span
+            m = HEADING_START.match(text, start)
+            found.append((start, end, node.level, (m.group(2) or '').strip(), text[m.end():end]))
+    return found
+
+
 def scan(source):
     """The Scan of a source (a text, or already a Scan)."""
     return source if isinstance(source, Scan) else Scan(source)

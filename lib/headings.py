@@ -16,15 +16,13 @@ import json
 from collections import Counter
 
 from lib import markdown_page, source_scan
+from lib.source_scan import lhtml_headings
 from lib.source_map import strip as strip_markers
 from lib.generator_tool import RAW_MARKERS
 from lib.pages import markup
 from lib.structure import built_pages, page_path, structure, template_path
 
 
-# The start of an LHTML heading the tree found, to read its attributes as
-# written ((.c #id), Jinja included) and where its title starts
-HEADING_START = re.compile(r'(=+)(?:\((.*?)\))? ')
 # A Markdown heading (ATX), found in the text read as Markdown, then read on
 # its line as written - a code span or mathematics ending it is blank in the
 # masked text. An id written by hand or by this stage: # Title {: #id}
@@ -53,20 +51,6 @@ def generate_new_id(text, id_storage):
         return text_id + '_id' + str(id_storage[text_id])
     id_storage[text_id] = 1
     return text_id
-
-
-def lhtml_headings(text):
-    """The headings of an LHTML page, those of its document tree: (start,
-    end, level, attributes as written, title as written). A page that LHTML
-    refuses has none here: its run reports why."""
-    document = source_scan.document(text)
-    found = []
-    for node in document.walk() if document else ():
-        if node.kind == 'Heading':
-            start, end = node.span
-            m = HEADING_START.match(text, start)
-            found.append((start, end, node.level, (m.group(2) or '').strip(), text[m.end():end]))
-    return found
 
 
 def markdown_headings(text):

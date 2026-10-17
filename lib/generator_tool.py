@@ -58,8 +58,7 @@ def _sitemap_priority(page):
 
 RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
 TITLE_SET_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}']
-TITLE_HEADING_REGEX = {'lhtml': [r'^=+ (.*?)$'],
-                       'markdown': [r'^ {0,3}#{1,6}[ \t]+(\S[^\n]*)$']}
+MARKDOWN_HEADING_REGEX = [r'^ {0,3}#{1,6}[ \t]+(\S[^\n]*)$']
 
 
 def string_literal(s):
@@ -76,13 +75,17 @@ def string_literal(s):
 def extract_title(source):
     """Title of a page: its tocTitle or pageTitle (a Jinja string), or its
     first heading (`= Title`, `# Title` in Markdown), as written (apostrophes,
-    parentheses and slashes kept); None without any."""
+    parentheses and slashes kept); None without any. The first heading of an
+    LHTML page is that of its document tree (source_scan.lhtml_headings)."""
     source = source_scan.scan(source)
     title = extract_data(source, TITLE_SET_REGEX)
     if title is not None:
         return string_literal(RAW_MARKERS.sub('', title))
-    title = extract_data(source, TITLE_HEADING_REGEX[source.markup])
-    if title is not None and source.markup == 'markdown':           # as headings.py reads it
+    if source.markup != 'markdown':
+        found = source_scan.lhtml_headings(source)
+        return RAW_MARKERS.sub('', found[0][4]).strip() if found else None
+    title = extract_data(source, MARKDOWN_HEADING_REGEX)
+    if title is not None:                                           # as headings.py reads it
         title = re.sub(r'[ \t]+\{:[ \t]*#[^\s}]+[ \t]*\}[ \t]*$', '', ' ' + title)
         title = markdown_page.plain(re.sub(r'[ \t]+#+[ \t]*$', '', title))
     return RAW_MARKERS.sub('', title).strip() if title is not None else None
