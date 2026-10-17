@@ -47,7 +47,7 @@ from lib import pdf_export
 from lib import project
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
 from lib import layout_options
-from lib.build_output import staged_site
+from lib.build_output import links_out_of, staged_site
 from lib.structure import documents_directory
 
 import lhtml
@@ -645,8 +645,9 @@ def build_once(args):
         builds = [b for k, b in enumerate(builds) if b.deck not in {c.deck for c in builds[:k]}]
     failed = []
     strict_failed = bool(args.strict and log.counts['warning'])     # of the configuration, before any build
-    if strict_failed:
-        log.error(f"{log.counts['warning']} warning(s) with --strict")
+    if strict_failed:               # a refused build publishes nothing: none is made
+        log.error(f"{log.counts['warning']} warning(s) with --strict: nothing built")
+        raise SystemExit(1)
     for build in builds:
         if build.label and log.verbose and not args.check_config:     # --check-config prints YAML only
             log.info(f'[{build.label}]')
@@ -758,6 +759,11 @@ def build_site(args, build, config_file, log):
                 # measures only the pages named (and those without a report)
                 meta['measure'] = meta.get('dependency_measure') or [p.site_html for p in named]
         meta['only'] = built is not None
+        if meta['only'] and (links := links_out_of(meta['site_directory'])):
+            path, target = links[0]
+            raise BuildFailed(f"Unsafe output: '{filesystem.shown(path)}' is a symbolic link to "
+                              f"'{filesystem.shown(target)}', out of the site; --only writes in the "
+                              f"site: remove it (or build without --only)")
         meta['strict'] = strict         # checked before the pages are kept (generate_site)
         if meta['only'] and args.strict:
             # a refused build publishes nothing: built in a copy of the site

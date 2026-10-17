@@ -135,7 +135,13 @@ def export_structure(pages, structure_path, public_keys=()):
 
 
 def export_sitemap(sitemap, dir_sitemap):
+    """A redirection per page, named after its title id; those of the ids a
+    page no longer has (a title renamed, --only) are removed."""
     os.makedirs(dir_sitemap, exist_ok=True)
+    current = {f'{id}.html' for id in sitemap}
+    for name in os.listdir(dir_sitemap):
+        if name.endswith('.html') and name not in current:
+            os.remove(os.path.join(dir_sitemap, name))
 
     for id, page in sitemap.items():
         with open(dir_sitemap / f'{id}.html', 'w', encoding='utf-8', newline='\n') as fid:

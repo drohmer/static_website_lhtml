@@ -1,9 +1,28 @@
 """Publish a completed build while keeping the previous output on failure."""
 from contextlib import contextmanager
 from pathlib import Path
+import os
 import shutil
 import tempfile
 import uuid
+
+
+def links_out_of(site):
+    """The symbolic links of a site that lead out of it: a build that writes
+    in the site (--only) would write through them (into the sources)."""
+    site = Path(site)
+    if not site.is_dir():
+        return []
+    real = site.resolve()
+    found = []
+    for directory, dirs, files in os.walk(site):
+        for name in dirs + files:
+            path = Path(directory) / name
+            if path.is_symlink():
+                target = path.resolve()
+                if target != real and real not in target.parents:
+                    found.append((path, target))
+    return found
 
 
 @contextmanager

@@ -54,9 +54,21 @@ def scope_files(root, kind):
 
 def source_files(meta):
     """The files of the sources, relative to their directory: what a
-    partial build cannot remove from the site when one goes."""
+    partial build cannot remove from the site when one goes. As the copy
+    publishes them: hidden ones left out, a linked directory followed
+    (once), __pycache__ included."""
     root = Path(meta['source_directory'])
-    return sorted(path.relative_to(root).as_posix() for path in scope_files(root, 'sources'))
+    found, seen = [], set()
+    for directory, dirs, files in os.walk(root, followlinks=True):
+        real = os.path.realpath(directory)
+        if real in seen:                # a link back up the tree
+            dirs[:] = []
+            continue
+        seen.add(real)
+        dirs[:] = sorted(d for d in dirs if not d.startswith('.'))
+        found += [(Path(directory) / name).relative_to(root).as_posix()
+                  for name in sorted(files) if not name.startswith('.')]
+    return sorted(found)
 
 
 def canonical_input(path, meta):
@@ -210,8 +222,10 @@ class BuildStore:
             current = value.get('schema_version') == SCHEMA
             self.pages = value.get('pages', {}) if current else {}
             self.sources = value.get('sources') if current else None
+            # a store of pages written before the source files were recorded
+            self.sources_unrecorded = bool(self.pages) and 'sources' not in value
         except (OSError, ValueError):
-            self.pages, self.sources = {}, None
+            self.pages, self.sources, self.sources_unrecorded = {}, None, False
 
     def partial_impossible(self, meta, selected):
         """Why this build cannot stay partial, or None. The site of a
@@ -226,7 +240,9 @@ class BuildStore:
             return 'the structure of the previous build cannot be read'
         if names != [page.site_html for page in selected]:
             return 'the pages of the site changed'
-        if self.sources is not None:    # a partial build adds files, it never removes one
+        if self.sources_unrecorded:     # a file deleted before this build would stay
+            return 'the source files of the previous build are not recorded'
+        if self.sources:                # a partial build adds files, it never removes one
             gone = sorted(set(self.sources) - set(source_files(meta)))
             if gone:
                 return f"{len(gone)} source file(s) deleted ({', '.join(gone[:3])}{', ...' if len(gone) > 3 else ''})"

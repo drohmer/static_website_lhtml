@@ -255,7 +255,8 @@ class BuildTests(ProjectTests):
         self.write(decks='directories', targets={'html': {'theme': 'slides'}}, unknown_key=1)
         result = self.build('--strict')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('error: 1 warning(s) with --strict', result.stdout)
+        self.assertIn('error: 1 warning(s) with --strict: nothing built', result.stdout)
+        self.assertFalse((self.root / '_site').exists())          # a refused build publishes nothing
 
     def test_a_jinja_error_names_the_file_it_is_in(self):
         self.page('src/01_a/01_x/index.html.j2', '= X\n\nfirst\n{% include "01_a/02_y/index.html.j2" %}\n')

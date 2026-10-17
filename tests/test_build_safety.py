@@ -333,6 +333,9 @@ PARTIAL_CASES = {
     'a file of a page edited': lambda src: (src / 'b/script.js').write_text('var edited = 2;\n'),
     'a file of a page deleted': lambda src: _remove(src / 'b/script.js'),
     'a file of the project deleted': lambda src: _remove(src / 'top.js'),
+    'a title renamed': lambda src: (src / 'b/index.html.j2').write_text('= Renamed b\n* first\n'),
+    'a file of __pycache__ deleted': lambda src: _remove(src / 'b/__pycache__/k.txt'),
+    'a file of a linked directory deleted': lambda src: _remove(src.parent / 'shared/t.txt'),
 }
 
 
@@ -347,6 +350,11 @@ def test_a_partial_build_publishes_what_a_full_one_does(tmp_path, case):
         (source / name / 'index.html.j2').write_text(f'= Page {name}\n* first\n')
     (source / 'b/script.js').write_text('var first = 1;\n')
     (source / 'top.js').write_text('var top = 1;\n')
+    (source / 'b/__pycache__').mkdir()
+    (source / 'b/__pycache__/k.txt').write_text('k\n')
+    (tmp_path / 'shared').mkdir()
+    (tmp_path / 'shared/t.txt').write_text('t\n')
+    (source / 'b/lib').symlink_to(tmp_path / 'shared', target_is_directory=True)
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
                                       'theme': str(REPO / 'themes/slides')}))
@@ -382,3 +390,45 @@ def test_a_refused_partial_build_publishes_nothing(tmp_path):
         else:                       # a page that fails keeps its previous version
             after = site_fingerprint(site)
             assert after['b/index.html'] == before['b/index.html'], text
+
+
+def test_only_refuses_a_link_out_of_the_site(tmp_path):
+    """A file of the site that is a link to the sources: --only writes in the
+    site, it would write into the sources through it."""
+    source = tmp_path / 'src'
+    (source / 'b').mkdir(parents=True)
+    (source / 'b/index.html.j2').write_text('= Page b\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                      'theme': str(REPO / 'themes/slides')}))
+    assert build(config).returncode == 0
+    link = tmp_path / 'site/b/title_id.json'
+    link.unlink()
+    link.symlink_to(source / 'b/index.html.j2')
+    for flags in ((), ('--strict',)):
+        result = build(config, '--only', 'b', *flags)
+        assert result.returncode == 1 and 'is a symbolic link' in result.stdout, result.stdout
+        assert (source / 'b/index.html.j2').read_text() == '= Page b\n'
+    assert build(config).returncode == 0                 # a full build replaces the site, link included
+    assert not link.is_symlink()
+
+
+def test_a_store_without_its_source_files_widens_once(tmp_path):
+    """A builds.json written before the source files were recorded: the
+    next --only is a full build (a file deleted before it would stay)."""
+    source = tmp_path / 'src'
+    (source / 'b').mkdir(parents=True)
+    (source / 'b/index.html.j2').write_text('= Page b\n')
+    (source / 'b/s.js').write_text('s\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                      'theme': str(REPO / 'themes/slides')}))
+    assert build(config).returncode == 0
+    store = tmp_path / '.verification/builds.json'
+    value = json.loads(store.read_text())
+    del value['sources']
+    store.write_text(json.dumps(value))
+    (source / 'b/s.js').unlink()
+    result = build(config, '--only', 'b', '-v')
+    assert result.returncode == 0 and 'not recorded' in result.stdout, result.stdout
+    assert not (tmp_path / 'site/b/s.js').exists()
