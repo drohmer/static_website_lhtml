@@ -347,12 +347,19 @@ def test_a_plugin_that_fails_does_not_take_the_report_with_it(tmp_path):
     """A build that went wrong is when the report is worth reading. The
     analysis used to run before the plugin that publishes, so a failing
     export still left a report; it runs after them now, and a plugin that
-    raises must not suppress it. The build still fails."""
+    raises must not suppress it. The build still fails. Since the extension
+    contract (design.md, N4), the page whose plugin raised leaves the build,
+    as one Jinja could not render: the report measures the other pages,
+    not a page that was not built."""
     source = tmp_path / 'src'
     source.mkdir()
     (source / 'a.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
+    (source / 'b.html.j2').write_text("{% set pageTitle = 'B' %}\n<h1>B</h1>")
     broken = tmp_path / 'broken.py'
-    broken.write_text('def post_process(html, context):\n    raise RuntimeError("export failed")\n')
+    broken.write_text('def post_process(html, context):\n'
+                      '    if context.page["filename"].startswith("b"):\n'
+                      '        raise RuntimeError("export failed")\n'
+                      '    return html\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [str(broken)]}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
@@ -360,4 +367,5 @@ def test_a_plugin_that_fails_does_not_take_the_report_with_it(tmp_path):
     assert result.returncode == 1, result.stdout + result.stderr
     assert 'export failed' in result.stdout
     assert (tmp_path / '.layout/pages/a.html/layout.json').is_file(), result.stdout
+    assert not (tmp_path / '.layout/pages/b.html').exists(), result.stdout
     assert (tmp_path / '.layout/summary.md').is_file()
