@@ -123,16 +123,16 @@ class Linter:
             if node.kind == 'Item':
                 first = next((c for c in node.children if not (c.kind == 'Text' and c.value.strip() in ('', '-'))),
                              None)
-                if first is not None and first.kind == 'Element' and first.name in ('small', 'tiny'):
+                if first is not None and first.kind == 'Element' and first.tag in ('small', 'tiny'):
                     on_item.add(node)
-                    found.append(Finding(node.line, 'small-text', f'{first.name}:: on a list item', advice))
+                    found.append(Finding(node.line, 'small-text', f'{first.tag}:: on a list item', advice))
         for node in document.walk():
-            if node.kind == 'Element' and node.name in ('small', 'tiny'):
+            if node.kind == 'Element' and node.tag in ('small', 'tiny'):
                 items = [n for n in node.walk() if n.kind == 'Item' and n not in on_item
                          and not (len(n.children) == 1 and n.children[0].kind == 'List')]    # a nested list
                 if items:
                     found.append(Finding(node.line, 'small-text',
-                                         f'{node.name}:: around {len(items)} list item(s)', advice))
+                                         f'{node.tag}:: around {len(items)} list item(s)', advice))
         return found
 
     def _uses(self, source, read, name):
@@ -141,7 +141,7 @@ class Linter:
         if source.markup != 'markdown':
             document = source.document(self.lhtml_macros)
             if document is not None:
-                return any(n.kind == 'Element' and n.name == name for n in document.walk())
+                return any(n.kind in ('Element', 'Video') and n.tag == name for n in document.walk())
         return re.search(rf'(?<![\w-]){name}::', read) is not None
 
     def _gap(self, height):
@@ -282,19 +282,19 @@ class Linter:
                 found.append((line, start + m.start(), self._declarations(m.group(1), line, macro, base)))
 
         for node in document.walk():
-            if node.kind == 'Element':
-                style = node.groups.get('[]', '')
+            if node.kind in ('Element', 'Video'):
+                style = node.written.get('[]', '')
                 written = source.text[node.span[0]:node.span[1]].strip()
-                if (node.name in ('', 'div') and (m := SPACER_STYLE.match(style))
-                        and not node.groups.get('()') and not node.groups.get('{}')
+                if (node.tag in ('', 'div') and (m := SPACER_STYLE.match(style))
+                        and not node.written.get('()') and not node.written.get('{}')
                         and lines[node.line - 1].strip() == written):
                     found.append((node.line, node.span[0], [Finding(
                         node.line, 'spacer', written, self._gap(float(m.group(1))) or 'a margin of the design')]))
                     continue
-                if ':' in style and node.name != 'link':        # a link's [...] is its label
+                if ':' in style and node.tag != 'link':         # a link's [...] is its label
                     found.append((node.line, node.span[0],
-                                  self._declarations(style, node.line, node.name or None, base)))
-                attributes(node.groups.get('{}', ''), node.line, node.span[0], node.name or None)
+                                  self._declarations(style, node.line, node.tag or None, base)))
+                attributes(node.written.get('{}', ''), node.line, node.span[0], node.tag or None)
             elif node.kind == 'Raw' and node.raw_kind in ('html', 'jinja'):
                 attributes(node.text, node.line, node.span[0])
                 if node.raw_kind == 'html' and RAW_IFRAME.search(node.text) and 'demo' in self.macros:
