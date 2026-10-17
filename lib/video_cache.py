@@ -103,6 +103,11 @@ def run(meta):
     (log.info if work else log.detail)(f'{len(videos)} video(s) in the assets, {len(work)} to transcode')
     jobs = [(os.fspath(meta['site_directory'] / source), codec, destination)
             for source, destinations in work for codec, destination in destinations.items()]
+    if jobs and shutil.which(CONVERTER) is None:
+        # A page still shows its video, as written: said, not a failed build
+        log.warning(f'{CONVERTER} not found: {len(work)} video(s) not transcoded, shown as written '
+                    f'(pip install {CONVERTER}; it runs ffmpeg)')
+        jobs = []
     if jobs:
         with Pool(processes=min(MAX_JOBS, len(jobs))) as pool:
             pool.map(_convert, jobs)

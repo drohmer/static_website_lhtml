@@ -62,6 +62,18 @@ class VideoCacheTests(unittest.TestCase):
         copied = self.root / 'out/a/assets' / CACHE_VIDEO_DIR
         self.assertTrue((copied / 'clip-vp9.webm').is_file())
 
+    def test_without_the_converter_a_video_is_shown_as_written(self):
+        import os
+        env = {**os.environ, 'PATH': os.path.dirname(sys.executable)}       # no ffpb on it
+        config = self.root / 'configure.yaml'
+        config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'out',
+                                          'cache_video_directory': 'cache'}))
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config)],
+                                cwd=self.root, capture_output=True, text=True, env=env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('warning: ffpb not found: 1 video(s) not transcoded, shown as written', result.stdout)
+        self.assertIn('<source src="assets/clip.mp4"', (self.root / 'out/a/index.html').read_text())
+
     def test_a_configuration_that_lists_the_plugin_is_refused(self):
         config = self.root / 'old.yaml'
         config.write_text(yaml.safe_dump({

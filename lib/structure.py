@@ -29,7 +29,7 @@ DOCUMENTS = '.structure/'
 # (notes:, message:, duration: ... of a config.yaml or of a deck entry) stays
 # in the build and never reaches the site.
 # Read by the themes to display a page in their menu.
-DISPLAY_KEYS = ('title', 'level', 'level-toc', 'hide-toc', 'nourl-toc', 'direct-url', 'delimiter')
+DISPLAY_KEYS = ('title', 'level', 'level-toc', 'hide-toc', 'nourl-toc', 'expandable-toc', 'direct-url', 'delimiter')
 
 PUBLIC_KEYS = DISPLAY_KEYS + ('dir', 'filename', 'template', 'source', 'occurrence')
 

@@ -123,7 +123,7 @@ class GeneratorRegressions(unittest.TestCase):
         self.page('a/index.html.j2', 'First')
         title = 'Le mode "debug"\nC:\\docs'
         (self.source / 'a/config.yaml').write_text(yaml.safe_dump({
-            'title': title, 'hide-toc': True, 'level-toc': 2}))
+            'title': title, 'hide-toc': True, 'level-toc': 2, 'expandable-toc': True}))
         self.build()
         script = self.site / 'theme/js/menu.js'
         result = subprocess.run(['node', '--check', str(script)], capture_output=True, text=True)
@@ -133,6 +133,7 @@ class GeneratorRegressions(unittest.TestCase):
         self.assertEqual(menu[0]['title'], title)
         self.assertEqual(menu[0]['hide-toc'], 'True')
         self.assertEqual(menu[0]['level-toc'], '2')
+        self.assertEqual(menu[0]['expandable-toc'], 'True')        # a group the menu folds (cgp)
 
     @unittest.skipUnless(shutil.which('node'), 'needs Node.js')
     def test_each_page_has_its_own_heading_summary(self):
