@@ -1927,6 +1927,30 @@ expression, `^=+ (.*?)$`, skipped a heading with attributes
 (`=(#intro) Introduction`) for the next one; no page of the corpus has
 one: the same title on its 1337 templates.
 
+*The planned figures, done* (2026-10-17): the `placeholder::` of an LHTML
+page are read in its tree (the macro of the design; without it the text is
+text), the same two on the corpus.
+
+*The rendered side of the source map, measured and kept* (2026-10-17).
+`source_map.apply` parses the HTML of the whole page and gives each block
+of the content the place of its marker. The tree could write that place on
+the blocks LHTML builds (a hook of `render`), but not on the others, and
+the content has others: of its top-level blocks on the 1034 pages, 6168
+are LHTML's (headings, lists, elements, code blocks), 270 are raw HTML
+written by the author (79 pages) and 74 are Jinja expressions, often a
+macro writing HTML (17 pages). Those need the parse of the HTML anyway, and
+the tree's places are offsets in the text after Jinja, which only the
+markers turn into a file and a line. So the tree would add a second way of
+placing blocks beside the first, not remove one: `apply` stays as it is.
+What N6 announced here ("deletes the rendered side of the source map") was
+wrong; 4.4 already said the tree does not recover file and line alone.
+
+Left to the text, on purpose: the patterns of the lint (words), the
+`tocTitle`/`pageTitle` of a page (Jinja), a Markdown page (no LHTML), and
+the source side of the source map (`add_markers`: where a marker may go so
+that LHTML reads its line as before - a question about the text before
+LHTML reads it).
+
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint
 and the parse do not read the same document, and the ambiguity count of the
