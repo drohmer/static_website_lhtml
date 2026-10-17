@@ -150,7 +150,7 @@ Configuration precedence is **built-in defaults → the selected YAML file → e
 
 Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is empty: everything a bundled theme needs is a stage of the build - the page placed in the template of its theme, the heading ids, the menu, the index of a site that has none. A project lists only its own extensions, and the theme declares whether it has a menu (see [Theme](#theme-what-it-declares-about-the-build)). An explicitly configured relative theme path is relative to the YAML file.
 
-Configuration values are type-checked before generating or cleaning. Unknown keys produce warnings (with spelling suggestions) but remain available to custom plugins. Runtime fields such as `log`, `args`, and `plugin_paths` cannot be supplied in YAML. Prefer `plugin_arg` for custom plugin options.
+Configuration values are type-checked before generating or cleaning. An unknown key is ignored with a warning (and a spelling suggestion). Runtime fields such as `log`, `args`, and `plugin_paths` cannot be supplied in YAML. A plugin reads its options in `plugin_arg`.
 
 The output directory must not overlap the source or theme directory, even via symbolic links. It must not contain the configuration file, generator installation, or configured video cache. These checks apply to both generation and `--clean`. Cleaning does not require the source/theme to still exist and does not remove Python caches from the working directory.
 
