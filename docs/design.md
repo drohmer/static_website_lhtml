@@ -1847,6 +1847,29 @@ Checked after: LHTML's 332 tests, the generator's 347, the 914 corpus calls
 (912 identical, the two of csc as above), and the invariants on 40 000 new
 fuzzed documents: none broken, every timing linear up to 100 kB.
 
+*Simplified* (2026-10-17, LHTML d3cf6ac and the commit after it), the two
+debts named above:
+- the stages read no HTML: each node a stage reads becomes one character
+  of the text the next stages read (EVENT_CHAR), a boundary where the text
+  passes wrote '<h1>', '<strong>'. The markup is written back only where a
+  string leaves the stages (a link label, a message). Same HTML and same
+  warnings as before on 30 000 fuzzed documents and the corpus; an
+  unclosed bracket quotes its source; slightly faster (1.01 s against
+  1.09 s for the corpus);
+- the line breaks are decided on the tree: render writes tokens (a Text, a
+  leaf, a node's markup around its children), a line is structure when the
+  piece at either end is a block, and only a line break of the source gets
+  a `<br>`. The 86 lines guessing structure from the page's HTML go. On
+  30 000 fuzzed documents with the option on, every difference is a `<br>`
+  the old pass wrote inside a tag's own HTML: a video's fallback text, a
+  style written on two lines (broken by it), a link label on two lines.
+
+What is left of the text passes: the stages still read a text (the
+regular expressions of LHTML 2 over a text with event marks), and the tags
+of an element are still decided in one scan of that text. They are what
+keeps the decisions identical, and the tests, the fuzzer and the corpus
+check them; a parser over tokens would be a rewrite, not a simplification.
+
 **N6. The consumers migrated to the tree, one at a time** (the old N5).
 
 Three expectations of this note were corrected by the review, and 4.4
