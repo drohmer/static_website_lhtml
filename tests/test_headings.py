@@ -38,6 +38,23 @@ class PageTitle(unittest.TestCase):
         self.assertIsNone(extract_title('no heading\n'))
         self.assertEqual(extract_title("{% set pageTitle = 'Set' %}\n= Title\n"), 'Set')
 
+    def test_jinja_in_the_attributes_of_a_heading(self):
+        self.assertEqual(extract_title('=(.c {{ f(a) }}) Title\n'), 'Title')
+        [(_, _, _, attributes, title)] = lhtml_headings('=(.c {{ f(a) }}) Title\n')
+        self.assertEqual((attributes, title), ('.c {{ f(a) }}', 'Title'))
+
+    def test_the_scanners_of_a_page_share_one_tree(self):
+        from unittest.mock import patch
+        import lhtml
+        from lib import credits, source_scan
+        page = source_scan.Scan('= T\nimg::a.png\n')
+        macros = {'box': {'class': 'box'}}
+        with patch('lhtml.parse', wraps=lhtml.parse) as parse:
+            extract_title(page, macros)
+            credits.files_used(page, macros)
+            credits.files_used(page, macros)
+        self.assertEqual(parse.call_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -94,7 +94,6 @@ class Linter:
                       and isinstance(value, str) and (m := PERCENT.match(value))}
         # rules of the project (the lint section of the design)
         lint = design.get('lint') or {}
-        self.empty = {name for name, spec in (design.get('macros') or {}).items() if (spec or {}).get('empty')}
         self.small_text = bool(lint.get('small_text'))
         self.rules = [(name, re.compile(rule['pattern']), rule.get('advice') or 'not in the slides')
                       for name, rule in (lint.get('rules') or {}).items() if rule]
@@ -230,6 +229,10 @@ class Linter:
         if source.markup == 'markdown':
             findings += self._text_styles(read, base)
         else:
+            refused = source.refusal(self.lhtml_macros)
+            if refused is not None:        # --lint renders nothing: say it here
+                findings.append(Finding(refused.line or 1, 'refused', str(refused).split('\n')[0],
+                                        'LHTML refuses the page (its build fails): nothing else is read'))
             findings += self._tree_styles(source, base)
         findings += self._project_rules(source)
         if layout:

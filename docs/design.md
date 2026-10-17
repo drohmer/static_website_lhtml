@@ -1883,16 +1883,16 @@ nothing else; the id is still written on the heading's line of the
 template. `TITLE_REGEX`, a copy of LHTML's own, goes. Checked: the
 headings, their places, attributes and titles identical on the 1337
 templates of the corpus (1766 headings); a page LHTML refuses gets no ids
-(its run reports why, as before). Markdown pages keep their scan.
+(the regular expression gave it some; its build fails it either way). Markdown pages keep their scan.
 
 *Media files of the credits, done* (2026-10-17). `credits.files_used` reads
 an LHTML page in its tree: the values of its value tags (`img::`,
 `video::`, a macro with a url or an image), then the `src="..."` of its raw
 HTML, its Jinja, the attributes `{...}` of its elements and its text, in
 that order, as the scan did. The tree is read once per Scan of a page and
-kept there (`source_scan.document`, with the macros of the design), for the
-scanners to come; the headings read the copy of the template they rewrite,
-so they parse it on their own. Checked: the same
+kept there (`source_scan.document`, with the macros of the design); the
+headings read the copy of the template they rewrite, so they parse it on
+their own: two parses of a page per build, and its render. Checked: the same
 files in the same order on the 1879 pages of the corpus read with each of
 their themes (1848 files, 16 macros). What changes is what the scan got
 wrong: an `img::x.png` written inside an HTML attribute is not an image.
@@ -1950,6 +1950,25 @@ Left to the text, on purpose: the patterns of the lint (words), the
 the source side of the source map (`add_markers`: where a marker may go so
 that LHTML reads its line as before - a question about the text before
 LHTML reads it).
+
+*Reviewed* (2026-10-17, three agents: LHTML, the generator, end to end;
+the end to end checks all green). Fixed after it, each with a test:
+- LHTML: with line-breaks, a tag's render got a stand-in for its children
+  and ran twice when it did not write them once; it now runs once with
+  them (the same HTML on 30 000 fuzzed documents); `Heading.attributes` is
+  as written; `Raw.store` goes;
+- the title of a page read `}}) Title` for `=(.c {{ f(a) }}) Title`: the
+  headings take their attributes and title from the tree, not from a
+  regular expression on the line;
+- `--lint` said nothing of a page LHTML refuses (it renders none): the
+  refusal is a finding, with its place and LHTML's message;
+- the title parsed the page without the macros, the other scanners with
+  them: two trees per Scan; all pass the macros of the design now (they
+  never changed what a heading is: 0 differences on the corpus and 20 000
+  fuzzed texts);
+- `Linter.empty`, left from the line-by-line stack, goes.
+The corpus gives the same headings, titles, media files, planned figures
+and lint findings as the scanners did.
 
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint

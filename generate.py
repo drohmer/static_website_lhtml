@@ -254,7 +254,7 @@ def prepare_data(meta, selected, built, log):
         log.warning(f"Figure not made: {filesystem.shown(script, dir_site)}: {error}")
 
     log.debug(f"Found {len(selected)} template files")
-    sitemap = generator_tool.extract_titles(selected)
+    sitemap = generator_tool.extract_titles(selected, meta['macros'])
     generator_tool.export_sitemap(sitemap, dir_site / 'sitemap/')
     meta['structure'] = generator_tool.export_structure(selected, dir_site / 'structure/',
                                                        meta.get('public_page_keys') or ())

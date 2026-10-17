@@ -72,17 +72,18 @@ def string_literal(s):
     return s
 
 
-def extract_title(source):
+def extract_title(source, macros=None):
     """Title of a page: its tocTitle or pageTitle (a Jinja string), or its
     first heading (`= Title`, `# Title` in Markdown), as written (apostrophes,
     parentheses and slashes kept); None without any. The first heading of an
-    LHTML page is that of its document tree (source_scan.lhtml_headings)."""
+    LHTML page is that of its document tree (source_scan.lhtml_headings, with
+    the macros of the design: the tree of the page the other scanners read)."""
     source = source_scan.scan(source)
     title = extract_data(source, TITLE_SET_REGEX)
     if title is not None:
         return string_literal(RAW_MARKERS.sub('', title))
     if source.markup != 'markdown':
-        found = source_scan.lhtml_headings(source)
+        found = source_scan.lhtml_headings(source, macros)
         return RAW_MARKERS.sub('', found[0][4]).strip() if found else None
     title = extract_data(source, MARKDOWN_HEADING_REGEX)
     if title is not None:                                           # as headings.py reads it
@@ -91,11 +92,11 @@ def extract_title(source):
     return RAW_MARKERS.sub('', title).strip() if title is not None else None
 
 
-def extract_titles(pages):
+def extract_titles(pages, macros=None):
     """Title of each page (page.title, read in its source) and the sitemap {id: page}."""
     sitemap = {}
     for page in sorted(pages, key=_sitemap_priority):
-        title = extract_title(page.scan)
+        title = extract_title(page.scan, macros)
         title_id = generate_unique_id(extract_title_id(page.scan, title), sitemap)
         page.title = title if title is not None else 'unknown'
         sitemap[title_id] = page

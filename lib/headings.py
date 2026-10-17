@@ -104,7 +104,8 @@ def run(meta):
         markdown = markup(entry['template']) == 'markdown'
         parts, position = [], 0
         for start, end, level, class_id, written in (markdown_headings if markdown
-                                                     else lhtml_headings)(file_content):
+                                                     else lambda text: lhtml_headings(text, meta.get('macros')))(
+                                                         file_content):
             title = markdown_page.plain(written) if markdown else written    # the text, without its marks
             generated_id = generate_new_id(strip_markers(title), id_storage) + '_l' + str(level)
             if not class_id:

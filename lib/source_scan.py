@@ -9,10 +9,12 @@ the regular expressions of LHTML itself, so that they agree with it on what
 is code and what is text. A Markdown page (lib/markdown_page.py) has its
 own code blocks, fenced by ``` or ~~~; its other zones are those of LHTML.
 
-The scanners move to the document tree of LHTML (`document`, lhtml.parse
-on the template before Jinja, which LHTML keeps opaque) one at a time: the
-headings and the media files of an LHTML page are read there (N6 of
-docs/design.md).
+The scanners of an LHTML page read its document tree (`document`,
+lhtml.parse on the template before Jinja, which LHTML keeps opaque): the
+headings and the title, the media files and the planned figures of the
+credits, the styles, spacers and blocks of the lint (N6 of docs/design.md).
+What stays on the text: a Markdown page, the patterns of the lint (words),
+the {% set %} of a page (Jinja), the markers of the source map.
 """
 from __future__ import annotations
 
@@ -126,8 +128,10 @@ class Scan:
 
     def document(self, macros=None):
         """The LHTML document tree of the text (lhtml.parse, with the macros
-        of the design), read once; None when LHTML refuses the text (its run
-        reports why). Its warnings are silenced: the run of the page warns."""
+        of the design), read once for the scanners that give the same macros;
+        None when LHTML refuses the text (`refusal`: the build reports it when
+        it renders the page). Its warnings are silenced: the run of the page
+        warns."""
         documents = self.__dict__.setdefault('_documents', {})
         key = repr(sorted((macros or {}).items()))
         if key not in documents:
@@ -135,9 +139,16 @@ class Scan:
                 warnings.simplefilter('ignore')
                 try:
                     documents[key] = lhtml.parse(self.text, macros=macros or None)
-                except lhtml.LHTMLError:
-                    documents[key] = None
-        return documents[key]
+                except lhtml.LHTMLError as error:
+                    documents[key] = error
+        found = documents[key]
+        return None if isinstance(found, lhtml.LHTMLError) else found
+
+    def refusal(self, macros=None):
+        """Why LHTML refuses the text (an LHTMLError), or None."""
+        self.document(macros)
+        found = self._documents[repr(sorted((macros or {}).items()))]
+        return found if isinstance(found, lhtml.LHTMLError) else None
 
 
 def document(source, macros=None):
@@ -145,23 +156,18 @@ def document(source, macros=None):
     return scan(source).document(macros)
 
 
-# The start of an LHTML heading the tree found, to read its attributes as
-# written ((.c #id), Jinja included) and where its title starts
-HEADING_START = re.compile(r'(=+)(?:\((.*?)\))? ')
-
-
-def lhtml_headings(source):
+def lhtml_headings(source, macros=None):
     """The headings of an LHTML page, those of its document tree: (start,
     end, level, attributes as written, title as written). A page that LHTML
     refuses has none here: its run reports why."""
-    tree = document(source)
+    tree = document(source, macros)
     text = scan(source).text
     found = []
     for node in tree.walk() if tree else ():
         if node.kind == 'Heading':
             start, end = node.span
-            m = HEADING_START.match(text, start)
-            found.append((start, end, node.level, (m.group(2) or '').strip(), text[m.end():end]))
+            title = node.children[0].span[0] if node.children else end
+            found.append((start, end, node.level, node.attributes, text[title:end]))
     return found
 
 

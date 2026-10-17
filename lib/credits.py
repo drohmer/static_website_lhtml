@@ -102,8 +102,8 @@ def files_used(source, macros=None):
     a source_scan.Scan; the macros of the design: those rendering an image or
     a video count). Those of an LHTML page are read in its document tree:
     the values of its value tags (img::, video::, a macro with a url), then
-    the src="..." of its HTML, of its Jinja and of the attributes {...} of
-    its elements, in that order."""
+    the src="..." of its raw HTML, its Jinja, the attributes {...} of its
+    elements and its text, in the order of the page."""
     found = []
     source = source_scan.scan(source)
     if source.markup == 'markdown':

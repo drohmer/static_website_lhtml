@@ -162,6 +162,12 @@ class LintTests(unittest.TestCase):
                                  (2, 'position', 'position:fixed; top:{{ top }}px'),
                                  (4, 'color', 'color:gray')])
 
+    def test_a_page_lhtml_refuses_is_reported(self):
+        # --lint renders no page: the refusal is a finding, not a silence
+        found = self.linter.lint('= T\n::# an LHTML 2 comment\ndiv::[height:20px;]::\n')
+        self.assertEqual([(f.line, f.kind) for f in found], [(2, 'refused')])
+        self.assertIn('::#', found[0].text)
+
     def test_more_values_and_exceptions(self):
         text = ("{% set layout = 'side' %}\n"
                 'aside::[top:400px;]\n'
