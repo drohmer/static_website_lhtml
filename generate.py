@@ -802,8 +802,20 @@ def generate_site(meta, selected, built):
                                  for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
 
     with log.stage('Pre-process'):
-        plugin_failures = extensions.run('prepare', meta, log)
-        plugin_failures += extensions.run('pre_process', meta, log)
+        pages_of = {id(entry): page for page, entry in zip(selected, meta['structure'])}
+
+        def run_extensions(stage):
+            """A stage of the extensions; the pages it failed leave the build."""
+            count, entries = extensions.run(stage, meta, log)
+            pages = [pages_of[id(entry)] for entry in entries]
+            for page in pages:
+                discard_page(meta, page)
+            drop_failed_pages(meta, selected, pages)
+            return count, pages
+
+        plugin_failures, failed = run_extensions('prepare')
+        count, pages = run_extensions('pre_process')
+        plugin_failures, failed = plugin_failures + count, failed + pages
         # Core stages on the sources, after the extensions have written them:
         # the theme wraps what the content ends up being (lib/wrap.py), and the
         # headings of that content get their ids (lib/headings.py).
@@ -819,11 +831,13 @@ def generate_site(meta, selected, built):
             video_cache.run(meta)
 
     with log.stage('Convert HTML'):
-        failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
+        failed += render_jinja(meta, selected, [p for p in built if p not in failed], sitemap, log,
+                               credits_of, credit_errors)
         drop_failed_pages(meta, selected, failed)
 
     with log.stage('Mid-process'):
-        plugin_failures += extensions.run('mid_process', meta, log)
+        count, pages = run_extensions('mid_process')
+        plugin_failures, failed = plugin_failures + count, failed + pages
 
     with log.stage('LHTML'):
         failed += render_lhtml(meta, built, log, failed_before=failed)
@@ -837,7 +851,8 @@ def generate_site(meta, selected, built):
     with log.stage('Post-process'):
         post_ran = not failed and not plugin_failures
         if post_ran:
-            plugin_failures += extensions.run('post_process', meta, log)
+            count, pages = run_extensions('post_process')
+            plugin_failures, failed = plugin_failures + count, failed + pages
             # Core stages on the built site: the menu of the theme, and the
             # index of a site that has none (lib/menu.py, lib/index_page.py)
             menu.run(meta)

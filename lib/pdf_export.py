@@ -62,8 +62,9 @@ def export(meta):
                 if result.returncode == 0:
                     break
             else:
-                raise RuntimeError(f"PDF of {page_path(entry)} not made after {ATTEMPTS} attempts: "
-                                   f"{result.stderr.strip().splitlines()[0] if result.stderr.strip() else result.returncode}")
+                lines = result.stderr.strip().splitlines()
+                said = next((line for line in lines if 'Error' in line), lines[0] if lines else result.returncode)
+                raise RuntimeError(f"PDF of {page_path(entry)} not made after {ATTEMPTS} attempts: {said}")
             if not os.path.isfile(pdf):
                 raise RuntimeError(f'PDF not generated: {pdf}')
             subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf, stem], check=True)

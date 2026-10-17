@@ -201,8 +201,10 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                 (self.site / 'index.html').write_text('<h1>Keep me</h1>')
                 old_pdf = self.root / 'slides.pdf'
                 old_pdf.write_bytes(b'previous PDF')
+                attempts = []
                 def run(command, check=False, **options):
                     if command[0] == failing_command:
+                        attempts.append(command[0])
                         if not check:           # node: tried again, then the export fails
                             return subprocess.CompletedProcess(command, 1, '', 'TimeoutError')
                         raise subprocess.CalledProcessError(1, command)
@@ -219,8 +221,28 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                         pdf_export.export(meta)
                 if failing_command == 'node':
                     self.assertIn('not made after 3 attempts: TimeoutError', str(raised.exception))
+                    self.assertEqual(attempts, [failing_command] * pdf_export.ATTEMPTS)
                 self.assertTrue((self.site / 'index.html').exists())
                 self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
+
+    def test_a_pdf_page_that_misses_its_timeout_is_tried_again(self):
+        self.site.mkdir()
+        calls = []
+        def run(command, check=False, **options):
+            if command[0] == 'node':
+                calls.append(command)
+                if len(calls) == 1:                     # Chrome missed its timeout once
+                    return subprocess.CompletedProcess(command, 1, '', 'TimeoutError')
+                Path(command[-1].removeprefix('--output=')).write_bytes(b'page')
+            elif command[0] in ('magick', 'pdfunite'):
+                Path(command[-1]).write_bytes(b'export')
+            return subprocess.CompletedProcess(command, 0)
+        meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
+                'structure': [{'dir': '', 'filename': 'index.html'}]}
+        with patch.object(pdf_export.subprocess, 'run', side_effect=run):
+            pdf_export.export(meta)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')
 
     def test_pdf_asks_not_to_publish_instead_of_deleting(self):
         self.site.mkdir()
