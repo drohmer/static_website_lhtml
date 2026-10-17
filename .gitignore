@@ -12,3 +12,8 @@ _layout/
 .venv/
 .feedback/
 .figures/
+
+.source-map/
+.verification/
+.structure/
+.layout.lock
