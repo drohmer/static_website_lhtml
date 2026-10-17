@@ -11,7 +11,7 @@ default_threads = 8
 def run(command):
     """Run ffmpeg with its arguments as a list: a path with a space or a quote
     is passed as it is, without a shell to escape it for."""
-    print(' '.join(command))
+    print(' '.join(map(str, command)))
     subprocess.run(command)
 
 def convert_video_webm_av1(f_in, f_out, args):

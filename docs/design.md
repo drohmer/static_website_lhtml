@@ -1506,6 +1506,53 @@ contract: the explicit list of section 3.2 and the `if staging.is_dir()` of
 `build_output.py`). Done when the scripts of the two courses are deleted and
 N0 gives the same files under the new paths.
 
+*Done* (2026-10-17), in two parts. First the paths: the directories of a
+build are `Path`s (`source_directory`, `site_directory`, `theme`,
+`config_directory`, ... and the roots of the sources of a deck), joined with
+`/` instead of strings ending with `/` joined with `+` at some thirty places;
+the place of a page in the site stays the string the theme reads
+(`page_path(entry)`). Then the project, decided with the author:
+
+```yaml
+decks: directories          # each directory of the sources is a deck
+targets:
+  html: {theme: slides}
+  pdf: {theme: slides-pdf}  # its theme.yaml says export: pdf
+```
+
+- `lib/project.py` plans the builds, deck by deck and target by target, each
+  the build of a site with its own directories and theme: `<site>/<deck>/
+  <target>/`, the videos in `<cache>/<deck>/`. Without `decks`, the project
+  is one deck; without `targets`, one target built into the site itself.
+- All the targets are built by default; `--target html` chooses.
+  `--only 01_procedural` names a deck, `--only 01_procedural/03_noise`
+  pages of it.
+- The PDF is a target: a theme declares `export: pdf` (`lib/theme.py`), and
+  `lib/pdf_export.py` (the former plugin) renders the site to
+  `<site>/<deck>/<deck>.pdf` and `images/`, after the menu is written; the
+  site is not published. `generate_pdf.py` in `plugin:` is refused, naming
+  the target.
+- The builds run one after the other; one that fails does not stop the
+  next, and the command fails, naming it - where a script that called
+  `os.system` went on and returned 0.
+
+Measured on the corpus: the two courses built by one command each, and by
+what their scripts did with this generator (each chapter, each theme, a
+temporary configuration, the PDF renamed: `as_the_script.py` of the
+corpus), give the same files - 2876 and 8746 minus the `slides.pdf` copies
+csc kept - and the same PDF text, except the pages that show a video (the
+frame captured) and, once, the time shown by a video player. The scripts
+are gone from the projects that migrate; `generate_sections.py` (the
+section slides of `PLAN.toml`) still writes sources, and the site with time
+badges of `schedule.yaml` stays a script, as decided above.
+
+Two findings on the way. The transcoding of the videos needs `ffpb`, and a
+cache made by an older generator lacks the variants the current one makes:
+building the corpus with its videos transcodes for hours, so the comparison
+ran without `cache_video_directory`. And `video_convert` joined the
+command into a string for the log, which a `Path` broke: no test ran the
+transcoding, one does now.
+
 **N3. The migration tool** - *dropped* (2026-10-16). LHTML 3 and the
 generator after N2 are major versions; a project migrates by hand, with
 the errors of section 8. The corpus copies are migrated that way at N2,

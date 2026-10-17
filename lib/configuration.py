@@ -7,6 +7,7 @@ from typing import Any
 import copy
 import difflib
 import os
+import re
 
 from lib.filesystem import read_yaml
 from lib.structure import PRIVATE_KEYS
@@ -25,6 +26,7 @@ CORE_STAGES = {
     'auto-wrap.py': 'the wrapping of a page in the template of its theme',
     'redirection_first_page.py': 'the index of a site that has none',
     'cache_video.py': "the transcoded videos (set 'cache_video_directory:' to ask for them)",
+    'generate_pdf.py': "the PDF export, a target now (targets: pdf: {theme: slides-pdf})",
 }
 
 RUNTIME_KEYS = frozenset((
@@ -43,6 +45,7 @@ RUNTIME_KEYS = frozenset((
     'publish_site',                 # a target asks for its intermediate site not to be published
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
+    'export_name',                  # the name of the PDF of a deck (lib/pdf_export.py)
 ))
 
 
@@ -76,13 +79,18 @@ class Config:
     chrome: str | None = None
     design: dict | str | None = None
     deck: list | dict | str | None = None
+    # A project of several decks, each built to several targets (lib/project.py):
+    # 'directories' (each directory of the sources is a deck), and
+    # {name: {theme: directory}}, the themes resolved to Paths by load_config
+    decks: str | None = None
+    targets: dict | None = None
     # Legacy extensions stay available to custom plugins, with a warning.
     extras: dict = field(default_factory=dict)
 
     def to_meta(self):
         values = asdict(self)
         values.update(values.pop('extras'))
-        for key in ('cache_video_directory', 'chrome', 'design', 'deck'):
+        for key in ('cache_video_directory', 'chrome', 'design', 'deck', 'decks', 'targets'):
             if values[key] is None:
                 del values[key]
         return values
@@ -153,6 +161,44 @@ def _chrome_executable(values, config_directory):
     values['chrome'] = str(file.resolve())
 
 
+TARGET_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_-]*$')
+
+
+def theme_directory(value, config_directory):
+    """A theme given as a directory (relative to the configuration) or as the
+    name of a theme of the generator ('slides')."""
+    directory = Path(value).expanduser()
+    if not directory.is_absolute():
+        directory = config_directory / directory
+    if not directory.is_dir() and (GENERATOR_DIRECTORY / 'themes' / value).is_dir():
+        directory = GENERATOR_DIRECTORY / 'themes' / value
+    return directory.resolve()
+
+
+def _decks_and_targets(values, data, config_directory):
+    """'decks' and 'targets' (lib/project.py), checked, the themes resolved."""
+    if values.get('decks') is not None and values['decks'] != 'directories':
+        raise ConfigError("'decks' must be 'directories' (each directory of the sources is a deck)")
+    targets = values.get('targets')
+    if targets is None:
+        return
+    if not isinstance(targets, dict) or not targets:
+        raise ConfigError("'targets' must map a name to its settings, e.g. html: {theme: slides}")
+    if 'theme' in data:
+        raise ConfigError("'theme' and 'targets' together: give the theme of each target")
+    resolved = {}
+    for name, spec in targets.items():
+        if not isinstance(name, str) or not TARGET_NAME.match(name):
+            raise ConfigError(f"'targets': invalid name {name!r} (letters, digits, - and _)")
+        if not isinstance(spec, dict) or set(spec) != {'theme'} or not isinstance(spec['theme'], str):
+            raise ConfigError(f"'targets': {name}: expected {{theme: <theme>}}")
+        theme = theme_directory(spec['theme'], config_directory)
+        if not theme.is_dir():
+            raise ConfigError(f"'targets': {name}: theme not found '{spec['theme']}'")
+        resolved[name] = {'theme': theme}
+    values['targets'] = resolved
+
+
 def load_config(filename, debug_override=None):
     path = Path(filename).expanduser().resolve()
     warnings = []
@@ -176,7 +222,7 @@ def load_config(filename, debug_override=None):
                           "places what goes in <head>")
 
     defaults = Config().to_meta()
-    known = set(defaults) | {'cache_video_directory', 'chrome', 'design', 'deck'}
+    known = set(defaults) | {'cache_video_directory', 'chrome', 'design', 'deck', 'decks', 'targets'}
     extras = {}
     for key in set(data) - known:
         if key in RUNTIME_KEYS:
@@ -233,6 +279,7 @@ def load_config(filename, debug_override=None):
                           "'toc: keys:' in the theme.yaml of your theme")
 
     _chrome_executable(values, path.parent)
+    _decks_and_targets(values, data, path.parent)
 
     _file_or_inline(values, 'design', dict, 'a mapping (tokens, macros)', path.parent)
     _file_or_inline(values, 'deck', (list, dict), 'a list of slides', path.parent)
@@ -259,8 +306,11 @@ def load_config(filename, debug_override=None):
 
 def validate_paths(config, config_file, require_inputs=True):
     output = Path(config.site_directory).resolve()
-    for key in ('source_directory', 'theme'):
-        directory = Path(getattr(config, key)).resolve()
+    inputs = [('source_directory', config.source_directory)]
+    inputs += [(f'targets: {name}: theme', spec['theme']) for name, spec in (config.targets or {}).items()] \
+        or [('theme', config.theme)]
+    for key, directory in inputs:
+        directory = Path(directory).resolve()
         if output == directory or output in directory.parents or directory in output.parents:
             raise ConfigError(f"Unsafe 'site_directory': output and '{key}' must not overlap ({output}, {directory})")
         if require_inputs and not directory.is_dir():

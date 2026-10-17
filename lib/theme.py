@@ -21,6 +21,8 @@ The manifest:
       exclude: 'nav, footer'               # children of the root that are not
       width: 1920                          # size of a page, in CSS pixels
       height: 1080
+    export: pdf                            # the site is rendered to a PDF
+                                           # (lib/pdf_export.py), not published
 
 A theme with no `toc:` has no menu, and the build writes none. That is how
 a theme says so - not a switch in a project's configuration, which has no
@@ -42,7 +44,8 @@ from lib.filesystem import read_yaml
 
 MANIFEST = 'theme.yaml'
 DEFAULTS = {'template': 'theme/template/base.html', 'content_block': 'content',
-            'toc': None, 'layout': {}}
+            'toc': None, 'layout': {}, 'export': None}
+EXPORTS = ('pdf',)
 TOC_KEYS = ('file', 'keys')
 # The layout keys a theme may declare: the ones that describe the theme, not
 # the preferences of a project (thresholds, output directory, jobs...).
@@ -92,6 +95,8 @@ def validate(given, file):
         keys = toc.get('keys', [])
         if not isinstance(keys, list) or not all(isinstance(k, str) for k in keys):
             raise ConfigError(f'{file}: toc: keys must be a list of page setting names')
+    if given.get('export') is not None and given['export'] not in EXPORTS:
+        raise ConfigError(f"{file}: export must be one of {', '.join(EXPORTS)} (or absent)")
     layout = given.get('layout', {})
     if not isinstance(layout, dict):
         raise ConfigError(f'{file}: layout must be a mapping')

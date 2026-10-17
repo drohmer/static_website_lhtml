@@ -73,10 +73,6 @@ class VideoCacheTests(unittest.TestCase):
         self.assertIn('cache_video_directory', ' '.join(result.stdout.split()))
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class MediaResolverTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='lhtml-media-')
@@ -100,3 +96,18 @@ class MediaResolverTests(unittest.TestCase):
         (self.page / 'other' / CACHE_VIDEO_DIR).mkdir(parents=True)
         (self.page / 'other' / CACHE_VIDEO_DIR / 'clip-h264.mp4').write_bytes(b'')
         self.assertEqual(media(str(self.page))('other/clip.mp4'), [])
+
+
+class ConverterTests(unittest.TestCase):
+    def test_paths_are_accepted(self):
+        """The site directory is a Path: the command printed and run takes it."""
+        from unittest.mock import patch
+        from pathlib import Path
+        from lib.video_convert import video_convert
+        with patch.object(video_convert.subprocess, 'run') as run:
+            video_convert.run(['ffmpeg', '-i', Path('/site/a b.mp4'), 'out.webm'])
+        run.assert_called_once()
+
+
+if __name__ == '__main__':
+    unittest.main()

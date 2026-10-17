@@ -1,0 +1,93 @@
+"""A project is decks, each built to targets.
+
+    source_directory: src
+    site_directory: _site
+    decks: directories            # each directory of src/ is a deck
+    targets:
+      html: {theme: slides}
+      pdf: {theme: slides-pdf}    # a theme with export: pdf (lib/pdf_export.py)
+
+A deck is a directory of the sources (src/01_procedural/), built as a site
+of its own; a target is a theme it is built with. The site of a deck for a
+target is <site>/<deck>/<target>/, and an export (the PDF) lands in
+<site>/<deck>/, named after the deck. Without `decks`, the project is one
+deck (the sources); without `targets`, one target (`theme`), built into the
+site directory itself: a project of one site is a project of one deck.
+
+`plan` turns a configuration into the list of these builds, each with its
+own configuration; the build of one of them is the build of a site.
+"""
+from dataclasses import dataclass, replace
+
+from lib.configuration import ConfigError, Config
+
+
+@dataclass(frozen=True)
+class Build:
+    deck: str | None            # None: the project is one deck
+    target: str | None          # None: one target, the theme of the configuration
+    config: Config              # the configuration of this build
+    only: list | None = None    # --only pointers inside the deck, None for all its pages
+
+    @property
+    def label(self):
+        return ' '.join(f'{kind} {name}' for kind, name in (('deck', self.deck), ('target', self.target)) if name)
+
+    @property
+    def export_name(self):
+        """The name of the PDF of the deck."""
+        return self.deck or 'slides'
+
+
+def decks(config):
+    """The names of the decks, in order, or [None] for a project of one deck."""
+    if config.decks != 'directories':
+        return [None]
+    return sorted(d.name for d in config.source_directory.iterdir()
+                  if d.is_dir() and not d.name.startswith(('.', '_')))
+
+
+def plan(config, only=None, targets=None):
+    """The builds of a project: each deck for each target, in that order.
+
+    only: --only pointers. With decks, a pointer names a deck (01_procedural)
+        or pages of it (01_procedural/03_noise); only the decks named are built.
+    targets: the names of the targets to build (--target), all by default."""
+    names = decks(config)
+    chosen = dict(config.targets or {None: None})
+    if targets:
+        unknown = sorted(set(targets) - set(chosen))
+        if unknown:
+            known = ', '.join(t for t in chosen if t) or 'none: the project has no targets'
+            raise ConfigError(f"--target {', '.join(unknown)}: unknown target (known: {known})")
+        chosen = {name: spec for name, spec in chosen.items() if name in targets}
+
+    pointers = {name: None for name in names}
+    if only and names != [None]:
+        pointers = {}
+        for pointer in only:
+            deck, _, inside = pointer.strip('/').partition('/')
+            if deck not in names:
+                raise ConfigError(f"--only {pointer}: no deck '{deck}' (decks: {', '.join(names)})")
+            if not inside:
+                pointers[deck] = None
+            elif pointers.get(deck, []) is not None:
+                pointers.setdefault(deck, []).append(inside)
+    elif only:
+        pointers = {None: list(only)}
+
+    result = []
+    for deck in names:
+        if deck not in pointers:
+            continue
+        for target, spec in chosen.items():
+            source, site = config.source_directory, config.site_directory
+            cache = config.cache_video_directory
+            if deck is not None:
+                source, site = source / deck, site / deck
+                cache = cache / deck if cache else None
+            changes = {'source_directory': source, 'site_directory': site, 'cache_video_directory': cache}
+            if target is not None:
+                changes.update(site_directory=site / target, theme=spec['theme'])
+            result.append(Build(deck, target, replace(config, **changes), pointers[deck]))
+    return result

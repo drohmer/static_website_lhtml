@@ -41,6 +41,8 @@ from lib import video_cache
 from lib.layout import build as layout_build
 from lib import logger
 from lib import pages
+from lib import pdf_export
+from lib import project
 from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
 from lib import layout_options
 from lib.build_output import staged_site
@@ -65,6 +67,9 @@ def parse_arguments():
     parser.add_argument('--only', metavar='POINTER', action='append',
                         help='Generate only these pages (deck pointer: directory, file, glob; repeatable) '
                              'in the existing site; a full build when the pages of the site changed.')
+    parser.add_argument('--target', metavar='NAME', action='append',
+                        help='Build only these targets of the configuration (repeatable, or html,pdf); '
+                             'all of them by default.')
     parser.add_argument('--lint', action='store_true',
                         help='List the values written by hand in the pages (positions, spacers, font sizes) '
                              'with the layout or macro of the design that replaces them; no generation.')
@@ -84,6 +89,7 @@ def parse_arguments():
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
     args = parser.parse_args()
+    args.target = [t for value in args.target or [] for t in value.split(',') if t] or None
     if not 0 <= args.port <= 65535:
         parser.error('--port must be between 0 and 65535')
     if (args.serve or args.watch) and (args.clean or args.check_config):
@@ -535,11 +541,10 @@ def compile_sass(meta, log):
 # Clean
 # ---------------------------------------------------------------------------
 
-def clean_directories(meta):
-    site_dir = meta['site_directory']
-    if os.path.isdir(site_dir):
-        shutil.rmtree(site_dir)
-    meta['log'].plain('Directories cleaned\n')
+def clean_directories(site_directory, log):
+    if os.path.isdir(site_directory):
+        shutil.rmtree(site_directory)
+    log.plain('Directories cleaned\n')
 
 
 # ---------------------------------------------------------------------------
@@ -594,10 +599,14 @@ def render_files(meta, files, log):
 # ---------------------------------------------------------------------------
 
 def build_once(args):
+    """Build the project: each of its decks for each of its targets
+    (lib/project.py), one after the other. A build that fails does not stop
+    the next ones; the command fails if one did."""
     try:
         config, config_file, warnings = load_config(
             args.input_config or 'configure.yaml', debug_override=args.debug)
         validate_paths(config, config_file, require_inputs=not args.clean or args.check_config)
+        builds = project.plan(config, args.only, args.target)
     except ConfigError as exc:
         logger.Logger().error(str(exc))
         sys.exit(1)
@@ -606,6 +615,23 @@ def build_once(args):
                         debug_level=2 if config.debug else 1)
     for warning in warnings:
         log.warning(warning)
+    if args.clean and not args.check_config:     # --check-config diagnoses, and deletes nothing
+        clean_directories(config.site_directory, log)
+        return
+    failed = []
+    for build in builds:
+        if build.label:
+            log.title(build.label.capitalize(), pre='\n')
+        if not build_site(args, build, config_file, log):
+            failed.append(build.label or 'the site')
+    if failed:
+        log.error(f"Build failed: {', '.join(failed)}")
+        raise SystemExit(1)
+
+
+def build_site(args, build, config_file, log):
+    """Build one deck for one target. Returns whether it succeeded."""
+    config, only = build.config, build.only
     context = BuildContext(config, config_file, args, log)
     meta = context.meta
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
@@ -613,6 +639,7 @@ def build_once(args):
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
     meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lib/layout/build.py)
+    meta['export_name'] = build.export_name     # the PDF of a deck (lib/pdf_export.py)
 
     # Diagnostic mode takes precedence over --clean and never runs plugins.
     if args.check_config or not args.clean:
@@ -634,7 +661,7 @@ def build_once(args):
             sys.exit(1)
     if args.render:
         render_files(meta, args.render, log)
-        return
+        return True
     if args.check_config:
         # The deck and the design are read (not the pages): errors before any build
         try:
@@ -660,10 +687,7 @@ def build_once(args):
             'level_print': config.level_print,
             'use_tidy': config.use_tidy,
         }, sort_keys=False))
-        return
-    if args.clean:
-        clean_directories(meta)
-        return
+        return True
     if args.lint:
         try:
             # the pages of the deck, and the other pages of the project (excluded, planned)
@@ -671,14 +695,14 @@ def build_once(args):
             listed = {p.src for p in selected}
             selected += [p for p in pages.discover(pages.Source(None, meta['source_directory']),
                                                    exclude=[meta['site_directory']]) if p.src not in listed]
-            if args.only:
-                selected = deck.named_pages(selected, args.only, other_sources(selected))
+            if only:
+                selected = deck.named_pages(selected, only, other_sources(selected))
             loaded_design = load_project_design(meta)
         except (deck.DeckError, design.DesignError, ValueError) as exc:
             log.error(str(exc))
             sys.exit(1)
         lint_pages(selected, loaded_design, log, details=True)
-        return
+        return True
 
     built = None
     try:
@@ -687,10 +711,10 @@ def build_once(args):
         meta['source_roots'] = other_sources(selected)
         meta['dependency_store'] = dependencies.BuildStore(meta)
         built = None
-        if args.only:
+        if only:
             # the pages its pointers name; whether the build may stay partial
             # is decided in one place, by the dependency store
-            named = deck.named_pages(selected, args.only, other_sources(selected))
+            named = deck.named_pages(selected, only, other_sources(selected))
             log.keyvalue('info', f"--only: {', '.join(p.label for p in named)}", indent_level=1)
             built = meta['dependency_store'].expand(meta, selected, named)
             if built is None:
@@ -708,7 +732,8 @@ def build_once(args):
     except Exception as exc:
         log.error(f"Build failed{'' if built is not None else '; previous site preserved'}: {exc}")
         log.debug(traceback.format_exc())
-        raise SystemExit(1)
+        return False
+    return True
 
 
 def lint_pages(selected, loaded_design, log, details=False):
@@ -777,6 +802,9 @@ def generate_site(meta, selected, built):
         # Transcoded videos next to the assets, before LHTML writes the <video>
         # tags whose sources video_cache.media lists
         video_cache.run(meta)
+        export = theme.of(meta)['export']
+        if export == 'pdf':
+            pdf_export.remove_video_controls(meta)
 
     with stage(log, 'Convert HTML'):
         failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
@@ -804,6 +832,8 @@ def generate_site(meta, selected, built):
             # index of a site that has none (lib/menu.py, lib/index_page.py)
             menu.run(meta)
             index_page.run(meta)
+            if export == 'pdf':          # once the site is complete, menu included
+                pdf_export.export(meta)
 
     # The layout analysis is part of the generator, not a plugin: it runs
     # once the pages and the theme are in place, and before the dependency

@@ -1,5 +1,7 @@
 # What the slides-pdf theme declares about the build (lib/theme.py).
 # Same slide format as the slides theme, exported page by page.
+# The site is an intermediate: the build renders it to <deck>.pdf (export: pdf).
+export: pdf
 template: 'theme/template/base.html'
 content_block: 'content'
 toc:

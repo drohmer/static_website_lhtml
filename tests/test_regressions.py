@@ -12,7 +12,7 @@ from unittest.mock import patch
 import yaml
 
 from lib.logger import Logger
-from plugins import generate_pdf
+from lib import pdf_export
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -211,9 +211,9 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                     return subprocess.CompletedProcess(command, 0)
                 meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                         'structure': [{'dir': '', 'filename': 'index.html'}]}
-                with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
+                with patch.object(pdf_export.subprocess, 'run', side_effect=run):
                     with self.assertRaises(subprocess.CalledProcessError):
-                        generate_pdf.post_process(meta)
+                        pdf_export.export(meta)
                 self.assertTrue((self.site / 'index.html').exists())
                 self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
 
@@ -228,12 +228,12 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
             return subprocess.CompletedProcess(command, 0)
         meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                 'structure': [{'dir': '', 'filename': 'index.html'}]}
-        with patch.object(generate_pdf.subprocess, 'run', side_effect=run):
+        with patch.object(pdf_export.subprocess, 'run', side_effect=run):
             partial = {**meta, 'only': True}                        # --only: built in the site itself
-            generate_pdf.post_process(partial)
+            pdf_export.export(partial)
             self.assertTrue(self.site.exists())
             self.assertNotIn('publish_site', partial)
-            generate_pdf.post_process(meta)
+            pdf_export.export(meta)
         # The site it rendered was an intermediate of the export: the export
         # says so, and the publication step drops it (lib/build_output.py).
         # It does not delete a directory other stages may still be reading.

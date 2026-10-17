@@ -17,17 +17,15 @@ pip install -r requirements.txt
 `pyyaml`, `rich` - installed by the `pip install` above. No Node, no browser,
 no other program.
 
-**Systems**: Linux and macOS are supported; the tests run on Linux in CI and
-on macOS in development. **Windows is not supported yet.** Measured on
-Windows 11 with Python 3.11: a simple project builds (one source, one theme,
-the default plugins) and every module imports, but 52 of the 308 tests fail -
-mostly the deck, `--only` and the pages in sub-directories, where a path is
-compared with `/` while Windows writes `\`. What is known to work there is a
-flat project without a deck; the rest waits for those separators to be
-normalised, and for the CI to cover it.
+**Systems**: Linux, macOS and Windows. The tests run on Linux in CI and on
+macOS in development; `tests/windows.sh <ssh host>` runs them on a Windows
+machine (Windows 11, Python 3.14: they pass, and the example site built
+there is identical to the one built on macOS). On Windows, `py -3` is the
+reliable launcher: another program may put its own `python` first in the
+`PATH`.
 
 **Optional**, each unlocking one feature and needed only for it:
-- **PDF export** (`generate_pdf.py`): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `slides.pdf` and `images/`, and the site directory is not published (kept with `-d`, and kept as it is with `--only`).
+- **PDF export** (a target whose theme says `export: pdf`, such as `slides-pdf`, see [Decks and targets](#decks-and-targets)): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `<deck>.pdf` (`slides.pdf` for a project of one deck) and `images/` next to the site directory of the target, and that site directory is not published (kept with `-d`, and kept as it is with `--only`).
 - **Layout report** (`--layout`, `--render`): Node.js and `npm install` in
   this directory. If `npm install` leaves no Chrome behind (recent npm
   versions skip that step), run `npx puppeteer browsers install chrome`; a
@@ -177,6 +175,45 @@ Optional keys:
 | `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lib/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
+| `decks` | `directories`: each directory of the sources is a deck, built as a site of its own (see [Decks and targets](#decks-and-targets)) |
+| `targets` | `{name: {theme: ...}}`: each deck is built once per target, with its theme (instead of `theme`) |
+
+### Decks and targets
+
+A course is several decks (a chapter each), and each is published twice: as
+slides, and as a PDF. The configuration says so, and one command builds
+everything:
+
+```yaml
+source_directory: src
+site_directory: _site
+cache_video_directory: cache_video
+decks: directories           # src/01_procedural/, src/02_rigid/, ...: a deck each
+targets:
+  html: {theme: slides}
+  pdf: {theme: slides-pdf}
+```
+
+```
+_site/01_procedural/html/index.html ...     # target html
+_site/01_procedural/01_procedural.pdf       # target pdf: its theme declares export: pdf
+_site/01_procedural/images/slide_000.jpg ...
+```
+
+- A deck is a directory of the sources (those starting with `.` or `_` are
+  not); each is built with its own videos, `cache_video/<deck>/`. Without
+  `decks`, the sources are one deck.
+- A target is a theme, given by its directory or by the name of a theme of
+  the generator. Without `targets`, there is one: `theme`, built into the
+  site directory itself.
+- The site of a deck for a target is `<site>/<deck>/<target>/`. A target
+  whose theme declares `export: pdf` is rendered to `<site>/<deck>/<deck>.pdf`
+  and `images/`, and its site is not published.
+- `--target html` builds only that target (repeatable, or `--target
+  html,pdf`); `--only 01_procedural` builds only that deck, and
+  `--only 01_procedural/03_noise` pages of it.
+- The builds run one after the other; one that fails does not stop the
+  next ones, and the command fails if one did.
 
 ## Pipeline
 
@@ -228,6 +265,9 @@ static_website_lhtml/
     tracking.py            # Templates and includes read by each page
     dependencies.py        # Files each page depends on: --only, validity of the reports
     pages.py               # Pages: sources, templates, occurrences, placement in the site
+    pdf_export.py          # The PDF of a target whose theme declares export: pdf
+    project.py             # A project: its decks, each built to its targets
+    video_convert/         # Video conversion utilities (ffmpeg)
     deck.py                # Deck: order of the slides (deck.yaml)
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
     theme.py               # What a theme declares about the build (theme.yaml)
@@ -256,9 +296,7 @@ static_website_lhtml/
   plugins/
     pre_include.py         # Pre-include content into templates
     code_include.py        # Include code from external repos
-    generate_pdf.py        # PDF/image generation (requires puppeteer)
     assets/                # Node scripts of the PDF export and of the layout report
-    video_convert/         # Video conversion utilities (ffmpeg)
   tests/                   # pytest suite
   themes/                  # each with theme.yaml (contract with the build)
     webpage-frame/         #   and, for the slides, design.yaml (tokens, macros)
@@ -692,7 +730,6 @@ Plugins get the pages from `lib.structure`: `structure(meta)` gives all the page
 |--------|------|-------------|
 | `pre_include.py` | pre | Pre-includes content files into templates |
 | `code_include.py` | mid | Includes code snippets from external Git repos |
-| `generate_pdf.py` | pre+post | Generates PDF slides and images (requires `npm install`, see Installation) |
 
 The page placed in the template of its theme, the heading ids, the menu,
 the index of a site that has none and the transcoded videos used to be
@@ -995,7 +1032,7 @@ change to make, rather than accepted with a warning.
 - `auto_wrap.py` (or `auto-wrap.py`), `redirection_first_page.py` and `cache_video.py` are no longer plugins either: remove them from `plugin:`, which is then usually empty. The transcoded videos are asked for by setting `cache_video_directory:` (the plugin used to fall back to a default directory and say so); without it, nothing is transcoded.
 - The menu of the theme and the heading ids are no longer plugins: remove `plugins/menu.py` and `plugins/title_submenu.py` from `plugin:`. The build runs them itself, and the theme declares whether it has a menu (`toc:` in its `theme.yaml`). The extra page settings the menu carried move from `plugin_arg: menu: keys:` to `toc: keys:` of the theme. Both old spellings are refused by name.
 - The layout report is no longer a plugin: remove `plugins/layout_report.py` from `plugin:` and run the build with `--layout`. Its options move from `plugin_arg: layout_report:` to the configuration key `layout:`. Both old spellings are refused by name, with the change to make; `--check-config` reports them without building anything.
-- `generate_pdf.py` no longer has to be last in the plugin list: it asks for the HTML it rendered not to be published instead of deleting the site directory, so a stage that runs after it (the layout analysis, another plugin) still has a site to read.
+- `generate_pdf.py` is no longer a plugin: the PDF is a target, `targets: pdf: {theme: slides-pdf}` (the theme declares `export: pdf`), named after its deck. A script that looped over the chapters with a temporary configuration per chapter and per theme is replaced by `decks: directories` and `targets:` (see [Decks and targets](#decks-and-targets)).
 - LHTML 3.0 reads no file: `include::` is refused, with the file it named. Include with Jinja instead, `{% include "part.html" %}` (the path is relative to the sources). A poster is no longer looked for next to a video: write it, `video::clip.mp4{poster="clip.jpg"}`. `wrap-auto` and `directory_include` are no longer passed to LHTML: the theme wraps the page. LHTML 3 also refuses `::name[-]` and `::[-]` (close with `::`), `::#` comments (write `{# ... #}`) and `verbatim::` (write `code::[text]`); `$...$` is text (write `\(...\)`), and a tag inside inline code is literal. The YAML front matter of a page is read by the generator, which removes it before LHTML.
 - For plugins: the directories of `meta` (`source_directory`, `site_directory`, `theme`, `config_directory`, `lib_directory`, `cache_video_directory`) are `pathlib.Path`: join with `/` (`meta['site_directory'] / page_path(entry)`), not `+`. The place of a page in the site stays a string with `/` (`entry['dir']`, `page_path(entry)` of `lib.structure`).
 - Heading anchors keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
