@@ -907,15 +907,15 @@ async function freezeMedia(page) {
         // first frame; a video already at 0 sends no 'seeked'
         await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
             v.autoplay = false;
-            // Ask for the data, then pause. Measured on a deck of 78 slides,
-            // 21 videos, six tabs measuring in parallel: without this line,
-            // 10 of them are measured without their dimensions whatever the
-            // budget below; with it and a 10 s budget, 9 to 12; with both,
-            // none. A video without its dimensions has no size of its own,
+            // Ask for the data, then pause (each worker has a window of its
+            // own: in a hidden tab, Chrome would not load it). A video
+            // without its dimensions has no size of its own,
             // so the browser gives it its default box, 300 px wide, and
             // every check of that page runs on a rectangle the slide never
             // shows.
-            if (v.readyState === 0) { v.preload = 'auto'; v.load(); }
+            // not when it is loading already: load() would abort that request
+            // (a failed request in the health of the page, for nothing)
+            if (v.readyState === 0 && v.networkState !== v.NETWORK_LOADING) { v.preload = 'auto'; v.load(); }
             v.pause();
             const timer = setTimeout(resolve, 30000);
             const done = () => { clearTimeout(timer); resolve(); };
@@ -1084,20 +1084,35 @@ async function waitForContent(page) {
                '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
                '--disable-backgrounding-occluded-windows']});
     let failures = 0, next = 0, done = 0;
-    await Promise.all(Array.from({length: Math.min(jobs, pages.length) || 1}, () => worker()));
+    await Promise.all(Array.from({length: Math.min(jobs, pages.length) || 1}, (_, k) => worker(k)));
     console.log(`progress ${pages.length} ${pages.length} done`);
     await browser.close();
     process.exit(0);
 
-  async function worker() {
-    const page = await browser.newPage();
+  // Each worker measures in a window of its own. Tabs of one window are
+  // hidden but one, and Chrome defers the loading of the videos of a hidden
+  // page until it is shown: with six tabs, the videos of a page waited the
+  // whole budget of freezeMedia (30 s) and were measured without their
+  // dimensions, a different box at each build (soiree, 78 slides, 21
+  // videos: 1 to 3 pages; with a window each, none, and 32 s instead of 49).
+  async function worker(k) {
+    const session = await browser.target().createCDPSession();
+    const url = `about:blank#layout-worker-${k}`;
+    await session.send('Target.createTarget', {url, newWindow: true});
+    const page = await (await browser.waitForTarget(t => t.type() === 'page' && t.url() === url)).page();
+    await session.detach();
     await page.setViewport({width, height});
     let events = [];
     let resources = new Set();
     page.on('request', request => resources.add(request.url()));
     page.on('pageerror', error => events.push({type: 'javascript', message: error.message}));
-    page.on('requestfailed', request => events.push({type: 'request', url: request.url(),
-        message: request.failure()?.errorText || 'Request failed'}));
+    // a media request the player cancels itself (to ask for another range)
+    // is not a failure: a video that does not load has video.error, or no
+    // dimensions (measure(), health)
+    page.on('requestfailed', request => {
+        if (request.resourceType() === 'media' && request.failure()?.errorText === 'net::ERR_ABORTED') return;
+        events.push({type: 'request', url: request.url(), message: request.failure()?.errorText || 'Request failed'});
+    });
     page.on('response', response => { if (response.status() >= 400) events.push({type: 'http',
         url: response.url(), status: response.status()}); });
     async function ready() {
@@ -1108,8 +1123,8 @@ async function waitForContent(page) {
         } finally { clearTimeout(timer); }
     }
     async function measure(frame, checkedFrames) {
-        const layout = await frame.evaluate(extractBlocks, frame === page.mainFrame() ? rootSelector : 'body',
-                                           frame === page.mainFrame() ? excludeSelector : '');
+        // the health first: a video whose dimensions arrive while the blocks
+        // are extracted was measured without them, and must say so
         const health = await frame.evaluate(checkedFrames => ({
             images: [...document.images].filter(i => !i.complete || !i.naturalWidth).map(i => ({type: 'image', url: i.currentSrc || i.src})),
             fonts: [...document.fonts].filter(f => f.status === 'error').map(f => ({type: 'font', family: f.family})),
@@ -1129,6 +1144,8 @@ async function waitForContent(page) {
                 .map(e => ({type: e.tagName.toLowerCase(), url: e.src || null,
                     reason: e.tagName === 'CANVAS' ? 'Raster geometry captured; canvas semantics are not verified' : 'Frame inaccessible or not sampled'}))
         }), checkedFrames);
+        const layout = await frame.evaluate(extractBlocks, frame === page.mainFrame() ? rootSelector : 'body',
+                                           frame === page.mainFrame() ? excludeSelector : '');
         const errors = [...events, ...health.images, ...health.fonts, ...health.math, ...health.video,
                         ...health.sizeless, ...health.clock];
         layout.media_samples = await frame.evaluate(() => window.__lhtmlMediaSamples || []);
