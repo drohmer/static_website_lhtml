@@ -623,7 +623,9 @@ def build_once(args):
         config, config_file, warnings = load_config(
             args.input_config or 'configure.yaml', debug_override=args.debug)
         validate_paths(config, config_file, require_inputs=not args.clean or args.check_config)
-        builds = project.plan(config, args.only, args.target)
+        cleaning = args.clean and not args.check_config      # --check-config diagnoses, and deletes nothing
+        # the decks are not looked for: cleaning needs no sources (they may be gone)
+        builds = [] if cleaning else project.plan(config, args.only, args.target)
     except ConfigError as exc:
         logger.Logger().error(str(exc))
         sys.exit(1)
@@ -631,7 +633,7 @@ def build_once(args):
     log = logger.Logger(verbose=args.verbose, debug=config.debug)
     for warning in warnings:
         log.warning(warning)
-    if args.clean and not args.check_config:     # --check-config diagnoses, and deletes nothing
+    if cleaning:
         clean_directories(config.site_directory, log)
         return
     if config.decks and any(pages.is_template(p.name) for p in config.source_directory.iterdir()):
@@ -756,15 +758,18 @@ def build_site(args, build, config_file, log):
                 # measures only the pages named (and those without a report)
                 meta['measure'] = meta.get('dependency_measure') or [p.site_html for p in named]
         meta['only'] = built is not None
-        if meta['only']:
+        meta['strict'] = strict         # checked before the pages are kept (generate_site)
+        if meta['only'] and args.strict:
+            # a refused build publishes nothing: built in a copy of the site
+            with staged_site(meta, copy=True):
+                count = generate_site(meta, selected, built)
+        elif meta['only']:
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated
             count = generate_site(meta, selected, built)
-            strict()
         else:
             with staged_site(meta):
                 count = generate_site(meta, selected, selected)
-                strict()
     except Exception as exc:
         kept = '' if built is not None else ' (previous site kept)'
         log.error(f"{build.label + ': ' if build.label else ''}build failed{kept}: {exc}")
@@ -893,6 +898,12 @@ def generate_site(meta, selected, built):
         with log.stage('Layout analysis'):
             layout_build.run(meta)
 
+    if not failed and not plugin_failures and meta.get('strict'):
+        try:
+            meta['strict']()            # --strict: a warning fails the build ...
+        except BuildFailed:
+            restore_previous_pages(meta, built)     # ... and --only keeps none of its pages
+            raise
     restore_previous_pages(meta, failed)
     if failed or plugin_failures:
         raise BuildFailed(', '.join(f'{n} {what}' for n, what in ((len(failed), 'page(s) failed'),

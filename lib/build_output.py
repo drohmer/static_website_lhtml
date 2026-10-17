@@ -7,10 +7,15 @@ import uuid
 
 
 @contextmanager
-def staged_site(meta):
+def staged_site(meta, copy=False):
+    """The build in a staging directory, published when it completes.
+    `copy`: the staging directory starts as a copy of the site (a partial
+    build that must publish nothing if it is refused: --only --strict)."""
     target = Path(meta['site_directory']).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.site-build-', dir=target.parent))
+    if copy and target.is_dir():
+        shutil.copytree(target, staging, symlinks=True, dirs_exist_ok=True)
     original = meta['site_directory']
     meta['published_site_directory'] = target
     meta['site_directory'] = staging

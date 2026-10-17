@@ -52,6 +52,13 @@ def scope_files(root, kind):
     return found
 
 
+def source_files(meta):
+    """The files of the sources, relative to their directory: what a
+    partial build cannot remove from the site when one goes."""
+    root = Path(meta['source_directory'])
+    return sorted(path.relative_to(root).as_posix() for path in scope_files(root, 'sources'))
+
+
 def canonical_input(path, meta):
     """A file in a staged/copied site -> its original source, never a staging path."""
     path = Path(path).resolve()
@@ -200,9 +207,11 @@ class BuildStore:
         self.path = Path(meta['config_directory']) / '.verification' / (meta.get('build_scope') or '') / 'builds.json'
         try:
             value = json.loads(self.path.read_text())
-            self.pages = value.get('pages', {}) if value.get('schema_version') == SCHEMA else {}
+            current = value.get('schema_version') == SCHEMA
+            self.pages = value.get('pages', {}) if current else {}
+            self.sources = value.get('sources') if current else None
         except (OSError, ValueError):
-            self.pages = {}
+            self.pages, self.sources = {}, None
 
     def partial_impossible(self, meta, selected):
         """Why this build cannot stay partial, or None. The site of a
@@ -217,6 +226,10 @@ class BuildStore:
             return 'the structure of the previous build cannot be read'
         if names != [page.site_html for page in selected]:
             return 'the pages of the site changed'
+        if self.sources is not None:    # a partial build adds files, it never removes one
+            gone = sorted(set(self.sources) - set(source_files(meta)))
+            if gone:
+                return f"{len(gone)} source file(s) deleted ({', '.join(gone[:3])}{', ...' if len(gone) > 3 else ''})"
         return None
 
     def expand(self, meta, selected, built):
@@ -252,7 +265,8 @@ class BuildStore:
                 self.pages[name] = make_manifest(meta, entry, meta.get('runtime_resources', {}).get(name, []))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix('.tmp')
-        temporary.write_text(json.dumps({'schema_version': SCHEMA, 'pages': self.pages}, indent=1),
+        temporary.write_text(json.dumps({'schema_version': SCHEMA, 'pages': self.pages,
+                                         'sources': source_files(meta)}, indent=1),
                              encoding='utf-8', newline='\n')
         temporary.replace(self.path)
 

@@ -1970,6 +1970,29 @@ the end to end checks all green). Fixed after it, each with a test:
 The corpus gives the same headings, titles, media files, planned figures
 and lint findings as the scanners did.
 
+*Build safety, from an external review* (2026-10-17; all five findings
+reproduced first, each fixed with a test):
+- a target behind a symbolic link replaced what it pointed to (the sources:
+  `.site/01_a/html -> src/01_a`): `project.plan` refuses a destination with
+  a symbolic link between the site and it, or resolving outside the site;
+- `--only --strict` published a refused build (the pages were written in
+  the site before the check): the check runs before the pages are kept, and
+  with `--strict` a partial build is made in a copy of the site, published
+  only when accepted (slower; `--strict` is for CI). Without `--strict`, a
+  page that fails keeps its previous version, as before;
+- a file deleted from the sources stayed published after `--only` (a
+  partial build adds files, it never removes one): the dependency store
+  records the source files, and `--only` widens to a full build when one is
+  gone;
+- `--clean` looked for the decks first, and failed when the sources were
+  gone: it needs only the configuration;
+- two targets exporting a PDF of one deck wrote the same `<deck>.pdf` and
+  `images/`: refused by `project.plan`.
+The guarantee "a partial build publishes what a full build publishes" is
+a table of cases now (`tests/test_build_safety.py`): a page edited, a file
+of a page added, edited, deleted, a file of the project deleted; and a
+refused partial build publishes nothing.
+
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint
 and the parse do not read the same document, and the ambiguity count of the

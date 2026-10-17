@@ -35,6 +35,7 @@ RUNTIME_KEYS = frozenset((
     'only',                         # --only: the build is made in the site, for some pages
     'structure', 'built',           # all the pages of the site / those generated (lib/structure.py)
     'previous_pages',               # --only: HTML of the pages before the build (restored if they fail)
+    'strict',                       # --strict: the check of the warnings, before the pages are kept
     'loaded_design', 'macros',      # the design (lib/design.py) and its macros for LHTML
     'lint_findings',                # {source path: [finding]} of the generated pages (lib/lint.py)
     'measure',                      # --only: the pages the layout report measures again

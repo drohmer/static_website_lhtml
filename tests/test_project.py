@@ -229,6 +229,28 @@ class BuildTests(ProjectTests):
                       result.stdout)
         self.assertEqual((self.root / '_site/01_a/html/02_y/index.html').read_text(), before)   # not published
 
+    def test_clean_needs_no_sources(self):
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}})
+        self.assertEqual(self.build().returncode, 0)
+        shutil.rmtree(self.root / 'src')
+        result = self.build('--clean')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / '_site').exists())
+
+    def test_strict_with_only_keeps_the_previous_pages(self):
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}})
+        self.assertEqual(self.build().returncode, 0)
+        page = self.root / '_site/01_a/html/01_x/index.html'
+        before = page.read_text()
+        self.page('src/01_a/01_x/index.html.j2', '= A new\ngap::zz\n')
+        result = self.build('--only', '01_a/01_x', '--strict')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('1 warning(s) with --strict', result.stdout)
+        self.assertEqual(page.read_text(), before)                  # the refused page is not published
+        self.page('src/01_a/01_x/index.html.j2', '= A new\n')
+        self.assertEqual(self.build('--only', '01_a/01_x', '--strict').returncode, 0)
+        self.assertIn('A new', page.read_text())                     # and is built again once fixed
+
     def test_strict_counts_the_warnings_of_the_configuration(self):
         self.write(decks='directories', targets={'html': {'theme': 'slides'}}, unknown_key=1)
         result = self.build('--strict')

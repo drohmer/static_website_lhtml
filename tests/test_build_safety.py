@@ -320,3 +320,65 @@ def test_a_partial_build_gives_the_same_site_as_a_full_one(tmp_path):
     widened, said = published('--only', 'a', '-v')
     assert 'full build' in said, said
     assert widened == expected, 'a widened build must publish what a full build publishes'
+
+
+def _remove(path):
+    path.unlink()
+
+
+PARTIAL_CASES = {
+    # change of the sources between a full build and `--only b`
+    'a page edited': lambda src: (src / 'b/index.html.j2').write_text('= Page b\n* edited\n'),
+    'a file of a page added': lambda src: (src / 'b/new.js').write_text('var added = 1;\n'),
+    'a file of a page edited': lambda src: (src / 'b/script.js').write_text('var edited = 2;\n'),
+    'a file of a page deleted': lambda src: _remove(src / 'b/script.js'),
+    'a file of the project deleted': lambda src: _remove(src / 'top.js'),
+}
+
+
+@pytest.mark.parametrize('case', PARTIAL_CASES)
+def test_a_partial_build_publishes_what_a_full_one_does(tmp_path, case):
+    """After each kind of change, `--only` on a page publishes the site a
+    full build publishes; when it cannot stay partial (a file deleted: it
+    only adds files), it widens to a full build."""
+    source = tmp_path / 'src'
+    for name in ('a', 'b'):
+        (source / name).mkdir(parents=True)
+        (source / name / 'index.html.j2').write_text(f'= Page {name}\n* first\n')
+    (source / 'b/script.js').write_text('var first = 1;\n')
+    (source / 'top.js').write_text('var top = 1;\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                      'theme': str(REPO / 'themes/slides')}))
+    site = tmp_path / 'site'
+    assert build(config).returncode == 0
+    PARTIAL_CASES[case](source)
+    result = build(config, '--only', 'b')
+    assert result.returncode == 0, result.stdout + result.stderr
+    partial = site_fingerprint(site)
+    shutil.rmtree(site)
+    assert build(config).returncode == 0
+    assert partial == site_fingerprint(site), case
+
+
+def test_a_refused_partial_build_publishes_nothing(tmp_path):
+    """`--only --strict` with a warning, or a page that fails: the site is
+    the one before, byte for byte."""
+    source = tmp_path / 'src'
+    for name in ('a', 'b'):
+        (source / name).mkdir(parents=True)
+        (source / name / 'index.html.j2').write_text(f'= Page {name}\n')
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                      'theme': str(REPO / 'themes/slides')}))
+    site = tmp_path / 'site'
+    assert build(config).returncode == 0
+    before = site_fingerprint(site)
+    for text, flags in (('= Page b, new\ngap::zz\n', ('--strict',)), ('{% invalid %}', ())):
+        (source / 'b/index.html.j2').write_text(text)
+        assert build(config, '--only', 'b', *flags).returncode == 1
+        if flags:                   # --strict: nothing at all
+            assert site_fingerprint(site) == before, text
+        else:                       # a page that fails keeps its previous version
+            after = site_fingerprint(site)
+            assert after['b/index.html'] == before['b/index.html'], text
