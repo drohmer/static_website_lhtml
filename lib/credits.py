@@ -165,15 +165,24 @@ def credits_markdown(pages, credits_of, base, macros=None):
     return '\n'.join(out) + '\n', len(credited), len(missing)
 
 
-def placeholders(pages):
-    """Planned figures: [(page, line, text)] of the placeholder:: of the pages."""
+def placeholders(pages, macros=None):
+    """Planned figures: [(page, line, text)] of the placeholder:: of the pages
+    (the macro of the design), read in the document tree of an LHTML page:
+    the text after it on its line, up to a `::`."""
     found, seen = [], set()
     for page in pages:
         if str(page.src) in seen:
             continue
         seen.add(str(page.src))
-        for number, line in enumerate(page.scan.masked.split('\n'), 1):
-            found += [(page, number, m.group(1).strip()) for m in PLACEHOLDER.finditer(line)]
+        if page.scan.markup == 'markdown':
+            for number, line in enumerate(page.scan.masked.split('\n'), 1):
+                found += [(page, number, m.group(1).strip()) for m in PLACEHOLDER.finditer(line)]
+            continue
+        document = page.scan.document(macros)
+        for node in document.walk() if document else ():
+            if node.kind == 'Element' and node.name == 'placeholder':
+                after = page.scan.text[node.span[0] + len('placeholder::'):].split('\n', 1)[0]
+                found.append((page, node.line, after.split('::', 1)[0].strip()))
     return found
 
 

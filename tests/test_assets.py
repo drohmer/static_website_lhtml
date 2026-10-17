@@ -39,6 +39,16 @@ class CreditsTests(unittest.TestCase):
         self.assertEqual(credits.files_used(text, {'figure': {'tag': 'img', 'url': 'src'}}),
                          ['e.png', 'f.mp4', 'g.jpg'])
 
+    def test_placeholders_are_read_in_the_document_tree(self):
+        from types import SimpleNamespace
+        from lib import source_scan
+        text = ('placeholder:: a walk cycle ::\ncode::[text]\nplaceholder:: not one ::\ncode::[-]\n'
+                '<p title="placeholder:: nor this">x</p>\n')
+        page = SimpleNamespace(src='p', scan=source_scan.Scan(text))
+        macros = {'placeholder': {'class': 'placeholder'}}
+        self.assertEqual([(n, t) for _, n, t in credits.placeholders([page], macros)], [(1, 'a walk cycle')])
+        self.assertEqual(credits.placeholders([page]), [])          # no such macro: text
+
     def test_files_used_are_read_in_the_document_tree(self):
         # img:: inside an HTML attribute is text of that tag, not an image; a
         # src of the attributes of an element is one; a page LHTML refuses has none

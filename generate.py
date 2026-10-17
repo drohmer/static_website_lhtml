@@ -281,7 +281,7 @@ def write_credits_and_todo(meta, selected, log):
                                                        meta['macros'])
     with open(documents / 'credits.md', 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(text)
-    planned_figures = credits.placeholders(selected)
+    planned_figures = credits.placeholders(selected, meta['macros'])
     planned_slides = meta.get('planned_slides') or []
     with open(documents / 'todo.md', 'w', encoding='utf-8', newline='\n') as fid:
         fid.write(credits.todo_markdown(planned_figures, planned_slides, meta['config_directory']))
