@@ -66,7 +66,8 @@ slides named.
    pixel sizes, spacers or font sizes.
 3. Run `--only <slide> --layout`, then read
    `.layout/pages/<slide>/index.html/layout.md`. Look at `render.png` in the
-   same directory, or at `overlay.png` when blocks are close.
+   same directory when the text is not enough; with `images: true` in the
+   `layout:` of the configuration, `overlay.png` numbers the blocks.
 4. Fix the problems, then repeat step 3.
 5. Run `--lint --only <slide>`: the slide should have no finding, or only
    exceptions you can justify.

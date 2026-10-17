@@ -305,4 +305,10 @@ class CheckConfigTests(unittest.TestCase):
             result = self.check(**bad)
             self.assertEqual(result.returncode, 1, (bad, result.stdout + result.stderr))
         self.assertEqual(self.check(jobs=2).returncode, 0)
+        for images in (True, 'render', False):
+            self.assertEqual(self.check(images=images).returncode, 0, images)
+
+    def test_images_are_the_render_alone_by_default(self):
+        from lib.layout_options import DEFAULTS
+        self.assertEqual(DEFAULTS['images'], 'render')
         self.assertIn('unknown: widht', ' '.join(self.check(widht=10).stdout.split()))

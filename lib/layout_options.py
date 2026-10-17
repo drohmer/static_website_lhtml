@@ -11,7 +11,7 @@ from lib.configuration import GENERATOR_DIRECTORY, ConfigError
 # The fallback of a theme that declares nothing (lib/theme.py). A theme
 # says what its content is and what size a page has; a project says what it
 # wants measured and how. Engine, then theme, then project.
-DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': True,
+DEFAULTS = {'root': 'body', 'exclude': 'nav, footer', 'width': 1920, 'height': 1080, 'images': 'render',
             'threshold': 4, 'output': '.layout/', 'max_words': 80, 'min_font': 20,
             'contact_columns': 4, 'contact_rows': 4, 'jobs': 'auto'}
 
@@ -74,8 +74,8 @@ def validate(meta, log=None):
     for key in COUNT_OPTIONS:
         if isinstance(options[key], bool) or not isinstance(options[key], int) or options[key] <= 0:
             raise ConfigError(f"layout: '{key}' must be a positive integer, not {options[key]!r}")
-    if not isinstance(options['images'], bool):
-        raise ConfigError(f"layout: 'images' must be a boolean, not {options['images']!r}")
+    if not (isinstance(options['images'], bool) or options['images'] == 'render'):
+        raise ConfigError(f"layout: 'images' must be true, 'render' or false, not {options['images']!r}")
     for key, kind in OTHER_OPTIONS.items():
         if key in given and not isinstance(given[key], kind):
             raise ConfigError(f"layout: '{key}' must be a mapping, not {given[key]!r}")

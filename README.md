@@ -858,10 +858,12 @@ Files:
   about, `text` the line of the report, `data` the row the check produced
   (its measured values). Read it instead of parsing `layout.md`
 - `pages/<relative HTML path>/render.png`: the real render
-- `pages/<relative HTML path>/overlay.png`: the real render with the outlined ink of each block and its number
-- `pages/<relative HTML path>/blocks.png`: the ink of each block as solid rectangles, content hidden
-- `pages/<relative HTML path>/internal-overlay.png`: the render with the inner blocks outlined
-  (columns, paragraphs, list items, figures, captions, formulas)
+- with `images: true` only (they take a third of the time of the measure):
+  `pages/<relative HTML path>/overlay.png`, the real render with the outlined
+  ink of each block and its number; `blocks.png`, the ink of each block as
+  solid rectangles, content hidden; `internal-overlay.png`, the render with
+  the inner blocks outlined (columns, paragraphs, list items, figures,
+  captions, formulas). `layout.md` gives the same blocks, as text
 
 Coordinates are CSS pixels, origin at the top-left corner of the page
 (1920×1080 for slides); the usable area is the inside of the slide frame.
@@ -1049,14 +1051,15 @@ layout:
     exclude: 'nav, footer'      # children of the root that are not content
     width: 1920                 # viewport size
     height: 1080
-    images: true                # write overlay.png / blocks.png / internal-overlay.png and contact sheets
+    images: render              # render.png and the contact sheets; true: also overlay.png, blocks.png,
+                                # internal-overlay.png; false: no image (the fastest)
     threshold: 4                # minimal overlap / overflow reported (px)
     output: '.layout/'
     max_words: 80               # DENSE above this number of words per slide
     min_font: 20                # SMALL FONT below this font size (px), when design_rules is disabled
     contact_columns: 4          # thumbnails per row and rows per contact sheet
     contact_rows: 4
-    jobs: auto                  # pages measured at the same time (tabs of one browser); auto: half of the processors, at most 6
+    jobs: auto                  # pages measured at the same time (a window each); auto: half of the processors, at most 6
     design_rules:               # DESIGN checks (defaults at 1920 px, scaled with the width)
       enabled: true
       roles:

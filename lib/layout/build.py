@@ -9,9 +9,9 @@ rendered. For each page, the report is written to <config_dir>/.layout/pages/
                  warnings, differences with the rest of the deck, density
     layout.json  raw measurements and analysis
     render.png   real render
-    overlay.png  real render with numbered block outlines
-    blocks.png   one solid rectangle per block (content hidden)
-    internal-overlay.png  real render with the inner blocks outlined
+    overlay.png  real render with numbered block outlines        (images: true)
+    blocks.png   one solid rectangle per block (content hidden)   (images: true)
+    internal-overlay.png  real render with the inner blocks outlined (images: true)
 
 <config_dir>/.layout/summary.md lists all pages sorted by number of problems,
 with the usual values of the deck (title position, columns, body font size,
@@ -34,7 +34,9 @@ Options (configure.yaml, under `layout:`):
                            # these four describe the theme and are declared in
                            # its theme.yaml (lib/theme.py); a project sets them
                            # here only to override what its theme says
-      images: true         # write overlay.png / blocks.png
+      images: render       # render.png and the contact sheets (the default);
+                           # true: overlay.png, blocks.png, internal-overlay.png
+                           # too; false: no image
       threshold: 4         # minimal overlap / overflow (px) reported
       output: '.layout/'   # output directory, relative to the config directory
       max_words: 80        # DENSE above this number of words per slide
@@ -61,6 +63,10 @@ from lib.layout_options import jobs, options_of, output_directory, validate as v
 from lib.lint import Linter
 from lib.report_lock import report_lock
 from lib.structure import built_pages, page_path, structure
+
+# The images of a page, by the value of the option `images` that writes them
+IMAGES = {'render.png': (True, 'render'),
+          'overlay.png': (True,), 'blocks.png': (True,), 'internal-overlay.png': (True,)}
 
 
 def _clean_after_measure(output_dir, pages, previous, partial, start):
@@ -205,9 +211,17 @@ def _measure_and_report(meta):
         run_node_on('layout_measure.js', [{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages],
                     [f"--root={options['root']}", f"--exclude={options['exclude']}",
                      f"--width={options['width']}", f"--height={options['height']}",
-                     f"--images={1 if options['images'] else 0}", f"--jobs={jobs(options)}"],
+                     f"--images={ {True: 1, 'render': 'render', False: 0}[options['images']] }",
+                     f"--jobs={jobs(options)}"],
                     'Measure layout', options['chrome'], log)
     _clean_after_measure(output_dir, pages, previous, partial, start)
+    for p in pages:                         # images of another value of `images`: not of this measure
+        for name, written_by in IMAGES.items():
+            if options['images'] not in written_by:
+                try:
+                    os.remove(os.path.join(p['out'], name))
+                except OSError:
+                    pass
 
     remeasured = {p['name'] for p in pages}
     measured = []
