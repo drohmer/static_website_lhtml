@@ -1641,6 +1641,24 @@ transformation of the page too: the site-wide writes of version 2 (menu,
 redirection, PDF) are stages of the build since N1-N2, and no project of the
 corpus had one of its own.
 
+*The corpus migrated* (2026-10-17). The five copies are built by this
+generator from a `configure.yaml` each - no build script, no vendored
+generator - with the themes they were built with (`themes/`, a `theme.yaml`
+added), so that `compare.sh` measures the generator rather than the
+evolution of the themes. Against the references built by their own old
+generators, every difference has a reason, listed in the README of the
+corpus: files no longer published (`config.yaml`, hidden files, the build
+documents, settings the theme does not display), files added (per-page
+heading summaries, the theme manifest, `design.css`), the heading ids of
+`main` where two projects were built by another branch, titles keeping
+their punctuation, `playsinline`, and 14 pages of csc six directories deep
+that the old generator never built. The comparison found and fixed four
+defects of the generator: `expandable-toc` dropped from the menu (cgp), a
+build failing without `ffpb` (a warning now, the video shown as written),
+the PDF export losing a page to Chrome's timeout under load (fewer Chromes,
+a page tried again), and transcoded variants given to a PDF target, whose
+pages show one frame (Chrome missed its timeout on a vp9 page).
+
 **N5. A prototype of the structured parser** (the old N4), compared with
 the current engine on the tests and on the corpus - `csc_43043` first, the
 largest and the one where it would be wrong first: 802 `code::`, 2452
