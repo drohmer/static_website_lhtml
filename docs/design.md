@@ -1789,7 +1789,7 @@ the tree alone. Compared with `run`:
 |---|---|---|
 | LHTML's tests | 301 of 304 | 3: the handlers of 3.0, not kept |
 | the corpus, 914 calls | 912 | 2: the crossing of csc, closed in its item |
-| 80 000 fuzzed documents | 70 365 | 9 635, each a crossing, each warned |
+| 80 000 fuzzed documents | 70 364 | 9 636, each a crossing, each warned |
 
 The warnings are the same, at the same places. The fuzzer found what the
 corpus could not: an unknown name (`lspan::`) whose element `run` skips
