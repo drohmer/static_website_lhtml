@@ -1701,19 +1701,20 @@ do with a crossing.
 Document(children, problems)                 problems: warnings with their place
 Text(value)                                  as written, newlines included (no <p>)
 Heading(level, attributes, children)         = Title, =(.c #id) Title
-List(items)                                  * / ** / ***: ListItem(children, sublist)
+List(children), Item(children)               * / ** / ***: a deeper List in an Item of its own
 Strong(children), Emphasis(children)         **...**, __...__ (one line)
 Element(name, groups, value, children, closed)
     name      the tag: div, img, link, a macro...
     groups    the bracket groups as written: style [..], classes and id (..), attributes {..}
     value     the word glued after the groups (a URL, a variant: img::a.png, gap::l)
     children  for a container (div::, span::, a macro with a class); a link's
-              label [..] is its children, read as text
-    closed    'tag' (closed by ::), 'inline' (div::text::), 'void' (img::), 'never'
+              label [..] is in groups['[]'], as HTML (its bold, its italic)
+    closed    'tag' (closed by ::), 'inline' (div::text::), 'void' (img::),
+              'container' (at the end of its heading, item, bold), 'never'
 Code(language, body)                         code::[lang] ... code::[-]   opaque
 InlineCode(text)                             `...`                        opaque
 Math(text, display)                          \(..\), \[..\]               opaque
-Raw(kind, text)                              an HTML tag, comment, <script>/<style>,
+Raw(raw_kind, text)                          an HTML tag, comment, <script>/<style>,
                                              a Jinja zone                 opaque
 ```
 
@@ -1732,7 +1733,7 @@ another.
 
 ```python
 document = lhtml.parse(text, tags=None, macros=None)   # no file read, no rendering
-html     = lhtml.render(document, media=None, line_breaks=False)
+html     = lhtml.render(document, meta=None, media=None)   # meta: line-breaks, wrap-auto...
 lhtml.run(text, meta, tags)                            # parse + render, as today
 ```
 
@@ -1743,8 +1744,8 @@ pushing onto `tag_to_close`; a parser must know it before. So a tag
 declares it:
 
 ```python
-lhtml.TAGS['alert'] = lhtml.Tag(container=True,
-                                render=lambda element, children, context: ...)
+alert = lhtml.Tag(render=lambda element, children, context: ..., container=True)
+lhtml.run(text, meta, tags={'alert': alert})        # lhtml.TAGS is read-only
 ```
 
 `render` receives the element and the HTML of its children, and returns
@@ -1811,6 +1812,40 @@ old handlers migrated), the generator's 347, both on Windows too; the 914
 corpus calls (912 identical, the two crossings of csc changed on purpose);
 the five projects built (`compare.sh`), whose only new difference is that
 crossing, on one page of csc in two chapters, the PDFs unchanged.
+
+*Reviewed* (2026-10-17, three agents: the code, invariants over 55 000
+fuzzed documents, the API and its documentation). What they found, fixed
+in LHTML 821b240 with a test each:
+- a document nesting a few hundred levels raised RecursionError (the walk,
+  the spans and the render recursed): none recurses now;
+- the crossings were decided twice, by the stage that matches `::` and by
+  the tree, which disagreed: in `div:: a **x :: y** b ::` the stage gave
+  the inner `::` to the div, the tree refused it, and the last `::` stayed
+  as text. The stage now keeps the container of each open element: a
+  `::` closes the last one in the same container only (the inner one
+  closes nothing, warned at the `::`), and an element is closed at the end
+  of its container once, with one warning naming it. The two csc pages
+  gain from it: the `::` after the list, which the closed `span::` took,
+  now closes the outer `::[font-size...]` div (LHTML 2 left it open);
+- the crossings the shape did not cover are refused, not swallowed: an
+  italic across a bold (`**b __c** d__` lost its second `__`), a link
+  label across the end of a heading, an item or a bold. Both stay text,
+  with a warning; the swallow mechanism goes;
+- places: a node the parser adds (the line break of a last item) had none
+  and pulled its parent's span to offset 0; an element closed by its
+  container reached its stray `::`; spans were offsets in the normalized
+  text, not the text given (a BOM, `\r\n`);
+- unclosed brackets were scanned to the end of the text each, quadratic
+  (35 s for 100 kB): matched once per text now (0.1 s);
+- the Tag API: the anonymous `::` ignored the `div` of the run, `TAGS` was
+  shared and mutable, `name::text::` was held by a `container=True` tag, a
+  failing `render` raised without its place, an old handler failed
+  obscurely, names were not checked; the messages named `<div>` for any
+  tag and "the strong" for a bold.
+
+Checked after: LHTML's 332 tests, the generator's 347, the 914 corpus calls
+(912 identical, the two of csc as above), and the invariants on 40 000 new
+fuzzed documents: none broken, every timing linear up to 100 kB.
 
 **N6. The consumers migrated to the tree, one at a time** (the old N5).
 
