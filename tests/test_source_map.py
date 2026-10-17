@@ -48,7 +48,7 @@ a < b
 
 
 def run(text):
-    return lhtml.run(text, {'macros': MACROS})
+    return lhtml.run(text, macros=MACROS)
 
 
 class SourceMapTests(unittest.TestCase):
@@ -121,9 +121,9 @@ class SourceMapTests(unittest.TestCase):
 
     def test_same_html_with_line_breaks(self):
         page = 'line one<br>\n\nline two\n<b>bold</b>\ntext <i>it</i>\n'
-        options = {'macros': MACROS, 'line-breaks': True}
-        self.assertEqual(source_map.strip(lhtml.run(source_map.add_markers(page, 's', TAGS), options)),
-                         lhtml.run(page, options))
+        options = {'macros': MACROS, 'line_breaks': True}
+        self.assertEqual(source_map.strip(lhtml.run(source_map.add_markers(page, 's', TAGS), **options)),
+                         lhtml.run(page, **options))
 
     def test_no_markers_in_the_value_blocks_of_jinja(self):
         page = ('{% set word %}\nhello\n{% endset %}\n{% markdown %}\nTitle\n-----\n{% endmarkdown %}\n'

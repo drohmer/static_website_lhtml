@@ -61,7 +61,7 @@ class CreditsTests(unittest.TestCase):
                     config={'credits': {'x.jpg': {'author': '__init__ & co', 'source': 'a::b [c] *d*'}}})
         text = credits.credit_function(page, credits.page_credits(page))('x.jpg')
         self.assertNotIn('__', text)
-        self.assertEqual(lhtml.run(text, {}), '&#95;&#95;init&#95;&#95; &amp; co, a&#58;&#58;b &#91;c&#93; &#42;d&#42;')
+        self.assertEqual(lhtml.run(text), '&#95;&#95;init&#95;&#95; &amp; co, a&#58;&#58;b &#91;c&#93; &#42;d&#42;')
 
 
 class AssetsBuildTests(unittest.TestCase):

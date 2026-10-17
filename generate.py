@@ -493,13 +493,13 @@ def render_lhtml(meta, selected, log, failed_before=()):
 
         # The macros of the design, the video variants, the line breaks; not
         # `wrap-auto`: the theme wraps the page (lib/wrap.py)
-        options = {'macros': meta.get('macros'), 'line-breaks': meta.get('line_breaks', False),
+        options = {'macros': meta.get('macros'), 'line_breaks': meta.get('line_breaks', False),
                    'media': video_cache.media(meta['site_directory'] / page.site_directory)}
 
         try:
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
-                output_html = lhtml.run(input_html, options) if page.markup == 'lhtml' else input_html
+                output_html = lhtml.run(input_html, **options) if page.markup == 'lhtml' else input_html
             for warning in sorted(caught, key=lambda w: (getattr(w.message, 'line', None) or 0,
                                                          getattr(w.message, 'column', None) or 0)):
                 # where they are in the source, in the order of the page

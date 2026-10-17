@@ -101,7 +101,7 @@ class MediaResolverTests(unittest.TestCase):
             ('assets/cache_video_codecs/clip-h264.mp4', 'video/mp4')])
 
     def test_no_variant_keeps_the_source_as_written(self):
-        html = lhtml.run('video::assets/clip.mp4\n', {'media': media(str(self.page))})
+        html = lhtml.run('video::assets/clip.mp4\n', media=media(str(self.page)))
         self.assertIn('<source src="assets/clip.mp4" type="video/mp4">', html)
 
     def test_only_a_video_of_an_assets_directory_has_variants(self):
