@@ -42,6 +42,7 @@ RUNTIME_KEYS = frozenset((
     'source_roots',                 # the sources read by each page (lib/tracking.py)
     'dependency_contexts', 'dependency_store', 'dependency_measure',
     'template_dependencies',        # what each page depends on (lib/dependencies.py)
+    '_dependency_engine', '_dependency_theme_scopes',   # the same for all its pages: read once
     'analyse_layout',               # --layout: the build runs the layout analysis (lib/layout/build.py)
     'publish_site',                 # a target asks for its intermediate site not to be published
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)

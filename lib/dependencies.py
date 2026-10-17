@@ -109,18 +109,31 @@ def input_snapshot(meta, entry, extra=()):
         add(path, 'design')
     for path in meta.get('plugin_paths', []):
         add(path, 'plugin')
-    # Changes to the evaluator invalidate previous measurements too.
-    for directory in ('lib', 'plugins'):
-        for path in scope_files(Path(meta['lib_directory']) / directory, 'engine'):
-            if path.suffix in ('.py', '.js'):
-                add(path, 'engine')
+    # Changes to the evaluator invalidate previous measurements too. The
+    # same for every page of a build: listed and hashed once
+    engine = meta.get('_dependency_engine')
+    if engine is None:
+        engine = {}
+        for directory in ('lib', 'plugins'):
+            for path in scope_files(Path(meta['lib_directory']) / directory, 'engine'):
+                if path.suffix in ('.py', '.js'):
+                    path = canonical_input(path, meta)
+                    engine[str(path)] = {'sha256': file_hash(path, cache), 'kind': 'engine'}
+        meta['_dependency_engine'] = engine
+    files.update(engine)
     add(Path(meta['lib_directory']) / 'generate.py', 'engine')
     for path in extra:
         add(path, 'included_or_runtime')
     scopes = []
+    themes = meta.setdefault('_dependency_theme_scopes', {})     # one theme for all the pages
     for root, kind in ((meta['theme'], 'theme'), (Path(entry['src']).parent, 'assets')):
+        if kind == 'theme' and str(root) in themes:
+            scopes.append(themes[str(root)])
+            continue
         members = {str(p.resolve()): file_hash(p, cache) for p in scope_files(root, kind)}
         scopes.append({'root': str(Path(root).resolve()), 'kind': kind, 'members': members})
+        if kind == 'theme':
+            themes[str(root)] = scopes[-1]
     name = page_path(entry)
     context = json.loads(json.dumps(meta.get('dependency_contexts', {}).get(name, {'source': entry['src']}), default=str))
     payload = {'files': files, 'scopes': scopes, 'context': context}

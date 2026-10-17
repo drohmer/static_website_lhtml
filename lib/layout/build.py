@@ -13,6 +13,13 @@ rendered. For each page, the report is written to <config_dir>/.layout/pages/
     blocks.png   one solid rectangle per block (content hidden)   (images: true)
     internal-overlay.png  real render with the inner blocks outlined (images: true)
 
+A page is measured again only when something it shows changed: its report
+is kept when its HTML and every file it loaded (styles, images, fonts,
+videos: the manifest of lib/dependencies.py) are those it was measured
+with, with the same options of the measure and the same measuring script.
+Its analysis is made again (the usual values of the deck may have moved).
+Delete <config_dir>/.layout/ to measure everything again.
+
 <config_dir>/.layout/summary.md lists all pages sorted by number of problems,
 with the usual values of the deck (title position, columns, body font size,
 ...: also in deck.json), and contact_NN.png shows thumbnails of all pages.
@@ -48,6 +55,7 @@ Options (configure.yaml, under `layout:`):
 """
 import json
 import os
+from pathlib import Path
 import shutil
 import time
 import traceback
@@ -57,7 +65,7 @@ from lib.filesystem import shown
 from lib.configuration import ConfigError
 from lib.layout.analysis import analyse, deck_norms
 from lib.layout.findings import count_problems
-from lib.layout.measure import run_node_on, warn_degenerate_root, write_contact_sheets
+from lib.layout.measure import SCRIPTS, run_node_on, warn_degenerate_root, write_contact_sheets
 from lib.layout.report import changes_markdown, layout_changes, page_markdown, summary_markdown
 from lib.layout_options import jobs, options_of, output_directory, validate as validate_options
 from lib.lint import Linter
@@ -107,6 +115,35 @@ def _read_json(path):
 def _write(path, text):
     with open(path, 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
         fid.write(text)
+
+
+def _measure_key(options):
+    """What a measure depends on besides the page: the options of the
+    measure, the browser asked for and the script that measures."""
+    return {**{k: options[k] for k in ('width', 'height', 'root', 'exclude', 'images', 'chrome')},
+            'script': dependencies.file_hash(SCRIPTS / 'layout_measure.js')}
+
+
+def _reusable(meta, page, key, hashes):
+    """Whether the report of a page still describes what it shows: measured
+    with the same options and script, from the same source, ready, every
+    file it loaded unchanged (none outside the site's reach), its images
+    there."""
+    layout = _read_json(os.path.join(page['out'], 'layout.json'))
+    if (layout is None or layout.get('measure') != key
+            or layout.get('source') != shown(page['source'], meta.get('config_directory') or '.')
+            or (layout.get('render_health') or {}).get('status') != 'ready'):
+        return False
+    manifest = layout.get('dependencies') or {}
+    artifacts = manifest.get('artifacts') or {}
+    if page['name'] not in artifacts or manifest.get('external_resources'):
+        return False
+    site = Path(meta['site_directory'])
+    if any(dependencies.file_hash(site / relative, hashes) != expected
+           for relative, expected in artifacts.items()):
+        return False
+    return all(os.path.isfile(os.path.join(page['out'], name))
+               for name, written_by in IMAGES.items() if key['images'] in written_by)
 
 
 def _same_source(report, page, meta):
@@ -189,6 +226,12 @@ def _measure_and_report(meta):
     # build measures only the pages named); the others keep their report
     requested = meta.get('measure')
     pages, previous, entries, partial = _select_pages(meta, output_dir, requested)
+    key = _measure_key(options)
+    hashes = {}                             # a file loaded by several pages is read once
+    reused = [p for p in pages if _reusable(meta, p, key, hashes)]      # nothing it shows changed
+    reused_names = {p['name'] for p in reused}
+    pages = [p for p in pages if p['name'] not in reused_names]
+    previous = previous + reused
 
     # Read (and do not remove) the previous measure of the pages measured
     # again, for changes.md: nothing is deleted before the measurement, so a
@@ -205,7 +248,7 @@ def _measure_and_report(meta):
     if requested:
         log.detail(f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
                    f'the others keep their report (--layout for all)')
-    log.detail(f'Measure layout of {len(pages)} pages ...')
+    log.detail(f'Measure layout of {len(pages)} pages ({len(reused)} unchanged, kept) ...')
     start = time.time()
     if pages:
         run_node_on('layout_measure.js', [{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages],
@@ -239,8 +282,10 @@ def _measure_and_report(meta):
     rows = []
     for p, layout_path, layout in measured:
         entry = entries[p['name']]
-        if p['name'] in remeasured:
+        if p['name'] in remeasured or p['name'] in reused_names:
             _analyse_page(meta, p, entry, layout, norms, options, linter)
+        if p['name'] in remeasured:
+            layout['measure'] = key
         # a retained measure: its validity is refreshed, not its geometry
         layout['freshness'] = dependencies.freshness(layout.get('dependencies'), meta, entry)
         _write(layout_path, json.dumps(layout, indent=1))
@@ -267,7 +312,8 @@ def _measure_and_report(meta):
     if previous_layouts:
         log.info(f"Layout changes: {len(changes)} page(s) changed -> "
                  f"{shown(os.path.join(output_dir, 'changes.md'))}")
-    log.info(f"Layout report: {len(pages)} measured, {len(rows)} pages, {n_problems} problems -> "
+    log.info(f"Layout report: {len(pages)} measured{f', {len(reused)} unchanged' if reused else ''}, "
+             f"{len(rows)} pages, {n_problems} problems -> "
              f"{shown(os.path.join(output_dir, 'summary.md'))}")
     if len(rows) < len(pages) + len(previous):
         raise RuntimeError(f'layout measurement failed for {len(pages) + len(previous) - len(rows)} page(s)')

@@ -818,6 +818,28 @@ What remains: with the budget raised, one of the ten pages holding videos
 still differs by one `NEAR-ALIGNED` between two runs. Known, and small
 enough to wait for the finding schema.
 
+*The cause, found* (2026-10-17). The budget was never the cause: the tabs
+of one window are hidden but one, and Chrome defers the loading of the
+videos of a hidden page. Logged on soiree (78 slides, 21 videos): every
+video that waited the 30 s did so in a tab whose document was `hidden`;
+every one that loaded at once in a visible one; one tab never waits. Each
+worker now measures in a window of its own: no video measured without its
+dimensions, three full runs in a row with 0 changed pages, and the deck in
+33 s instead of 49. The health of a page is read before its blocks, so a
+video whose dimensions arrive during the extraction makes it `incomplete`.
+
+*A report kept when nothing it shows changed* (2026-10-17). The manifest
+of each page (lib/dependencies.py: its HTML and every file it loaded,
+hashed) tells whether a report still describes the page: a full `--layout`
+measures again only the pages whose manifest, options of the measure,
+Chrome or measuring script changed, and makes the analysis of all of them
+again (the usual values of the deck may move). A contact sheet is taken
+again only when its HTML or one of its pictures changed. With `images:
+render` by default (the overlays on demand): on soiree, 6 s when nothing
+changed (49 s before), 9 s after editing one slide, 26 s for all of it;
+the report kept is identical to the one measured from scratch but for the
+name of the staging directory in the URLs.
+
 ## 6. Module layout
 
 ```

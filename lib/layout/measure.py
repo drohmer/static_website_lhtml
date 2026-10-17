@@ -71,7 +71,8 @@ def run_node(script, arguments, label=None, chrome=None, log=None):
 
 def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None):
     """Write contact_NN.html and screenshot them as contact_NN.png (only the
-    sheets showing the pages `changed`, a set of row indices, when given)."""
+    sheets showing the pages `changed`, a set of row indices, when given). A
+    sheet whose HTML is the one of its picture already is not taken again."""
     sheets = []
     per_sheet = options['contact_columns'] * options['contact_rows']
     for i, html in enumerate(contact_sheets_html(rows, viewport, options['contact_columns'],
@@ -79,9 +80,19 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         if changed is not None and not any((i - 1) * per_sheet <= k < i * per_sheet for k in changed):
             continue
         html_path = os.path.abspath(os.path.join(output_dir, f'contact_{i:02d}.html'))
+        png_path = html_path[:-len('.html')] + '.png'
+        try:                                # the same sheet of the same pictures: kept
+            shown_renders = [os.path.join(output_dir, rel, 'render.png')
+                             for _, rel, _ in rows[(i - 1) * per_sheet:i * per_sheet]]
+            with open(html_path, encoding='utf-8') as fid:
+                if fid.read() == html and os.path.getmtime(png_path) >= max(
+                        [os.path.getmtime(html_path)] + [os.path.getmtime(r) for r in shown_renders]):
+                    continue
+        except OSError:
+            pass
         with open(html_path, 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
             fid.write(html)
-        sheets.append({'html': html_path, 'png': html_path[:-len('.html')] + '.png'})
+        sheets.append({'html': html_path, 'png': png_path})
     if not sheets:
         return
     run_node_on('layout_contact.js', sheets, [], 'Contact sheets', options['chrome'], log)

@@ -826,7 +826,13 @@ python generate.py --only 03_squelette/04_ik --layout   # after editing a slide
 
 The measure shows its progress (pages measured, time left). With `--only`,
 only those pages are measured, and the summary keeps the other pages of the
-previous report. Output in `.layout/` (next to the configuration file). Each page has a unique `pages/<relative HTML path>/` directory, for example `pages/chapter/a.html/layout.json`. The output path remains configurable and is checked before deletion: it cannot overlap sources, theme, site or cache, or contain the configuration, generator or plugin files. Paths through symbolic links are checked too.
+previous report. Without it, a page is measured again only when something
+it shows changed: its report is kept when its HTML and every file it loaded
+(styles, images, fonts, videos) are those it was measured with, with the
+same options of the measure, the same Chrome and the same measuring script;
+its analysis is made again. On a deck of 78 slides: 6 s when nothing
+changed, 9 s after editing one slide, 26 s for all of it. Delete `.layout/`
+to measure everything again. Output in `.layout/` (next to the configuration file). Each page has a unique `pages/<relative HTML path>/` directory, for example `pages/chapter/a.html/layout.json`. The output path remains configurable and is checked before deletion: it cannot overlap sources, theme, site or cache, or contain the configuration, generator or plugin files. Paths through symbolic links are checked too.
 
 Files:
 
