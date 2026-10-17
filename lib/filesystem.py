@@ -14,12 +14,16 @@ BUILD_DIRECTORIES = ('.site-build-', '.site-backup-')
 
 def shown(path, start=None):
     """A path as a message or a report writes it: with '/', on Windows too,
-    relative to `start` (the current directory by default) when it can be,
-    absolute otherwise (another drive)."""
+    relative to `start` (a link of a report: it may climb out of it), or to
+    the current directory (a message) when it is inside it, absolute
+    otherwise (outside it, another drive)."""
     try:
-        return Path(os.path.relpath(path, start or os.curdir)).as_posix()
+        relative = Path(os.path.relpath(path, start or os.curdir))
     except ValueError:
         return Path(path).as_posix()
+    if start is None and relative.parts[:1] == ('..',):
+        return Path(os.path.abspath(path)).as_posix()
+    return relative.as_posix()
 
 
 def read_text(path):

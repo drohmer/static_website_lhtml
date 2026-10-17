@@ -13,8 +13,8 @@ import os
 import shutil
 import tempfile
 import argparse
-from contextlib import contextmanager
 import sys
+import time
 import importlib.util
 import traceback
 import warnings as python_warnings
@@ -51,6 +51,10 @@ from lib.structure import documents_directory
 import lhtml
 
 
+class BuildFailed(Exception):
+    """Pages or plugins failed: each said so where it failed."""
+
+
 # Configuration & CLI
 
 def parse_arguments():
@@ -60,6 +64,10 @@ def parse_arguments():
                         help='Display more information and keep temporary files.')
     debug_group.add_argument('--no-debug', dest='debug', action='store_false',
                              help='Disable debug mode configured in YAML.')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Display the stages of the build, their time, and what they did.')
+    parser.add_argument('--strict', action='store_true',
+                        help='A warning fails the build (exit code 1), as an error does.')
     parser.add_argument('-c', '--clean', action='store_true',
                         help='Clean the output directories.')
     parser.add_argument('-i', '--input_config',
@@ -156,7 +164,7 @@ def run_plugins(meta, hook_name, log):
         try:
             module = load_plugin(full_path)
             if hasattr(module, hook_name):
-                log.keyvalue('Run plugin', full_path.split('/')[-1])
+                log.detail(f"plugin {full_path.split('/')[-1]}")
                 getattr(module, hook_name)(meta)
         except ConfigError as e:        # what it was asked to do, not what happened
             log.error(f'{e} (configuration of {os.path.basename(full_path)})')
@@ -204,7 +212,7 @@ def select_pages(meta, log, scaffold=False):
     result = deck.apply_deck(loaded_deck, found)
     if scaffold and result.missing:
         for path in deck.scaffold(result.missing, meta['source_directory']):
-            log.keyvalue('info', f'Deck: created {filesystem.shown(path)}', indent_level=1)
+            log.info(f'Deck: created {filesystem.shown(path)}')
         return select_pages(meta, log)
     for warning in result.warnings:
         log.warning(f'Deck: {warning}')
@@ -213,15 +221,14 @@ def select_pages(meta, log, scaffold=False):
     for entry in result.missing:
         log.warning(f"Deck: '{entry.pointer}' ({entry.meta['title']}) has no source yet "
                     f"(--scaffold creates it)")
-    log.keyvalue('info', f'Deck: {result.summary(loaded_deck.duration)}', indent_level=1)
+    log.detail(f'Deck: {result.summary(loaded_deck.duration)}')
     if (extra := result.over_time(loaded_deck.duration)) is not None:
         log.warning(f'Deck: {extra:g} min over the length of the talk ({loaded_deck.duration:g} min, '
                     f"key 'duration' of the deck)")
     if result.unlisted:
         names = ', '.join(p.label for p in result.unlisted[:5])
         more = f' and {len(result.unlisted) - 5} more' if len(result.unlisted) > 5 else ''
-        log.keyvalue('info', f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: '
-                             f'{names}{more}', indent_level=1)
+        log.detail(f'Deck: {len(result.unlisted)} page(s) not in the deck, not generated: {names}{more}')
     meta['planned_slides'] = result.missing
     pages.name_outputs(result.pages)
     return result.pages
@@ -273,7 +280,7 @@ def prepare_data(meta, selected, built, log):
     directories = sorted({dir_site / page.site_directory for page in built}) if only else [dir_site]
     made, cached, errors = figures.build_figures(directories, meta['config_directory'] / figures.CACHE)
     if made or cached:
-        log.keyvalue('info', f'Figures: {made} made, {cached} from the cache', indent_level=1)
+        log.detail(f'Figures: {made} made, {cached} from the cache')
     for script, error in errors:
         log.warning(f"Figure not made: {filesystem.shown(script, dir_site)}: {error}")
 
@@ -311,8 +318,8 @@ def write_credits_and_todo(meta, selected, log):
         fid.write(credits.todo_markdown(planned_figures, planned_slides, meta['config_directory']))
     log.debug(f'Credits: {credited} credited, {missing} image(s) without credit ({documents}/credits.md)')
     if planned_figures or planned_slides:
-        log.keyvalue('info', f'To do: {len(planned_figures)} planned figure(s), {len(planned_slides)} planned '
-                             f'slide(s) ({documents}/todo.md)', indent_level=1)
+        log.info(f'To do: {len(planned_figures)} planned figure(s), {len(planned_slides)} planned '
+                 f'slide(s) ({filesystem.shown(documents / "todo.md")})')
     return credits_of, errors
 
 
@@ -408,7 +415,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
     targets = {id_site: page.site_html for id_site, page in sitemap.items()
                if used is None or 'pathTo_' + id_site in used or 'linkTo_' + id_site in used}
 
-    log.keyvalue('Found', f'{len(built)} template files')
+    log.detail(f'{len(built)} page(s) to render')
     failed = []
     built_set = set(built)
     entries = dict(zip(selected, meta['structure']))
@@ -438,7 +445,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
                                            'credits': deck_credits,
                                            'pathToRoot': page.path_to_root, 'pageID': k})
         except Exception as e:
-            log.error(f'Jinja2 error in {page.site_template}: {e}')
+            log.error(f'Jinja: {e}', jinja_place(e, page, dir_site))
             failed.append(page)
             discard_page(meta, page)
             continue
@@ -452,6 +459,31 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
 def load_project_design(meta):
     """The design of the project: design.yaml of the theme + 'design' of the configuration."""
     return design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
+
+
+def lhtml_place(text, problem, page):
+    """Where a problem LHTML found in `text` (a page as Jinja wrote it) is in
+    the source (a problem that is not LHTML's has no line: the page)."""
+    return source_map.place(text, getattr(problem, 'line', None), getattr(problem, 'column', None),
+                            page.src, filesystem.shown(page.src))
+
+
+def jinja_place(error, page, dir_site):
+    """Where a Jinja error is: a line of a template it names, of the source
+    of the page when the template is the page."""
+    name, line = getattr(error, 'filename', None), getattr(error, 'lineno', None)
+    if line is None:
+        # while rendering: the last frame of a template ('<template>' is the
+        # page, given to Jinja as text; an include has its file)
+        frames = [f for f in traceback.extract_tb(error.__traceback__) if not f.filename.endswith('.py')]
+        if frames:
+            name, line = frames[-1].filename, frames[-1].lineno
+    if line is None:
+        return filesystem.shown(page.src)
+    if name in (None, '<template>') or getattr(error, 'name', None) == page.site_template:
+        with open(dir_site / page.site_template, encoding='utf-8') as fid:
+            return source_map.place(fid.read(), line, None, page.src, filesystem.shown(page.src))
+    return f'{filesystem.shown(name)}:{line}'
 
 
 def render_lhtml(meta, selected, log, failed_before=()):
@@ -483,14 +515,16 @@ def render_lhtml(meta, selected, log, failed_before=()):
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
                 output_html = lhtml.run(input_html, options)
-            for warning in caught:          # with the page they come from
-                log.warning(f'{page.label}: {warning.message}')
+            for warning in sorted(caught, key=lambda w: (getattr(w.message, 'line', None) or 0,
+                                                         getattr(w.message, 'column', None) or 0)):
+                # where they are in the source, in the order of the page
+                log.warning(warning.message, lhtml_place(input_html, warning.message, page))
             if meta.get('source_map'):
                 output_html = source_map.apply(output_html)
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
-            log.error(f'{filesystem.shown(page.src)}: {e}')
+            log.error(e, lhtml_place(input_html, e, page))
             failed.append(page)
             discard_page(meta, page)
             continue
@@ -498,10 +532,9 @@ def render_lhtml(meta, selected, log, failed_before=()):
         if meta['use_tidy']:
             tidy_html, error = tidylib.tidy_document(output_html, options=tidy_options)
             if error:
-                log.error(f'Tidy error in {html_path}:\n{error}')
-                if meta['debug']:
-                    for k, line in enumerate(output_html.split('\n')):
-                        log.display(f'{k + 1}: {line}', debug_level=0)
+                log.error(f'Tidy: {error}', filesystem.shown(html_path))
+                for k, line in enumerate(output_html.split('\n')):
+                    log.debug(f'{k + 1}: {line}')
             output_html = tidy_html
 
         filesystem.write_file(html_path, output_html)
@@ -544,7 +577,7 @@ def compile_sass(meta, log):
 def clean_directories(site_directory, log):
     if os.path.isdir(site_directory):
         shutil.rmtree(site_directory)
-    log.plain('Directories cleaned\n')
+    log.info(f'Cleaned {filesystem.shown(site_directory)}')
 
 
 # ---------------------------------------------------------------------------
@@ -591,7 +624,7 @@ def render_files(meta, files, log):
     finally:
         os.remove(listing)
     for entry in entries:
-        log.keyvalue('info', f"{filesystem.shown(entry['file'])} -> {filesystem.shown(entry['png'])}")
+        log.info(f"{filesystem.shown(entry['file'])} -> {filesystem.shown(entry['png'])}")
 
 
 # ---------------------------------------------------------------------------
@@ -611,8 +644,7 @@ def build_once(args):
         logger.Logger().error(str(exc))
         sys.exit(1)
 
-    log = logger.Logger(indent_level_base=config.level_print,
-                        debug_level=2 if config.debug else 1)
+    log = logger.Logger(verbose=args.verbose, debug=config.debug)
     for warning in warnings:
         log.warning(warning)
     if args.clean and not args.check_config:     # --check-config diagnoses, and deletes nothing
@@ -627,12 +659,13 @@ def build_once(args):
         builds = [b for k, b in enumerate(builds) if b.deck not in {c.deck for c in builds[:k]}]
     failed = []
     for build in builds:
-        if build.label and not args.check_config:     # --check-config prints YAML only
-            log.title(build.label, pre='\n')
+        if build.label and log.verbose and not args.check_config:     # --check-config prints YAML only
+            log.info(f'[{build.label}]')
         if not build_site(args, build, config_file, log):
             failed.append(build.label or 'the site')
     if failed:
-        log.error(f"Build failed: {', '.join(failed)}")
+        if len(builds) > 1:
+            log.error(f"{len(failed)} of {len(builds)} builds failed: {', '.join(failed)}")
         raise SystemExit(1)
 
 
@@ -693,7 +726,6 @@ def build_site(args, build, config_file, log):
                        'macros': sorted(loaded_design['macros'])},
             'plugin_paths': context.plugin_paths,
             'debug': config.debug,
-            'level_print': config.level_print,
             'use_tidy': config.use_tidy,
         }, sort_keys=False, explicit_start=bool(build.label)))
         return True
@@ -714,6 +746,7 @@ def build_site(args, build, config_file, log):
         return True
 
     built = None
+    start, warnings_before = time.time(), log.counts['warning']
     try:
         selected = select_pages(meta, log, scaffold=args.scaffold)
         meta['dependency_contexts'] = {p.site_html: dependencies.page_context(p) for p in selected}
@@ -724,7 +757,7 @@ def build_site(args, build, config_file, log):
             # the pages its pointers name; whether the build may stay partial
             # is decided in one place, by the dependency store
             named = deck.named_pages(selected, only, other_sources(selected))
-            log.keyvalue('info', f"--only: {', '.join(p.label for p in named)}", indent_level=1)
+            log.detail(f"--only: {', '.join(p.label for p in named)}")
             built = meta['dependency_store'].expand(meta, selected, named)
             if built is None:
                 # a full build (the pages of the site changed), but the layout report
@@ -734,13 +767,22 @@ def build_site(args, build, config_file, log):
         if meta['only']:
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated
-            generate_site(meta, selected, built)
+            count = generate_site(meta, selected, built)
         else:
             with staged_site(meta):
-                generate_site(meta, selected, selected)
+                count = generate_site(meta, selected, selected)
     except Exception as exc:
-        log.error(f"Build failed{'' if built is not None else '; previous site preserved'}: {exc}")
-        log.debug(traceback.format_exc())
+        kept = '' if built is not None else ' (previous site kept)'
+        log.error(f"{build.label + ': ' if build.label else ''}build failed{kept}: {exc}")
+        if not isinstance(exc, BuildFailed):
+            log.debug(traceback.format_exc())
+        return False
+    warnings = log.counts['warning'] - warnings_before
+    output = meta.get('exported') or config.site_directory
+    log.info(f"{build.label + ': ' if build.label else ''}{count} page(s) built in {time.time() - start:.1f}s"
+             f"{f', {warnings} warning(s)' if warnings else ''} -> {filesystem.shown(output)}")
+    if args.strict and warnings:
+        log.error(f'{warnings} warning(s) with --strict')
         return False
     return True
 
@@ -758,24 +800,15 @@ def lint_pages(selected, loaded_design, log, details=False):
         for src, findings in found.items():
             path = filesystem.shown(src)
             for f in findings:
-                log.plain(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
+                log.info(f'{path}:{f.line}: {f.kind}: {f.text}\n    -> {f.advice}')
     pages_with = sum(1 for findings in found.values() if findings)
     summary = (f'{total} value(s) written by hand in {pages_with} of {len(found)} page(s)' if total
                else f'no value written by hand in {len(found)} page(s)')
     if details:
-        log.plain(f'\nLint: {summary}')
+        log.info(f'\nLint: {summary}')
     elif total:
-        log.keyvalue('info', f'Lint: {summary} (python generate.py --lint)', indent_level=1)
+        log.detail(f'Lint: {summary} (generate.py --lint)')
     return found
-
-
-@contextmanager
-def stage(log, title):
-    """A stage of the build, as the log shows it: its title, then its time."""
-    log.title(title, pre='\n')
-    log.tic()
-    yield
-    log.ok_elapsed()
 
 
 def generate_site(meta, selected, built):
@@ -784,13 +817,9 @@ def generate_site(meta, selected, built):
     log = meta['log']
     plugin_failures = 0
     _plugin_modules.clear()
-    log.display('[bold white]****************************', pre='\n')
-    log.display('[bold white]  Start website generator')
-    log.display('[bold white]****************************')
-    log.keyvalue('info', f"Source: {meta['source_directory']}", indent_level=1)
-    log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
+    log.detail(f"Source: {filesystem.shown(meta['source_directory'])}, plugins: {meta['plugin']}")
 
-    with stage(log, 'Data preparation'):
+    with log.stage('Data preparation'):
         meta['loaded_design'] = load_project_design(meta)
         meta['macros'] = design.lhtml_macros(meta['loaded_design'])
         sitemap, (credits_of, credit_errors) = prepare_data(meta, selected, built, log)
@@ -801,7 +830,7 @@ def generate_site(meta, selected, built):
         meta['lint_findings'] = {src: [f.as_dict() for f in findings]
                                  for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
 
-    with stage(log, 'Pre-process'):
+    with log.stage('Pre-process'):
         plugin_failures += run_plugins(meta, 'pre_process', log)
         # Core stages on the sources, after the extensions have written them:
         # the theme wraps what the content ends up being (lib/wrap.py), and the
@@ -815,16 +844,14 @@ def generate_site(meta, selected, built):
         if export == 'pdf':
             pdf_export.remove_video_controls(meta)
 
-    with stage(log, 'Convert HTML'):
+    with log.stage('Convert HTML'):
         failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
-        if failed:
-            log.error(f'{len(failed)} page(s) not generated (see errors above)')
         drop_failed_pages(meta, selected, failed)
 
-    with stage(log, 'Mid-process'):
+    with log.stage('Mid-process'):
         plugin_failures += run_plugins(meta, 'mid_process', log)
 
-    with stage(log, 'LHTML'):
+    with log.stage('LHTML'):
         failed += render_lhtml(meta, built, log, failed_before=failed)
 
     # SASS compilation
@@ -833,7 +860,7 @@ def generate_site(meta, selected, built):
     if meta['only']:
         dependencies.refresh_runtime_files(meta, built)
 
-    with stage(log, 'Post-process'):
+    with log.stage('Post-process'):
         post_ran = not failed and not plugin_failures
         if post_ran:
             plugin_failures += run_plugins(meta, 'post_process', log)
@@ -851,19 +878,16 @@ def generate_site(meta, selected, built):
     # report is worth reading, and the plugin that used to run after it
     # could not suppress it either.
     if meta['analyse_layout'] and post_ran:
-        with stage(log, 'Layout analysis'):
+        with log.stage('Layout analysis'):
             layout_build.run(meta)
 
     restore_previous_pages(meta, failed)
-    log.plain()
-    if failed:
-        log.error(f'{len(failed)} page(s) failed (see errors above)')
-    if plugin_failures:
-        log.error(f'{plugin_failures} plugin error(s) (see errors above, use -d for details)')
     if failed or plugin_failures:
-        raise RuntimeError('Page or plugin errors (see above)')
+        raise BuildFailed(', '.join(f'{n} {what}' for n, what in ((len(failed), 'page(s) failed'),
+                                                                 (plugin_failures, 'plugin error(s)')) if n))
     if meta.get('dependency_store'):
         meta['dependency_store'].save(meta)
+    return len(built)
 
 
 def main():

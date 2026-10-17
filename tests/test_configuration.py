@@ -33,10 +33,9 @@ class ConfigurationTests(unittest.TestCase):
                               cwd=self.root, capture_output=True, text=True)
 
     def test_defaults_yaml_cli_and_context_isolation(self):
-        self.write(debug=False, level_print=3, keywords={'nested': {'value': 'original'}})
+        self.write(debug=False, keywords={'nested': {'value': 'original'}})
         config, path, _ = load_config(self.file, debug_override=True)
         self.assertTrue(config.debug)
-        self.assertEqual(config.level_print, 3)
         self.assertEqual(Path(config.site_directory), self.root / '.site')
         context = BuildContext(config, path, SimpleNamespace(), Logger())
         context.meta['keywords']['nested']['value'] = 'changed'
@@ -88,7 +87,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_bad_types_and_yaml_have_actionable_errors(self):
         for key, value in [('source_directory', None), ('site_directory', 3),
-                           ('debug', 'false'), ('level_print', True), ('level_print', -1),
+                           ('debug', 'false'),
                            ('keywords', []), ('plugin_arg', []), ('plugin', [42]),
                            ('include_head', 'script'), ('log', 'override')]:
             with self.subTest(key=key, value=value):
@@ -107,7 +106,7 @@ class ConfigurationTests(unittest.TestCase):
         config, _, warnings = load_config(self.file)
         self.assertEqual(config.to_meta()['custom_option'], 42)
         self.assertIn("Did you mean 'site_directory'", '\n'.join(warnings))
-        for key, fix in (('plugin_post', "under 'plugin'"), ('include_head', '<head>')):
+        for key, fix in (('plugin_post', "under 'plugin'"), ('include_head', '<head>'), ('level_print', '-v')):
             self.write(**{key: []})
             with self.assertRaisesRegex(ConfigError, fix):
                 load_config(self.file)
@@ -259,18 +258,26 @@ if __name__ == '__main__':
 
 
 class LoggerTests(unittest.TestCase):
-    def test_shown_as_written(self):
+    def test_one_line_per_problem_as_written_never_cut(self):
         from lib import logger
+        long = 'a/' * 80 + 'page.html.j2'
         with logger.console.capture() as captured:
             log = Logger()
-            log.warning('path\\')
-            log.keyvalue('a[b]', '[bold]x[/bold]')
-            log.keyvalue('info', 'plain')
-        text = captured.get()
-        self.assertIn('[Warning] path\\\n', text)
-        self.assertIn('[a[b]] [bold]x[/bold]', text)
-        self.assertIn('plain', text)
-        self.assertNotIn('[info]', text)
+            log.warning('path\\ [bold]x[/bold]', f'{long}:3:5')
+            log.error('failed')
+            log.detail('a stage')                   # -v only
+            with log.stage('Pre-process'):
+                pass
+        self.assertEqual(captured.get().split('\n'),
+                         [f'{long}:3:5: warning: path\\ [bold]x[/bold]', 'error: failed', ''])
+        self.assertEqual(log.counts, {'warning': 1, 'error': 1})
+
+    def test_verbose_shows_the_stages(self):
+        from lib import logger
+        with logger.console.capture() as captured:
+            with Logger(verbose=True).stage('Pre-process'):
+                pass
+        self.assertRegex(captured.get(), r'^Pre-process\n  \d+\.\d\ds\n$')
 
 
 class CheckConfigTests(unittest.TestCase):

@@ -100,8 +100,7 @@ def run(meta):
     log = meta['log']
     videos = _videos_of(meta, built_pages(meta))
     work = _missing_variants(cache_directory, videos)
-    log.keyvalue('info', f'{len(videos)} video(s) in the assets, '
-                         f'{len(work)} to transcode', indent_level=1)
+    (log.info if work else log.detail)(f'{len(videos)} video(s) in the assets, {len(work)} to transcode')
     jobs = [(os.fspath(meta['site_directory'] / source), codec, destination)
             for source, destinations in work for codec, destination in destinations.items()]
     if jobs:

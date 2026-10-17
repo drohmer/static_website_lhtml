@@ -67,7 +67,7 @@ def report_lock(folder, log=None, timeout=TIMEOUT, poll=1.0):
                     raise RuntimeError(f'Another build has been writing {folder} for {timeout} s; '
                                        f'retry after it finishes') from None
                 if log is not None and not waiting:
-                    log.keyvalue('info', f'Another build is writing {folder}: waiting for it ...', indent_level=2)
+                    log.info(f'Another build is writing {folder}: waiting for it ...')
                 waiting = True
                 time.sleep(poll)
         stream.seek(0)

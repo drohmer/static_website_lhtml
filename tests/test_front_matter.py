@@ -77,7 +77,7 @@ class FrontMatterTests(unittest.TestCase):
     def test_an_lhtml_error_names_the_source_not_the_build_directory(self):
         self.write('a/index.html.j2', '= Titre\nnote ::# old comment\n')
         output = self.build(ok=False)
-        self.assertIn('src/a/index.html.j2:::#commentswereremoved', output.replace(' ', ''))
+        self.assertIn('src/a/index.html.j2:2:6:error:::#commentswereremoved', output.replace(' ', ''))
         self.assertNotIn('.site-build-', output)
 
     def test_line_breaks_of_the_configuration_reach_lhtml(self):

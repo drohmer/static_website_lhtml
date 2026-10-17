@@ -68,7 +68,7 @@ class LayoutBuildTests(unittest.TestCase):
         self.write('src/b/index.html.j2', '= B\n')
         self.write('src/b/config.yaml', 'layout: stack\n')
         self.write('src/c/index.html.j2', '= C {{ page.message }}\n')
-        output = self.build([{'path': 'a'}, 'b', {'path': 'c', 'layout': 'side-s', 'message': 'hello'}])
+        output = self.build([{'path': 'a'}, 'b', {'path': 'c', 'layout': 'side-s', 'message': 'hello'}], '-v')
         self.assertEqual(self.body('a'), '<body class="layout-side">')
         self.assertIn('2 items', (self.site / 'a/index.html').read_text())
         self.assertEqual(self.body('b'), '<body class="layout-stack">')

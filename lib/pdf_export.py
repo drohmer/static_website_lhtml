@@ -61,7 +61,7 @@ def export(meta):
                 raise RuntimeError(f'Image not generated: {stem}.jpg')
             return pdf, stem + '.jpg'
 
-        meta['log'].keyvalue('*', 'Generate PDF and images ...', indent_level=2)
+        meta['log'].detail(f'PDF of {len(pages)} page(s) ...')
         with ThreadPoolExecutor() as pool:
             outputs = list(pool.map(export_page, enumerate(pages)))
 
@@ -77,7 +77,8 @@ def export(meta):
         for _, image in outputs:
             shutil.copy2(image, images)
         os.replace(merged, output / (name + '.pdf'))
-        meta['log'].keyvalue('info', f"PDF: {output / (name + '.pdf')}, images in {images}", indent_level=2)
+        meta['exported'] = output / (name + '.pdf')         # what the build says it made
+        meta['log'].detail(f'images in {images}')
 
     if not meta['debug'] and not meta.get('only'):
         meta['publish_site'] = False

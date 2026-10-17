@@ -14,7 +14,6 @@ theme: 'themes/webpage-frame/'  # Omit to use the bundled webpage-frame theme.
 
 # Optional settings (uncomment to override the defaults):
 # debug: false           # --debug takes precedence; also keeps intermediate files.
-# level_print: 0         # Non-negative indentation level for logs.
 # use_tidy: false
 # title_id: true
 # keywords: {}           # Variables exposed to Jinja2 templates.

@@ -32,6 +32,7 @@ CORE_STAGES = {
 RUNTIME_KEYS = frozenset((
     'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory', 'extras',
     'published_site_directory',     # the site, while the build is made in a staging directory
+    'exported',                     # the file an export wrote (lib/pdf_export.py)
     'only',                         # --only: the build is made in the site, for some pages
     'structure', 'built',           # all the pages of the site / those generated (lib/structure.py)
     'previous_pages',               # --only: HTML of the pages before the build (restored if they fail)
@@ -66,7 +67,6 @@ class Config:
     # default is empty and a project lists only what is its own.
     plugin: list[str] = field(default_factory=list)
     debug: bool = False
-    level_print: int = 0
     title_id: bool = True
     keywords: dict = field(default_factory=dict)
     use_tidy: bool = False
@@ -224,6 +224,9 @@ def load_config(filename, debug_override=None):
     if 'plugin_post' in data:
         raise ConfigError("'plugin_post' was removed (3.0): list its plugins under 'plugin' "
                           "(all their hooks are run)")
+    if 'level_print' in data:
+        raise ConfigError("'level_print' was removed (3.0): the build prints no indented log "
+                          "(-v shows its stages)")
     if 'include_head' in data:
         raise ConfigError("'include_head' was removed (3.0): it was read nowhere; a theme "
                           "places what goes in <head>")
@@ -242,8 +245,6 @@ def load_config(filename, debug_override=None):
     for key in ('debug', 'title_id', 'use_tidy', 'line_breaks'):
         if type(values[key]) is not bool:
             raise ConfigError(f"'{key}' must be a boolean (true or false)")
-    if type(values['level_print']) is not int or values['level_print'] < 0:
-        raise ConfigError("'level_print' must be a non-negative integer")
     for key in ('keywords', 'plugin_arg', 'layout'):
         if not isinstance(values[key], dict) or any(not isinstance(k, str) for k in values[key]):
             raise ConfigError(f"'{key}' must be a mapping with string keys")

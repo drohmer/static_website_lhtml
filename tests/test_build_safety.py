@@ -218,7 +218,7 @@ def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
         assert result.returncode == 1, (bad, result.stdout + result.stderr)
         said = ' '.join(result.stdout.split())      # independent of the terminal width
         assert 'layout' in said and list(bad)[0] in said, (bad, said)
-        assert 'Start website generator' not in said, (bad, said)      # refused before the build
+        assert 'built' not in said, (bad, said)                        # refused before the build
         assert not (tmp_path / '.layout').exists(), bad
 
 
@@ -317,6 +317,6 @@ def test_a_partial_build_gives_the_same_site_as_a_full_one(tmp_path):
     shutil.rmtree(site, ignore_errors=True)
     published()
     css.write_text(original + rule)
-    widened, said = published('--only', 'a')
+    widened, said = published('--only', 'a', '-v')
     assert 'full build' in said, said
     assert widened == expected, 'a widened build must publish what a full build publishes'

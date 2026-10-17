@@ -1461,6 +1461,23 @@ through Python's `warnings`, which name its own line
   its CLI prints them in that same format; `--wrapAuto`/`inputFiles`
   become `--wrap`/`input`.
 
+*Done* (2026-10-17). LHTML: `LHTMLWarning` and `LHTMLError` carry `line`
+and `column` in the text given to `run`. The protected zones keep the text
+they hide, so a place in the prepared text is a place in the source; the
+passes before the tags add lines (a heading, a list) but no `::`, so the
+k-th `::` the tag pass reads is the k-th of the prepared text, whose place
+is computed once. An unknown language of a code block is reported where the
+block starts. Generator: `lib/logger.py` is `info`, `detail` (-v), `debug`
+(-d), `warning`/`error` with a place; `level_print` is refused. The line
+LHTML or Jinja names is in the page as Jinja wrote it: in a build for
+development its marker names the source; otherwise the lines of the page
+are aligned with its source (`difflib`, the blank and bare `::` lines
+anchoring nothing), and a line Jinja wrote names the page alone. Each build
+ends with `<pages> page(s) built in <time>[, <n> warning(s)] -> <site or
+PDF>`; `--strict` fails a build with a warning. A path in a message is
+relative to the current directory when inside it, absolute otherwise, and
+the console never wraps.
+
 **M. A page in Markdown.** Possible, and cheaper than it sounds, if the
 generator stops reading LHTML where it only needs the HTML: the headings
 (`lib/headings.py` reads the `=` lines of the source), the assets of a page
@@ -1578,8 +1595,8 @@ found is fixed, each with a test:
   (it is text, as in 2.5.1), and the groups of an element with a stray
   closing bracket were no longer kept from formatting.
 
-Left for step C: the console of `rich` cuts a long path in two (seen on
-Windows, where the temporary paths are long).
+Left for step C, and done there: the console of `rich` cut a long path in
+two (seen on Windows, where the temporary paths are long).
 
 **N3. The migration tool** - *dropped* (2026-10-16). LHTML 3 and the
 generator after N2 are major versions; a project migrates by hand, with

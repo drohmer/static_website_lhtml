@@ -10,8 +10,8 @@ class Log:
     def __init__(self):
         self.lines = []
 
-    def keyvalue(self, key, value, **kwargs):
-        self.lines.append(value)
+    def info(self, message):
+        self.lines.append(message)
 
 
 def test_competing_build_gives_up_after_the_timeout(tmp_path):

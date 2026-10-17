@@ -7,7 +7,7 @@ from lib.pages import Page, Source
 
 
 class Log:
-    def keyvalue(self, *args, **kwargs):
+    def detail(self, *args, **kwargs):
         pass
 
 

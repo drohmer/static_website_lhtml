@@ -142,8 +142,8 @@ class BuildTests(ProjectTests):
             self.assertTrue((self.root / '.verification' / scope / 'builds.json').is_file(), scope)
             self.assertIn('/01_x/', (self.root / '.structure' / scope / 'credits.md').read_text())
         for _ in range(2):                  # nothing changed: one page each time, in each build
-            output = ' '.join(self.build('--only', '01_a/01_x').stdout.split())
-            self.assertEqual(output.count('[Found] 1 template files'), 2, output)
+            output = ' '.join(self.build('--only', '01_a/01_x', '-v').stdout.split())
+            self.assertEqual(output.count('1 page(s) to render'), 2, output)
             self.assertNotIn('dependent page', output)
 
     def test_check_config_prints_one_yaml_document_per_build(self):
@@ -174,7 +174,33 @@ class BuildTests(ProjectTests):
         result = self.build()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertTrue((self.root / '_site/02_b/html/01_x/index.html').is_file())
-        self.assertIn('Build failed: deck 01_a target html', ' '.join(result.stdout.split()))
+        output = ' '.join(result.stdout.split())
+        self.assertIn('src/01_a/03_z/index.html.j2:1: error: Jinja: Encountered unknown tag', output)
+        self.assertIn('error: deck 01_a target html: build failed (previous site kept): 1 page(s) failed', output)
+        self.assertIn('deck 02_b target html: 2 page(s) built in', output)
+        self.assertIn('error: 1 of 2 builds failed: deck 01_a target html', output)
+
+    def test_one_line_per_build_and_each_problem_at_its_line(self):
+        self.page('src/01_a/01_x/index.html.j2', '---\ntitle: X\n---\n= X\n\ngap::zz\n')
+        self.page('src/02_b/01_x/index.html.j2', '= X\n\n{{ missing.field }}\n')
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}})
+        result = self.build()
+        lines = result.stdout.splitlines()
+        self.assertIn("src/01_a/01_x/index.html.j2:6:1: warning: gap::zz: unknown variant (expected one of "
+                      "s, m, l, xl) near 'gap::zz'", lines)
+        self.assertRegex(result.stdout, r'deck 01_a target html: 2 page\(s\) built in \d+\.\ds, '
+                                        r'1 warning\(s\) -> _site/01_a/html\n')
+        self.assertIn("src/02_b/01_x/index.html.j2:3: error: Jinja: 'missing' is undefined", lines)
+        self.assertNotIn('Pre-process', result.stdout)                # the stages: with -v
+        self.assertIn('Pre-process', self.build('-v', '--only', '01_a').stdout)
+
+    def test_strict_fails_on_a_warning(self):
+        self.page('src/01_a/01_x/index.html.j2', '= X\ngap::zz\n')
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}})
+        self.assertEqual(self.build('--only', '01_a').returncode, 0)
+        result = self.build('--only', '01_a', '--strict')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('error: 1 warning(s) with --strict', result.stdout)
 
     def test_generate_pdf_is_a_target_now(self):
         self.write(plugin=['plugins/generate_pdf.py'])
@@ -187,6 +213,7 @@ class BuildTests(ProjectTests):
         self.write(decks='directories', targets={'pdf': {'theme': 'slides-pdf'}})
         result = self.build('--only', '01_a')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('-> _site/01_a/01_a.pdf', result.stdout)            # what the build made
         deck = self.root / '_site/01_a'
         self.assertTrue((deck / '01_a.pdf').is_file())
         self.assertEqual(sorted(p.name for p in (deck / 'images').iterdir()), ['slide_000.jpg', 'slide_001.jpg'])

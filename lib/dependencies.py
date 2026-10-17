@@ -220,7 +220,7 @@ class BuildStore:
 
     def expand(self, meta, selected, built):
         if (reason := self.partial_impossible(meta, selected)):
-            meta['log'].keyvalue('info', f'--only: {reason}, full build', indent_level=1)
+            meta['log'].detail(f'--only: {reason}, full build')
             return None
         requested = set(built)
         affected, global_change = [], False
@@ -237,11 +237,11 @@ class BuildStore:
                                      for c in changes)
         meta['dependency_measure'] = [p.site_html for p in selected if p in requested or p in affected]
         if global_change:
-            meta['log'].keyvalue('info', '--only: shared inputs changed or untracked; full build', indent_level=1)
+            meta['log'].detail('--only: shared inputs changed or untracked; full build')
             return None
         expanded = [p for p in selected if p in requested or p in affected]
         if len(expanded) > len(built):
-            meta['log'].keyvalue('info', f'--only: {len(expanded) - len(built)} dependent page(s) added', indent_level=1)
+            meta['log'].detail(f'--only: {len(expanded) - len(built)} dependent page(s) added')
         return expanded
 
     def save(self, meta):

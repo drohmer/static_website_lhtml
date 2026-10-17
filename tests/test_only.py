@@ -71,7 +71,7 @@ class OnlyTests(DeckProjectsTests):
     def test_lhtml_warnings_name_their_page(self):
         self.write('talk/src/01_a/index.html.j2', HEAD + "= A\ngap::zz\n{% endblock %}\n")
         output = ' '.join(self.build(self.DECK, '--only', '01_a', ok=None).split())
-        self.assertIn('[Warning] 01_a:', output)
+        self.assertIn('talk/src/01_a/index.html.j2:4:1: warning: gap::zz: unknown variant', output)
 
     def test_titles_in_code_are_not_headings(self):
         config = yaml.safe_load(self.config.read_text())

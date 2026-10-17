@@ -197,9 +197,9 @@ def _measure_and_report(meta):
     os.makedirs(output_dir, exist_ok=True)
 
     if requested:
-        log.keyvalue('info', f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
-                             f'the others keep their report (--layout for all)', indent_level=2)
-    log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
+        log.detail(f'--only: {len(pages)} page(s) measured; the pages of the site changed, '
+                   f'the others keep their report (--layout for all)')
+    log.detail(f'Measure layout of {len(pages)} pages ...')
     start = time.time()
     if pages:
         run_node_on('layout_measure.js', [{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages],
@@ -251,9 +251,9 @@ def _measure_and_report(meta):
 
     n_problems = sum(count_problems(r[2]) for r in rows)
     if previous_layouts:
-        log.keyvalue('info', f"Layout changes: {len(changes)} page(s) changed -> "
-                             f"{shown(os.path.join(output_dir, 'changes.md'))}", indent_level=2)
-    log.keyvalue('info', f"Layout report: {len(pages)} measured, {len(rows)} pages, {n_problems} problems -> "
-                         f"{shown(os.path.join(output_dir, 'summary.md'))}", indent_level=2)
+        log.info(f"Layout changes: {len(changes)} page(s) changed -> "
+                 f"{shown(os.path.join(output_dir, 'changes.md'))}")
+    log.info(f"Layout report: {len(pages)} measured, {len(rows)} pages, {n_problems} problems -> "
+             f"{shown(os.path.join(output_dir, 'summary.md'))}")
     if len(rows) < len(pages) + len(previous):
         raise RuntimeError(f'layout measurement failed for {len(pages) + len(previous) - len(rows)} page(s)')

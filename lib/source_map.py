@@ -39,6 +39,7 @@ markers are inside one <div>, <main>, <section> or <article>.
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import difflib
 import html as html_lib
 import os
 import re
@@ -323,3 +324,35 @@ def apply(html):
             near = '' if exact else f' {NEAR}="1"'
             html = html[:insert] + f' {ATTRIBUTE}="{html_lib.escape(place, quote=True)}"{near}' + html[insert:]
     return strip(html)
+
+
+def place(text, line, column, src, label):
+    """Where `line`:`column` of `text` - a page as Jinja wrote it, and LHTML
+    or Jinja read it - is in the sources, as `file:line:column` (a message).
+
+    In a build for development the marker of the line names it (the file
+    it is written in, included or not). Otherwise the lines of `text` are
+    aligned with those of the page source `src`, which Jinja copies but for
+    what it writes itself (a theme around the page, an expression, an
+    include): a line of `text` that is in the source gets its line there.
+    A line written by Jinja gives the page alone, `label`."""
+    lines = text.split('\n')
+    if not line or not 0 < line <= len(lines):
+        return label
+    written = lines[line - 1]
+    found = MARKER.search(written)
+    if found:
+        return found.group(1)
+    try:
+        with open(src, encoding='utf-8') as fid:
+            source = fid.read().split('\n')
+    except (OSError, UnicodeError):
+        return label
+    # a blank line or a bare `::` is everywhere: it does not anchor the alignment
+    matcher = difflib.SequenceMatcher(lambda x: len(x.strip()) < 3, [strip(x).rstrip() for x in lines],
+                                      [x.rstrip() for x in source], autojunk=False)
+    for start, source_start, size in matcher.get_matching_blocks():
+        if start <= line - 1 < start + size:
+            number = source_start + line - 1 - start
+            return f'{label}:{number + 1}' + (f':{column}' if column else '')
+    return label

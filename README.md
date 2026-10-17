@@ -56,10 +56,12 @@ python generate.py
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-d | --no-debug] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+python generate.py [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
-  -d, --debug          Display debug info and keep temporary files
+  -v, --verbose        Display the stages of the build, their time, and what they did
+  -d, --debug          Display debug info (tracebacks) and keep temporary files
+      --strict         A warning fails the build (exit code 1), as an error does
       --no-debug       Override debug: true from YAML
       --check-config   Validate paths and plugin files; display resolved settings
   -c, --clean          Remove only the configured output directory and exit
@@ -165,7 +167,6 @@ Optional keys:
 | Key | Description |
 |-----|-------------|
 | `debug` | Verbose logging and retained intermediate files; overridden by `--debug` / `--no-debug` |
-| `level_print` | Non-negative log indentation level (default: 0) |
 | `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies them into the site, and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `line-breaks` | The line breaks of the sources are rendered as `<br>` (LHTML's option; default: false) |
@@ -1017,11 +1018,22 @@ error of the configuration.
 
 ## Error Reporting
 
-Errors during LHTML conversion show the file path and line number:
+A problem is one line, `file:line:column: level: message`, the line being
+the one of the source of the page (not of the HTML Jinja wrote), as far as
+it is known. A build ends with one line: the pages built, the warnings,
+the time, and where the site (or the PDF) is. The stages print with `-v`.
 
 ```
-[Error] .site/content/page/index.html: Unclosed bracket '[' (expected ']')
+src/01_intro/03_noise/index.html.j2:12:1: warning: gap::zz: unknown variant (expected one of s, m, l, xl) near 'gap::zz'
+src/01_intro/04_grid/index.html.j2:7: error: Jinja: 'missing' is undefined
+error: deck 01_intro target html: build failed (previous site kept): 1 page(s) failed
+deck 02_shapes target html: 12 page(s) built in 1.4s -> _site/02_shapes/html
 ```
+
+A line written by Jinja itself (an expression, a theme around the page)
+names the page alone; in a build for development (`--serve`, `--watch`,
+`--layout`) the source map names the file and line of an included template
+too. A path is never cut, and colour is used on a terminal only.
 
 Errors are non-fatal — the generator continues processing remaining files (a page whose Jinja2 rendering fails is skipped), then exits with code 1 if any page or plugin failed (missing plugin, exception in a plugin; use `-d` to see the traceback). Errors of the deck start with `Deck:` and errors of the design with `Design:`.
 
@@ -1033,6 +1045,7 @@ change to make, rather than accepted with a warning.
 - `configure_default.yaml` is now `configure_example.yaml`.
 - Replace `plugin_post` with `plugin` (all the hooks of a plugin run). `include_head` is gone (it was read nowhere).
 - `.site/` is the output default; an explicit `site_directory` still takes precedence.
+- `level_print` is gone: the build prints no indented log (`-v` shows its stages). For plugins, the log has `info`, `detail` (with `-v`), `debug`, `warning` and `error` (the last two take the place, `file:line`, as a second argument); `keyvalue`, `display` and `title` are gone.
 
 - LHTML is now installed with pip (`lhtml-markup`, see `requirements.txt`) instead of the `lib/lhtml` submodule.
 - `theme_templates/` was renamed `themes/` and `src_site_example/` was renamed `example/`: update the configuration, e.g. `theme: 'static_website_lhtml/themes/webpage-frame/'`.
