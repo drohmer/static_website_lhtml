@@ -1626,6 +1626,21 @@ cover, `pre_include` and `code_include`. State what the contract is not: an
 interface over strings is a discipline, not a sandbox - arbitrary Python
 still reaches the file system.
 
+*Done* (2026-10-17). `lib/extensions.py`: `prepare(context)` once per
+build, then `pre_process`, `mid_process`, `post_process(text, context) ->
+text` for each page generated; the build reads and writes the files.
+`context` is `options` (`plugin_arg`), `config_directory`, `page` (a copy of
+its entry) and `warning(message)`, placed at the page. An exception fails
+the page, named with the extension, and not the others. A hook of version 2
+(`pre_process(meta)`) is refused by its number of arguments, with the form
+to write. `pre_include` reads its files in `prepare`; `code_include` clones
+or updates its repositories in `prepare`, and learned what the copy of
+cgp_documentation does (a `filepath` alone inserts the whole file), so the
+corpus builds with the plugin of the generator. `post_process` became a
+transformation of the page too: the site-wide writes of version 2 (menu,
+redirection, PDF) are stages of the build since N1-N2, and no project of the
+corpus had one of its own.
+
 **N5. A prototype of the structured parser** (the old N4), compared with
 the current engine on the tests and on the corpus - `csc_43043` first, the
 largest and the one where it would be wrong first: 802 `code::`, 2452

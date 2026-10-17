@@ -104,8 +104,9 @@ class ConfigurationTests(unittest.TestCase):
     def test_unknown_key_and_removed_keys(self):
         self.write(site_directoy='typo', custom_option=42)
         config, _, warnings = load_config(self.file)
-        self.assertEqual(config.to_meta()['custom_option'], 42)
-        self.assertIn("Did you mean 'site_directory'", '\n'.join(warnings))
+        self.assertNotIn('custom_option', config.to_meta())
+        self.assertIn("Unknown configuration key 'site_directoy', ignored. Did you mean 'site_directory'",
+                      '\n'.join(warnings))
         for key, fix in (('plugin_post', "under 'plugin'"), ('include_head', '<head>'), ('level_print', '-v')):
             self.write(**{key: []})
             with self.assertRaisesRegex(ConfigError, fix):
@@ -201,9 +202,9 @@ class ConfigurationTests(unittest.TestCase):
 
 class ReservedKeysAndWatchTests(unittest.TestCase):
     def test_every_runtime_key_written_by_the_build_is_reserved(self):
-        """A key the generator writes in meta must be in RUNTIME_KEYS, else the
-        same key written in the YAML reaches meta (through 'extras') and the
-        build reads the user's value instead of its own."""
+        """A key the generator writes in meta must be in RUNTIME_KEYS: the same
+        key written in the YAML is then refused as runtime state, rather than
+        taken for a typo."""
         from lib.configuration import Config, RUNTIME_KEYS
         known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
         written = {}

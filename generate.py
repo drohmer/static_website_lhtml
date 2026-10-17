@@ -15,7 +15,6 @@ import tempfile
 import argparse
 import sys
 import time
-import importlib.util
 import traceback
 import warnings as python_warnings
 
@@ -40,6 +39,7 @@ from lib import wrap
 from lib import index_page
 from lib import video_cache
 from lib.layout import build as layout_build
+from lib.extensions import Extensions, ExtensionError
 from lib import logger
 from lib import pages
 from lib import pdf_export
@@ -140,42 +140,6 @@ def resolve_plugins(meta, log):
         else:
             found.append(full_path)
     return found, missing
-
-
-_plugin_modules = {}     # {path: module} of the build (emptied by generate_site)
-
-
-def load_plugin(full_path):
-    """The module of a plugin: loaded once per build, so that it keeps its
-    state from a hook to the next (pre_process, mid_process, post_process),
-    but not from a build to the next (--watch)."""
-    if full_path not in _plugin_modules:
-        spec = importlib.util.spec_from_file_location('plugin', full_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        _plugin_modules[full_path] = module
-    return _plugin_modules[full_path]
-
-
-def run_plugins(meta, hook_name, log):
-    """Run a plugin hook (pre_process / mid_process / post_process) for the
-    plugins in meta['plugin_paths']. Returns the number of plugins that failed."""
-    failures = 0
-    for full_path in meta['plugin_paths']:
-        try:
-            module = load_plugin(full_path)
-            if hasattr(module, hook_name):
-                log.detail(f"plugin {full_path.split('/')[-1]}")
-                getattr(module, hook_name)(meta)
-        except ConfigError as e:        # what it was asked to do, not what happened
-            log.error(f'{e} (configuration of {os.path.basename(full_path)})')
-            log.debug(traceback.format_exc())
-            failures += 1
-        except Exception as e:
-            log.error(f'Plugin {full_path} failed ({hook_name}): {type(e).__name__}: {e}')
-            log.debug(traceback.format_exc())
-            failures += 1
-    return failures
 
 
 # ---------------------------------------------------------------------------
@@ -819,8 +783,11 @@ def generate_site(meta, selected, built):
     """Generate the pages `built` among the pages of the site `selected` (all
     of them, except with --only)."""
     log = meta['log']
-    plugin_failures = 0
-    _plugin_modules.clear()
+    try:
+        extensions = Extensions(meta['plugin_paths'])        # the plugins (lib/extensions.py)
+    except Exception as exc:
+        raise BuildFailed(f'plugin: {type(exc).__name__}: {exc}' if not isinstance(exc, ExtensionError)
+                          else str(exc)) from exc
     log.detail(f"Source: {filesystem.shown(meta['source_directory'])}, plugins: {meta['plugin']}")
 
     with log.stage('Data preparation'):
@@ -835,7 +802,8 @@ def generate_site(meta, selected, built):
                                  for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
 
     with log.stage('Pre-process'):
-        plugin_failures += run_plugins(meta, 'pre_process', log)
+        plugin_failures = extensions.run('prepare', meta, log)
+        plugin_failures += extensions.run('pre_process', meta, log)
         # Core stages on the sources, after the extensions have written them:
         # the theme wraps what the content ends up being (lib/wrap.py), and the
         # headings of that content get their ids (lib/headings.py).
@@ -853,7 +821,7 @@ def generate_site(meta, selected, built):
         drop_failed_pages(meta, selected, failed)
 
     with log.stage('Mid-process'):
-        plugin_failures += run_plugins(meta, 'mid_process', log)
+        plugin_failures += extensions.run('mid_process', meta, log)
 
     with log.stage('LHTML'):
         failed += render_lhtml(meta, built, log, failed_before=failed)
@@ -867,7 +835,7 @@ def generate_site(meta, selected, built):
     with log.stage('Post-process'):
         post_ran = not failed and not plugin_failures
         if post_ran:
-            plugin_failures += run_plugins(meta, 'post_process', log)
+            plugin_failures += extensions.run('post_process', meta, log)
             # Core stages on the built site: the menu of the theme, and the
             # index of a site that has none (lib/menu.py, lib/index_page.py)
             menu.run(meta)

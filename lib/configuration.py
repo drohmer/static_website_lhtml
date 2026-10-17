@@ -1,10 +1,9 @@
-"""User configuration, validation, and the legacy plugin context adapter."""
+"""User configuration, its validation, and the meta of a build."""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
-import copy
 import difflib
 import os
 import re
@@ -30,7 +29,7 @@ CORE_STAGES = {
 }
 
 RUNTIME_KEYS = frozenset((
-    'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory', 'extras',
+    'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory',
     'published_site_directory',     # the site, while the build is made in a staging directory
     'exported',                     # the file an export wrote (lib/pdf_export.py)
     'only',                         # --only: the build is made in the site, for some pages
@@ -86,12 +85,9 @@ class Config:
     # {name: {theme: directory}}, the themes resolved to Paths by load_config
     decks: str | None = None
     targets: dict | None = None
-    # Legacy extensions stay available to custom plugins, with a warning.
-    extras: dict = field(default_factory=dict)
 
     def to_meta(self):
         values = asdict(self)
-        values.update(values.pop('extras'))
         for key in ('cache_video_directory', 'chrome', 'design', 'deck', 'decks', 'targets'):
             if values[key] is None:
                 del values[key]
@@ -108,7 +104,7 @@ class BuildContext:
     meta: dict = field(init=False)
 
     def __post_init__(self):
-        # Plugins keep a real, mutable dict, but never mutate the configuration.
+        # The state of a build: a copy, which never changes the configuration
         self.meta = self.config.to_meta()
         self.meta.update(config_file=str(self.config_file),
                          config_directory=self.config_file.parent,
@@ -233,14 +229,13 @@ def load_config(filename, debug_override=None):
 
     defaults = Config().to_meta()
     known = set(defaults) | {'cache_video_directory', 'chrome', 'design', 'deck', 'decks', 'targets'}
-    extras = {}
-    for key in set(data) - known:
+    for key in sorted(set(data) - known):
         if key in RUNTIME_KEYS:
             raise ConfigError(f"'{key}' is runtime state and cannot be set in YAML")
         suggestion = difflib.get_close_matches(key, sorted(known), n=1)
         hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ''
-        warnings.append(f"Unknown configuration key '{key}'.{hint} Retained for custom plugins.")
-        extras[key] = data[key]
+        warnings.append(f"Unknown configuration key '{key}', ignored.{hint} "
+                        f"(A plugin reads its options in 'plugin_arg'.)")
     values = {**defaults, **{k: v for k, v in data.items() if k in known}}
     for key in ('debug', 'title_id', 'use_tidy', 'line_breaks'):
         if type(values[key]) is not bool:
@@ -311,7 +306,7 @@ def load_config(filename, debug_override=None):
         values[key] = directory.resolve()
     if debug_override is not None:
         values['debug'] = debug_override
-    return Config(**values, extras=copy.deepcopy(extras)), path, warnings
+    return Config(**values), path, warnings
 
 
 def validate_paths(config, config_file, require_inputs=True):

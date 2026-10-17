@@ -54,7 +54,7 @@ def test_failed_plugin_preserves_previous_site(tmp_path):
     config, _ = project(tmp_path)
     assert build(config).returncode == 0
     old = (tmp_path / '.site/index.html').read_bytes()
-    (tmp_path / 'broken.py').write_text('def post_process(meta):\n    raise ValueError("broken")\n')
+    (tmp_path / 'broken.py').write_text('def post_process(html, context):\n    raise ValueError("broken")\n')
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': ['broken.py']}))
     assert build(config).returncode == 1
     assert (tmp_path / '.site/index.html').read_bytes() == old

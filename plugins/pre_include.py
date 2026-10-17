@@ -1,24 +1,20 @@
-import os
+"""Text written at the top of every page: the files of `plugin_arg: pre_include:`
+(Jinja macros shared by the pages, for instance), relative to the configuration.
 
-from lib.structure import built_pages, template_path
+    plugin: ['plugins/pre_include.py']
+    plugin_arg:
+      pre_include: ['local_plugins/macro.html']
+"""
+from pathlib import Path
+
+_included = ''
 
 
-def pre_process(meta):
-    files_to_include = meta['plugin_arg']['pre_include']
-    content_to_include = []
-    for f in files_to_include:
-        # relative paths are relative to the configuration directory
-        f = os.path.join(meta.get('config_directory', ''), f)
-        with open(f, 'r', encoding='utf-8') as fid:
-            content_to_include.append(fid.read())
+def prepare(context):
+    global _included
+    _included = '\n'.join(Path(context.config_directory, f).read_text(encoding='utf-8')
+                          for f in context.options.get('pre_include', []))
 
-    for entry in built_pages(meta):
-        file_path = template_path(meta, entry)
 
-        with open(file_path, 'r', encoding='utf-8') as fid:
-            file_content = fid.read()
-
-        new_file_content = '\n'.join(content_to_include) + '\n' + file_content
-
-        with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
-            fid.write(new_file_content)
+def pre_process(text, context):
+    return _included + '\n' + text

@@ -352,7 +352,7 @@ def test_a_plugin_that_fails_does_not_take_the_report_with_it(tmp_path):
     source.mkdir()
     (source / 'a.html.j2').write_text("{% set pageTitle = 'A' %}\n<h1>A</h1>")
     broken = tmp_path / 'broken.py'
-    broken.write_text('def post_process(meta):\n    raise RuntimeError("export failed")\n')
+    broken.write_text('def post_process(html, context):\n    raise RuntimeError("export failed")\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [str(broken)]}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],

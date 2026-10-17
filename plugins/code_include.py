@@ -1,13 +1,18 @@
+"""includeadv::{...}: code of a repository inserted in the pages, between Jinja and LHTML.
+
+    plugin: ['plugins/code_include.py']
+    plugin_arg:
+      includeadv: {cgp: 'https://github.com/drohmer/cgp'}
+"""
 import os
 import re
 import subprocess
 
 from lhtml.tag_parser import extract_bracket_elements
-from lib.structure import built_pages, page_path
 
 
-# Directory where the code repositories are cloned, relative to the
-# configuration directory (set at the start of mid_process)
+# Directory where the code repositories are cloned, next to the
+# configuration (set by prepare)
 CODE_DIRECTORY = 'code/'
 
 
@@ -83,7 +88,7 @@ def clean_include(content):
     return remove_trailing_space(content)
 
 
-def research_file(arg, log):
+def research_file(arg, context):
     file_to_research = arg['research_file']
     root_path = CODE_DIRECTORY + arg['root']
 
@@ -94,14 +99,14 @@ def research_file(arg, log):
                 candidates.append(root)
 
     if not candidates:
-        log.warning(f'includeadv: no file [{file_to_research}] under [{root_path}]')
+        context.warning(f'includeadv: no file [{file_to_research}] under [{root_path}]')
         return ''
 
     # Keep candidate with longest pathname
     best = max(candidates, key=len)
     filepath = best + '/' + file_to_research
     if not os.path.isfile(filepath):
-        log.warning(f'includeadv: file not found [{filepath}]')
+        context.warning(f'includeadv: file not found [{filepath}]')
 
     # path relative to the code directory
     return filepath[len(CODE_DIRECTORY):]
@@ -139,70 +144,54 @@ def research_line_in_header_files(arg):
     return ''.join(clean_include(l) for l in all_lines)
 
 
-def mid_process(meta):
+def prepare(context):
+    """The repositories of `plugin_arg: includeadv:` ({name: git URL}), cloned
+    into code/ next to the configuration, or updated."""
     global CODE_DIRECTORY
-    CODE_DIRECTORY = (meta['config_directory'] / 'code').as_posix() + '/'
+    CODE_DIRECTORY = (context.config_directory / 'code').as_posix() + '/'
+    for codename, url in context.options.get('includeadv', {}).items():
+        code_dir = CODE_DIRECTORY + codename
+        if os.path.isdir(code_dir):
+            subprocess.run(['git', 'pull'], cwd=code_dir)
+        else:
+            os.makedirs(CODE_DIRECTORY, exist_ok=True)
+            subprocess.run(['git', 'clone', url], cwd=CODE_DIRECTORY)
 
-    # Code to download
-    if 'plugin_arg' in meta and 'includeadv' in meta['plugin_arg']:
-        for codename in meta['plugin_arg']['includeadv']:
-            url = meta['plugin_arg']['includeadv'][codename]
-            code_dir = CODE_DIRECTORY + codename
-            if os.path.isdir(code_dir):
-                subprocess.run(['git', 'pull'], cwd=code_dir)
-            else:
-                os.makedirs(CODE_DIRECTORY, exist_ok=True)
-                subprocess.run(['git', 'clone', url], cwd=CODE_DIRECTORY)
 
-    log = meta['log']
-    for entry in built_pages(meta):
-        file_path = meta['site_directory'] / page_path(entry)
-        if not os.path.isfile(file_path):       # the page failed
-            continue
+def mid_process(html, context):
+    """Each includeadv::{...} of the page replaced by the code it names:
+    filepath alone, the whole file; with research, its first line holding
+    the text; research_file, the path of a file under root; research_line,
+    the declarations of the headers under root holding the text."""
+    parts, prev = [], 0
+    for it in re.finditer(r'includeadv::\{.*?\}', html, re.DOTALL):
+        arg_includeadv = analyse_includeadv_match(html, it)
 
-        with open(file_path, 'r', encoding='utf-8') as fid:
-            file_content = fid.read()
+        include_file_content = None
+        if 'filepath' in arg_includeadv:
+            with open(CODE_DIRECTORY + arg_includeadv['filepath'], 'r', encoding='utf-8') as fid:
+                include_file_content = fid.read()
 
-        r_code = r'includeadv::\{.*?\}'
-        regex_code = re.compile(r_code, re.DOTALL | re.MULTILINE)
-        match = regex_code.finditer(file_content)
+        if 'filepath' in arg_includeadv and not {'research', 'research_file', 'research_line'} & set(arg_includeadv):
+            parts += [html[prev:it.start()], include_file_content]
 
-        parts = []
-        prev = 0
-        for it in match:
-            arg_includeadv = analyse_includeadv_match(file_content, it)
+        if 'research' in arg_includeadv:
+            if include_file_content is None:
+                context.warning("includeadv: 'research' needs a 'filepath'")
+                continue
+            matching_line = extract_first_matching_line(include_file_content, arg_includeadv['research'])
+            if matching_line is None:
+                context.warning(f"includeadv: could not extract line [{arg_includeadv['research']}]")
+                continue
+            parts += [html[prev:it.start()], clean_include(matching_line)]
 
-            include_file_content = None
-            if 'filepath' in arg_includeadv:
-                include_filepath = CODE_DIRECTORY + arg_includeadv['filepath']
-                with open(include_filepath, 'r', encoding='utf-8') as fid:
-                    include_file_content = fid.read()
+        if 'research_file' in arg_includeadv:
+            filepath = research_file(arg_includeadv, context)
+            parts += [html[prev:it.start()], filepath[len(arg_includeadv['root']):]]
 
-            if 'research' in arg_includeadv:
-                if include_file_content is None:
-                    log.warning(f"includeadv: 'research' needs a 'filepath' ({entry['filename']})")
-                    continue
-                matching_line = extract_first_matching_line(include_file_content, arg_includeadv['research'])
-                if matching_line is None:
-                    log.warning(f"includeadv: could not extract line [{arg_includeadv['research']}]")
-                    continue
-                parts.append(file_content[prev:it.span()[0]])
-                parts.append(clean_include(matching_line))
+        if 'research_line' in arg_includeadv:
+            parts += [html[prev:it.start()], research_line_in_header_files(arg_includeadv)]
 
-            if 'research_file' in arg_includeadv:
-                filepath = research_file(arg_includeadv, log)
-                filepath_local = filepath[len(arg_includeadv['root']):]
-                parts.append(file_content[prev:it.span()[0]])
-                parts.append(filepath_local)
-
-            if 'research_line' in arg_includeadv:
-                lines = research_line_in_header_files(arg_includeadv)
-                parts.append(file_content[prev:it.span()[0]])
-                parts.append(lines)
-
-            prev = it.span()[1]
-
-        parts.append(file_content[prev:])
-
-        with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
-            fid.write(''.join(parts))
+        prev = it.end()
+    parts.append(html[prev:])
+    return ''.join(parts)
