@@ -10,6 +10,13 @@ values with the layout or macro of the design that replaces them:
 
 The number of findings of a page is its style debt (`--lint`, the build log
 and the layout report give it).
+
+The styles, the spacers and the iframes of an LHTML page are read in its
+document tree (source_scan.document, with the macros of the design): the
+style group [...] of an element, the style="..." of its raw HTML, its Jinja,
+the attributes {...} of an element and its text, a spacer being an
+anonymous div (or a div::) holding only a height in px, alone on its line.
+The layout checks and the rules of the project still read the text.
 """
 from __future__ import annotations
 
@@ -17,10 +24,13 @@ from dataclasses import asdict, dataclass
 import re
 
 from lib import source_scan
+from lib.design import lhtml_macros
 
 EXTENDS = re.compile(r'\{%-?\s*extends\s')
 BLOCK = re.compile(r'\{%-?\s*(end)?block\b')
 STYLE = re.compile(r'([A-Za-z][\w-]*::(?:\([^()\n]*\))?[^\s\[]*)?\[([^\[\]\n]*:[^\[\]\n]*)\]|style="([^"]*)"')
+STYLE_ATTRIBUTE = re.compile(r'style="([^"]*)"')
+SPACER_STYLE = re.compile(r'^\s*height:\s*([\d.]+)px;?\s*$')
 RAW_IFRAME = re.compile(r'<iframe\b[^>]*style=')
 SIZE_MACROS = ('small', 'tiny', 'large')     # macros of a font size (credit:: is also gray)
 OFFSET_MACROS = ('aside',)                 # their documented offsets: aside::[top:400px;]
@@ -79,6 +89,7 @@ class Linter:
 
     def __init__(self, design):
         self.macros = set(design.get('macros') or {})
+        self.lhtml_macros = lhtml_macros(design) if design.get('macros') else None
         self.layouts = set(design.get('layouts') or {})
         tokens = design.get('tokens') or {}
         self.spaces = _px_tokens(tokens.get('space'))
@@ -210,19 +221,10 @@ class Linter:
         else:
             layout_line = 1
         base = self._layout_base(layout)
-        for number, line in enumerate(read.split('\n'), 1):
-            stripped = line.strip()
-            if (m := SPACER.match(line)):
-                height = float(m.group(1))
-                gap = self._gap(height)
-                findings.append(Finding(number, 'spacer', stripped, gap or 'a margin of the design'))
-                continue
-            for m in STYLE.finditer(line):
-                macro = m.group(1).split('::')[0] if m.group(1) else None
-                findings += self._declarations(m.group(2) or m.group(3), number, macro, base)
-            if RAW_IFRAME.search(line) and 'demo' in self.macros:
-                findings.append(Finding(number, 'iframe', '<iframe style=...>',
-                                        'demo::url (size: the tokens of the design, or media::)'))
+        if source.markup == 'markdown':
+            findings += self._text_styles(read, base)
+        else:
+            findings += self._tree_styles(source, base)
         findings += self._project_rules(source)
         if layout:
             if base is None:
@@ -234,6 +236,63 @@ class Linter:
             elif base == 'side' and re.search(r'(?<![\w-])aside::', read):
                 findings.append(Finding(layout_line, 'layout', 'aside:: in layout side', 'media::'))
         return findings
+
+    def _iframe(self, number):
+        return Finding(number, 'iframe', '<iframe style=...>',
+                       'demo::url (size: the tokens of the design, or media::)')
+
+    def _text_styles(self, read, base):
+        """The spacers, styles and iframes of a text read line by line (a
+        Markdown page)."""
+        findings = []
+        for number, line in enumerate(read.split('\n'), 1):
+            if (m := SPACER.match(line)):
+                findings.append(Finding(number, 'spacer', line.strip(),
+                                        self._gap(float(m.group(1))) or 'a margin of the design'))
+                continue
+            for m in STYLE.finditer(line):
+                macro = m.group(1).split('::')[0] if m.group(1) else None
+                findings += self._declarations(m.group(2) or m.group(3), number, macro, base)
+            if RAW_IFRAME.search(line) and 'demo' in self.macros:
+                findings.append(self._iframe(number))
+        return findings
+
+    def _tree_styles(self, source, base):
+        """The spacers, styles and iframes of an LHTML page, read in its
+        document tree; in the order of their lines, as the text gave them.
+        A page LHTML refuses has none here: its run reports why."""
+        document = source.document(self.lhtml_macros)
+        if document is None:
+            return []
+        lines = source.text.split('\n')
+        found = []                      # (line, position, findings)
+
+        def attributes(text, number, start, macro=None):
+            for m in STYLE_ATTRIBUTE.finditer(text):
+                line = number + text.count('\n', 0, m.start())
+                found.append((line, start + m.start(), self._declarations(m.group(1), line, macro, base)))
+
+        for node in document.walk():
+            if node.kind == 'Element':
+                style = node.groups.get('[]', '')
+                written = source.text[node.span[0]:node.span[1]].strip()
+                if (node.name in ('', 'div') and (m := SPACER_STYLE.match(style))
+                        and not node.groups.get('()') and not node.groups.get('{}')
+                        and lines[node.line - 1].strip() == written):
+                    found.append((node.line, node.span[0], [Finding(
+                        node.line, 'spacer', written, self._gap(float(m.group(1))) or 'a margin of the design')]))
+                    continue
+                if ':' in style and node.name != 'link':        # a link's [...] is its label
+                    found.append((node.line, node.span[0],
+                                  self._declarations(style, node.line, node.name or None, base)))
+                attributes(node.groups.get('{}', ''), node.line, node.span[0], node.name or None)
+            elif node.kind == 'Raw' and node.raw_kind in ('html', 'jinja'):
+                attributes(node.text, node.line, node.span[0])
+                if node.raw_kind == 'html' and RAW_IFRAME.search(node.text) and 'demo' in self.macros:
+                    found.append((node.line, node.span[0], [self._iframe(node.line)]))
+            elif node.kind == 'Text':
+                attributes(node.value, node.line, node.span[0])
+        return [f for _, _, findings in sorted(found, key=lambda x: (x[0], x[1])) for f in findings]
 
     def _layout_base(self, layout):
         """The layout of the design named by `layout`, or None: its name, or

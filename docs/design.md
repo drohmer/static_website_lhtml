@@ -1896,7 +1896,20 @@ so they parse it on their own. Checked: the same
 files in the same order on the 1879 pages of the corpus read with each of
 their themes (1848 files, 16 macros). What changes is what the scan got
 wrong: an `img::x.png` written inside an HTML attribute is not an image.
-Next: the lint.
+
+*The styles and spacers of the lint, done* (2026-10-17). `lib/lint.py`
+reads the styles, the spacers and the iframes of an LHTML page in its
+tree: the style group of an element (not a link's label), the `style="..."`
+of its raw HTML, its Jinja, the attributes of an element and its text, a
+spacer being an anonymous div or a `div::` holding only a height in px,
+alone on its line. Checked on the 1879 pages x themes of the corpus: the
+same 3648 findings, and 20 spacers more, `div::[height:20px;] ::` (a space
+before the `::`, which the regular expression missed). It found an LHTML
+bug: the groups of an element held the placeholders of the zones they hold
+(`top:{{ top }}px`), not the text as written (fixed in LHTML). What still
+reads the text: the layout checks (`media::`, `aside::` present) and the
+rules of the project (`small::` around list items, followed by a stack of
+blocks on the lines: the tree's nesting), the next candidates.
 
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint

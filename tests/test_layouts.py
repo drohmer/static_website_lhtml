@@ -148,6 +148,20 @@ class LintTests(unittest.TestCase):
         self.assertTrue(found[2][2].startswith('small::'))
         self.assertTrue(found[3][2].startswith('tiny::'))
 
+    def test_styles_and_spacers_are_read_in_the_document_tree(self):
+        # a spacer closed after a space; a style with Jinja, as written; a
+        # style in a raw tag spanning lines; [color:gray] in text is not a style,
+        # nor in code
+        text = ('div::[height:20px;] ::\n'
+                'div::[position:fixed; top:{{ top }}px] a ::\n'
+                '<p\nstyle="color:gray">b</p>\n'
+                'see [color:gray] here\n'
+                'code::[css]\np::[color:gray] x ::\ncode::[-]\n')
+        found = [(f.line, f.kind, f.text) for f in self.linter.lint(text)]
+        self.assertEqual(found, [(1, 'spacer', 'div::[height:20px;] ::'),
+                                 (2, 'position', 'position:fixed; top:{{ top }}px'),
+                                 (4, 'color', 'color:gray')])
+
     def test_more_values_and_exceptions(self):
         text = ("{% set layout = 'side' %}\n"
                 'aside::[top:400px;]\n'
