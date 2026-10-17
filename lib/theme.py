@@ -37,9 +37,8 @@ the vocabulary of the content.
 """
 from pathlib import Path
 
-import yaml
-
 from lib.configuration import ConfigError
+from lib.filesystem import read_yaml
 
 MANIFEST = 'theme.yaml'
 DEFAULTS = {'template': 'theme/template/base.html', 'content_block': 'content',
@@ -62,9 +61,9 @@ def read(theme_directory):
     if not file.is_file():
         return manifest
     try:
-        given = yaml.safe_load(file.read_text(encoding='utf-8')) or {}
-    except (OSError, yaml.YAMLError) as error:
-        raise ConfigError(f'{file}: {error}') from None
+        given = read_yaml(file) or {}
+    except ValueError as error:                     # the message names the file
+        raise ConfigError(str(error)) from None
     manifest.update(validate(given, file))
     return manifest
 

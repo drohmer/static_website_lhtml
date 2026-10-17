@@ -16,6 +16,7 @@ see does not go there.
 
 from pathlib import Path
 import json
+import os
 
 # The documents written for the author and their agent (agents.md,
 # design.md, credits.md, todo.md) go next to the configuration, not into
@@ -51,9 +52,14 @@ def documents_directory(meta):
     return path
 
 
+def page_path(entry):
+    """The path of a page of the structure in the site: 'a/b/index.html'."""
+    return entry['dir'] + entry['filename']
+
+
 def load_structure(site_directory):
     """The structure exported in a site directory (structure.json)."""
-    with open(site_directory + '/structure/structure.json', encoding='utf-8') as fid:
+    with open(os.path.join(site_directory, 'structure', 'structure.json'), encoding='utf-8') as fid:
         return json.load(fid)
 
 

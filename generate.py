@@ -13,6 +13,7 @@ import os
 import shutil
 import tempfile
 import argparse
+from contextlib import contextmanager
 import sys
 import importlib.util
 import traceback
@@ -102,28 +103,14 @@ def parse_arguments():
 # Plugin system
 # ---------------------------------------------------------------------------
 
-# Plugins renamed in the v2 layout
-RENAMED_PLUGINS = {'auto-wrap.py': 'auto_wrap.py'}
-
-
-def resolve_plugin_path(meta, plugin_path, log):
-    """Find a plugin file: absolute path, relative to the configuration
-    directory, or relative to the generator directory (default plugins).
-    Renamed plugins (auto-wrap.py) are redirected with a warning."""
-    candidates = [plugin_path]
-    for old, new in RENAMED_PLUGINS.items():
-        if plugin_path.endswith(old):
-            candidates.append(plugin_path[:-len(old)] + new)
-    for candidate in candidates:
-        for base in ('', meta['config_directory'], meta['lib_directory']):
-            if os.path.isabs(candidate) != (base == ''):
-                continue
-            full_path = base + candidate
-            if os.path.isfile(full_path):
-                if candidate != plugin_path:
-                    log.warning(f"Plugin '{plugin_path}' was renamed: using '{full_path}' "
-                                f"(update 'plugin' in your configuration file)")
-                return full_path
+def resolve_plugin_path(meta, plugin_path):
+    """Find a plugin file: an absolute path, or a path relative to the
+    configuration directory, then to the generator (its own plugins/)."""
+    if os.path.isabs(plugin_path):
+        return plugin_path if os.path.isfile(plugin_path) else None
+    for base in (meta['config_directory'], meta['lib_directory']):
+        if os.path.isfile(base + plugin_path):
+            return base + plugin_path
     return None
 
 
@@ -131,7 +118,7 @@ def resolve_plugins(meta, log):
     """Resolve the plugin paths once. Returns (full paths found, number missing)."""
     found, missing = [], 0
     for plugin_path in meta['plugin']:
-        full_path = resolve_plugin_path(meta, plugin_path, log)
+        full_path = resolve_plugin_path(meta, plugin_path)
         if full_path is None:
             log.error(f'Plugin not found: {plugin_path}')
             missing += 1
@@ -237,14 +224,6 @@ def select_pages(meta, log, scaffold=False):
 def other_sources(selected):
     """{name: root} of the other projects of the pages."""
     return {p.source.name: p.source.root for p in selected if p.source.name}
-
-
-def only_pages(meta, selected, log):
-    """--only: the pages its pointers name. Whether the build may stay
-    partial is decided in one place, by the dependency store."""
-    built = deck.named_pages(selected, meta['args'].only, other_sources(selected))
-    log.keyvalue('info', f"--only: {', '.join(p.label for p in built)}", indent_level=1)
-    return built
 
 
 # Guide of the procedure for AI agents, copied into each project (.structure/agents.md)
@@ -469,20 +448,6 @@ def load_project_design(meta):
     return design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
 
 
-def prepare_design(meta, log):
-    """Write theme/css/design.css of the site and .structure/design.md
-    (meta['loaded_design'], loaded at the start of the build)."""
-    # Always written (even empty): the theme may link it, and --only must not
-    # keep the design.css of a previous design.
-    path = design.write_design(meta, meta['loaded_design'])
-    log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
-
-
-# Options of the generator given to LHTML (lhtml.run reads no other key).
-# Not `wrap-auto`: the theme wraps the page (lib/wrap.py), LHTML would wrap it twice.
-LHTML_OPTIONS = ('title', 'css', 'js', 'line-breaks', 'macros')
-
-
 def render_lhtml(meta, selected, log, failed_before=()):
     """Run LHTML conversion on all rendered templates, with optional HTML tidy
     (not on the pages that failed before: `failed_before`). Returns the list
@@ -503,8 +468,10 @@ def render_lhtml(meta, selected, log, failed_before=()):
         with open(html_path, 'r', encoding='utf-8') as fid:
             input_html = front_matter.split(fid.read())[0]   # LHTML 3 reads none
 
-        options = {k: meta[k] for k in LHTML_OPTIONS if k in meta}
-        options['media'] = video_cache.media(meta['site_directory'] + page.site_directory)
+        # The macros of the design, the video variants; not `wrap-auto`: the
+        # theme wraps the page (lib/wrap.py)
+        options = {'macros': meta.get('macros'),
+                   'media': video_cache.media(meta['site_directory'] + page.site_directory)}
 
         try:
             with python_warnings.catch_warnings(record=True) as caught:
@@ -517,12 +484,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
-            # Enrich error with line number if position is available
-            msg = str(e)
-            if hasattr(e, 'source_pos') and e.source_pos >= 0:
-                line = input_html[:e.source_pos].count('\n') + 1
-                msg = f'line {line}: {msg}'
-            log.error(f'{html_path}: {msg}')
+            log.error(f'{html_path}: {e}')
             failed.append(page)
             discard_page(meta, page)
             continue
@@ -560,8 +522,8 @@ def compile_sass(meta, log):
         return
     log.debug(f'Compile {len(sass_files)} sass files')
 
-    for element in sass_files:
-        path_sass = element['path'].filepath()
+    for local, name in sass_files:
+        path_sass = dir_site + local + name
         css_txt = sass.compile(filename=path_sass)
 
         path_css = path_sass[:-len('.sass')] + '.css'
@@ -724,14 +686,18 @@ def build_once(args):
         meta['dependency_contexts'] = {p.site_html: dependencies.page_context(p) for p in selected}
         meta['source_roots'] = other_sources(selected)
         meta['dependency_store'] = dependencies.BuildStore(meta)
-        built = only_pages(meta, selected, log) if args.only else None
-        if built is not None:
-            built = meta['dependency_store'].expand(meta, selected, built)
+        built = None
+        if args.only:
+            # the pages its pointers name; whether the build may stay partial
+            # is decided in one place, by the dependency store
+            named = deck.named_pages(selected, args.only, other_sources(selected))
+            log.keyvalue('info', f"--only: {', '.join(p.label for p in named)}", indent_level=1)
+            built = meta['dependency_store'].expand(meta, selected, named)
+            if built is None:
+                # a full build (the pages of the site changed), but the layout report
+                # measures only the pages named (and those without a report)
+                meta['measure'] = meta.get('dependency_measure') or [p.site_html for p in named]
         meta['only'] = built is not None
-        if args.only and built is None:
-            # a full build (the pages of the site changed), but the layout report
-            # measures only the pages named (and those without a report)
-            meta['measure'] = meta.get('dependency_measure') or [p.site_html for p in deck.named_pages(selected, args.only, other_sources(selected))]
         if meta['only']:
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated
@@ -769,6 +735,15 @@ def lint_pages(selected, loaded_design, log, details=False):
     return found
 
 
+@contextmanager
+def stage(log, title):
+    """A stage of the build, as the log shows it: its title, then its time."""
+    log.title(title, pre='\n')
+    log.tic()
+    yield
+    log.ok_elapsed()
+
+
 def generate_site(meta, selected, built):
     """Generate the pages `built` among the pages of the site `selected` (all
     of them, except with --only)."""
@@ -781,56 +756,39 @@ def generate_site(meta, selected, built):
     log.keyvalue('info', f"Source: {meta['source_directory']}", indent_level=1)
     log.keyvalue('info', f"Plugins: {meta['plugin']}", indent_level=1)
 
-    meta['page_contexts'] = {p.site_html: {'page': p.site_html,
-        'source': filesystem.shown(p.src, meta['config_directory']),
-        'occurrence': p.occurrence, 'params': p.params, 'deck_line': p.deck_line} for p in selected}
+    with stage(log, 'Data preparation'):
+        meta['loaded_design'] = load_project_design(meta)
+        meta['macros'] = design.lhtml_macros(meta['loaded_design'])
+        sitemap, (credits_of, credit_errors) = prepare_data(meta, selected, built, log)
+        # theme/css/design.css and .structure/design.md, always written (even
+        # empty): the theme may link it, and --only must not keep a previous one
+        path = design.write_design(meta, meta['loaded_design'])
+        log.debug(f"Design: {len(meta['macros'])} macro(s), {path}")
+        meta['lint_findings'] = {src: [f.as_dict() for f in findings]
+                                 for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
 
-    # Data preparation
-    log.title('Data preparation', pre='\n')
-    log.tic()
-    meta['loaded_design'] = load_project_design(meta)
-    meta['macros'] = design.lhtml_macros(meta['loaded_design'])
-    sitemap, (credits_of, credit_errors) = prepare_data(meta, selected, built, log)
-    prepare_design(meta, log)
-    meta['lint_findings'] = {src: [f.as_dict() for f in findings]
-                             for src, findings in lint_pages(built, meta['loaded_design'], log).items()}
-    log.ok_elapsed()
+    with stage(log, 'Pre-process'):
+        plugin_failures += run_plugins(meta, 'pre_process', log)
+        # Core stages on the sources, after the extensions have written them:
+        # the theme wraps what the content ends up being (lib/wrap.py), and the
+        # headings of that content get their ids (lib/headings.py).
+        headings.run(meta)
+        wrap.run(meta)
+        # Transcoded videos next to the assets, before LHTML writes the <video>
+        # tags whose sources video_cache.media lists
+        video_cache.run(meta)
 
-    # Pre-process plugins
-    log.title('Pre-process', pre='\n')
-    log.tic()
-    plugin_failures += run_plugins(meta, 'pre_process', log)
-    # Core stages on the sources, after the extensions have written them:
-    # the theme wraps what the content ends up being (lib/wrap.py), and the
-    # headings of that content get their ids (lib/headings.py).
-    headings.run(meta)
-    wrap.run(meta)
-    # Transcoded videos next to the assets, before LHTML writes the <video>
-    # tags whose sources video_cache.media lists
-    video_cache.run(meta)
-    log.ok_elapsed()
+    with stage(log, 'Convert HTML'):
+        failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
+        if failed:
+            log.error(f'{len(failed)} page(s) not generated (see errors above)')
+        drop_failed_pages(meta, selected, failed)
 
-    # Jinja2 rendering
-    log.title('Convert HTML', pre='\n')
-    log.tic()
-    failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
-    if failed:
-        log.error(f'{len(failed)} page(s) not generated (see errors above)')
-    drop_failed_pages(meta, selected, failed)
-    log.ok_elapsed()
+    with stage(log, 'Mid-process'):
+        plugin_failures += run_plugins(meta, 'mid_process', log)
 
-    # Mid-process plugins
-    log.title('Mid-process', pre='\n')
-    log.tic()
-    plugin_failures += run_plugins(meta, 'mid_process', log)
-    log.ok_elapsed()
-
-    # LHTML conversion
-    log.title('LHTML', pre='\n')
-    log.tic()
-    failed += render_lhtml(meta, built, log, failed_before=failed)
-    log.ok_elapsed()
-
+    with stage(log, 'LHTML'):
+        failed += render_lhtml(meta, built, log, failed_before=failed)
 
     # SASS compilation
     compile_sass(meta, log)
@@ -838,17 +796,14 @@ def generate_site(meta, selected, built):
     if meta['only']:
         dependencies.refresh_runtime_files(meta, built)
 
-    # Post-process plugins
-    log.title('Post-process', pre='\n')
-    log.tic()
-    post_ran = not failed and not plugin_failures
-    if post_ran:
-        plugin_failures += run_plugins(meta, 'post_process', log)
-        # Core stages on the built site: the menu of the theme, and the
-        # index of a site that has none (lib/menu.py, lib/index_page.py)
-        menu.run(meta)
-        index_page.run(meta)
-    log.ok_elapsed()
+    with stage(log, 'Post-process'):
+        post_ran = not failed and not plugin_failures
+        if post_ran:
+            plugin_failures += run_plugins(meta, 'post_process', log)
+            # Core stages on the built site: the menu of the theme, and the
+            # index of a site that has none (lib/menu.py, lib/index_page.py)
+            menu.run(meta)
+            index_page.run(meta)
 
     # The layout analysis is part of the generator, not a plugin: it runs
     # once the pages and the theme are in place, and before the dependency
@@ -857,10 +812,8 @@ def generate_site(meta, selected, built):
     # report is worth reading, and the plugin that used to run after it
     # could not suppress it either.
     if meta['analyse_layout'] and post_ran:
-        log.title('Layout analysis', pre='\n')
-        log.tic()
-        layout_build.run(meta)
-        log.ok_elapsed()
+        with stage(log, 'Layout analysis'):
+            layout_build.run(meta)
 
     restore_previous_pages(meta, failed)
     log.plain()

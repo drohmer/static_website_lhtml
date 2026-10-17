@@ -61,7 +61,7 @@ from lib.layout.report import changes_markdown, layout_changes, page_markdown, s
 from lib.layout_options import jobs, options_of, output_directory, validate as validate_options
 from lib.lint import Linter
 from lib.report_lock import report_lock
-from lib.structure import built_pages, structure
+from lib.structure import built_pages, page_path, structure
 
 
 def _clean_after_measure(output_dir, pages, previous, partial, meta, start):
@@ -134,13 +134,13 @@ def _measure_and_report(meta):
     # --only: the pages built (or, when the pages of the site changed, the full
     # build measures only the pages named); the others keep their report
     requested = meta.get('measure')
-    built = set(requested) if requested else {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
+    built = set(requested) if requested else {page_path(entry) for entry in built_pages(meta)}
     partial = len(built) < len(structure(meta))
     entries = {}
 
     pages, previous = [], []
     for entry in structure(meta):
-        relative = entry['dir'] + entry['filename']
+        relative = page_path(entry)
         if os.path.isabs(relative) or '..' in relative.replace('\\', '/').split('/'):
             raise ValueError(f'Invalid page path in layout structure: {relative}')
         entries[relative] = entry
@@ -209,7 +209,7 @@ def _measure_and_report(meta):
     rows = []
     loaded_design = meta.get('loaded_design')
     linter = Linter(loaded_design) if loaded_design else None
-    order = {entry['dir'] + entry['filename']: k for k, entry in enumerate(structure(meta))}
+    order = {page_path(entry): k for k, entry in enumerate(structure(meta))}
     measured.sort(key=lambda m: order[m[0]['name']])
     for p, layout_path, layout in measured:
         entry = entries[p['name']]

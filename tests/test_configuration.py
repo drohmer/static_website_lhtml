@@ -102,16 +102,15 @@ class ConfigurationTests(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 load_config(self.file)
 
-    def test_legacy_alias_unknown_key_and_conflict(self):
-        self.write(plugin_post=[], site_directoy='typo', custom_option=42)
+    def test_unknown_key_and_removed_keys(self):
+        self.write(site_directoy='typo', custom_option=42)
         config, _, warnings = load_config(self.file)
-        self.assertEqual(config.plugin, [])
         self.assertEqual(config.to_meta()['custom_option'], 42)
-        self.assertIn('plugin_post', '\n'.join(warnings))
         self.assertIn("Did you mean 'site_directory'", '\n'.join(warnings))
-        self.write(plugin=[], plugin_post=[])
-        with self.assertRaises(ConfigError):
-            load_config(self.file)
+        for key, fix in (('plugin_post', "under 'plugin'"), ('include_head', '<head>')):
+            self.write(**{key: []})
+            with self.assertRaisesRegex(ConfigError, fix):
+                load_config(self.file)
 
     def test_overlapping_paths_and_symlinks_rejected_before_clean(self):
         marker = self.root / 'src/keep.txt'
@@ -157,19 +156,18 @@ class ConfigurationTests(unittest.TestCase):
         self.assertFalse((self.root / '.site').exists())
         self.assertTrue(unrelated.exists())
 
-    def test_renamed_example_and_legacy_directories(self):
-        example = self.root / 'configure_example.yaml'
-        self.file.rename(example)
-        config, path, warnings = load_config(self.root / 'configure_default.yaml')
-        self.assertEqual(path, example)
-        self.assertTrue(warnings)
+    def test_renamed_example_and_directories_are_refused_with_the_new_name(self):
+        self.file.rename(self.root / 'configure_example.yaml')
+        with self.assertRaisesRegex(ConfigError, 'configure_example.yaml'):
+            load_config(self.root / 'configure_default.yaml')
+        self.file = self.root / 'configure.yaml'
         (self.root / 'example').mkdir()
         (self.root / 'themes/webpage-frame').mkdir(parents=True)
-        self.write(source_directory='src_site_example', theme='theme_templates/webpage-frame')
-        config, path, warnings = load_config(self.file)
-        validate_paths(config, path)
-        self.assertEqual(Path(config.source_directory), self.root / 'example')
-        self.assertEqual(len(warnings), 2)
+        for key, old, new in (('source_directory', 'src_site_example', 'example'),
+                              ('theme', 'theme_templates/webpage-frame', 'themes/webpage-frame')):
+            self.write(**{key: old})
+            with self.assertRaisesRegex(ConfigError, new):
+                load_config(self.file)
 
 
     def test_chrome_executable_is_resolved_and_checked(self):

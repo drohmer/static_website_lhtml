@@ -12,6 +12,7 @@ import json
 import os
 
 from lib import design
+from lib.structure import load_structure, page_path
 
 SCHEMA = 1
 
@@ -100,7 +101,7 @@ def input_snapshot(meta, entry, extra=()):
     for root, kind in ((meta['theme'], 'theme'), (Path(entry['src']).parent, 'assets')):
         members = {str(p.resolve()): file_hash(p, cache) for p in scope_files(root, kind)}
         scopes.append({'root': str(Path(root).resolve()), 'kind': kind, 'members': members})
-    name = entry['dir'] + entry['filename']
+    name = page_path(entry)
     context = json.loads(json.dumps(meta.get('dependency_contexts', {}).get(name, {'source': entry['src']}), default=str))
     payload = {'files': files, 'scopes': scopes, 'context': context}
     return {**payload, 'fingerprint': digest(payload)}
@@ -148,7 +149,7 @@ def local_resource(url, html):
 
 
 def make_manifest(meta, entry, runtime_urls=()):
-    name = entry['dir'] + entry['filename']
+    name = page_path(entry)
     site = Path(meta['site_directory']).resolve()
     html = site / name
     parser = ResourceParser()
@@ -183,7 +184,7 @@ def make_manifest(meta, entry, runtime_urls=()):
 def freshness(manifest, meta, entry):
     if not manifest or manifest.get('schema_version') != SCHEMA:
         return {'status': 'unknown', 'changes': [{'kind': 'untracked', 'path': None}]}
-    name = entry['dir'] + entry['filename']
+    name = page_path(entry)
     changes = input_changes(manifest['inputs'], meta, meta['dependency_contexts'].get(name, {}))
     site = Path(meta['site_directory'])
     for relative, expected in manifest['artifacts'].items():
@@ -207,12 +208,10 @@ class BuildStore:
         previous build is what a partial build completes: without it, or
         when it holds other pages than this build produces, nothing can be
         kept."""
-        previous = Path(meta['site_directory']) / 'structure/structure.json'
-        if not previous.is_file():
+        if not (Path(meta['site_directory']) / 'structure/structure.json').is_file():
             return 'no previous build'
         try:
-            names = [entry['dir'] + entry['filename']
-                     for entry in json.loads(previous.read_text(encoding='utf-8'))]
+            names = [page_path(entry) for entry in load_structure(meta['site_directory'])]
         except (OSError, ValueError):
             return 'the structure of the previous build cannot be read'
         if names != [page.site_html for page in selected]:
@@ -247,7 +246,7 @@ class BuildStore:
 
     def save(self, meta):
         for entry in meta['built']:
-            name = entry['dir'] + entry['filename']
+            name = page_path(entry)
             if (Path(meta['site_directory']) / name).is_file():
                 self.pages[name] = make_manifest(meta, entry, meta.get('runtime_resources', {}).get(name, []))
         self.path.parent.mkdir(parents=True, exist_ok=True)

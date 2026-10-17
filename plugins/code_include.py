@@ -2,8 +2,8 @@ import os
 import re
 import subprocess
 
-from lhtml.element_extract import extract_bracket_elements
-from lib.structure import built_pages
+from lhtml.tag_parser import extract_bracket_elements
+from lib.structure import built_pages, page_path
 
 
 # Directory where the code repositories are cloned, relative to the
@@ -83,7 +83,7 @@ def clean_include(content):
     return remove_trailing_space(content)
 
 
-def research_file(arg):
+def research_file(arg, log):
     file_to_research = arg['research_file']
     root_path = CODE_DIRECTORY + arg['root']
 
@@ -94,14 +94,14 @@ def research_file(arg):
                 candidates.append(root)
 
     if not candidates:
-        print(f'Warning: could not find any candidate for file [{file_to_research}]')
+        log.warning(f'includeadv: no file [{file_to_research}] under [{root_path}]')
         return ''
 
     # Keep candidate with longest pathname
     best = max(candidates, key=len)
     filepath = best + '/' + file_to_research
     if not os.path.isfile(filepath):
-        print(f'Warning: ideal file not found [{filepath}]')
+        log.warning(f'includeadv: file not found [{filepath}]')
 
     # path relative to the code directory
     return filepath[len(CODE_DIRECTORY):]
@@ -154,8 +154,9 @@ def mid_process(meta):
                 os.makedirs(CODE_DIRECTORY, exist_ok=True)
                 subprocess.run(['git', 'clone', url], cwd=CODE_DIRECTORY)
 
+    log = meta['log']
     for entry in built_pages(meta):
-        file_path = meta['site_directory'] + entry['dir'] + entry['filename']
+        file_path = meta['site_directory'] + page_path(entry)
         if not os.path.isfile(file_path):       # the page failed
             continue
 
@@ -171,21 +172,25 @@ def mid_process(meta):
         for it in match:
             arg_includeadv = analyse_includeadv_match(file_content, it)
 
+            include_file_content = None
             if 'filepath' in arg_includeadv:
                 include_filepath = CODE_DIRECTORY + arg_includeadv['filepath']
                 with open(include_filepath, 'r', encoding='utf-8') as fid:
                     include_file_content = fid.read()
 
             if 'research' in arg_includeadv:
+                if include_file_content is None:
+                    log.warning(f"includeadv: 'research' needs a 'filepath' ({entry['filename']})")
+                    continue
                 matching_line = extract_first_matching_line(include_file_content, arg_includeadv['research'])
                 if matching_line is None:
-                    print(f"\nWarning: could not extract line [{arg_includeadv['research']}]")
+                    log.warning(f"includeadv: could not extract line [{arg_includeadv['research']}]")
                     continue
                 parts.append(file_content[prev:it.span()[0]])
                 parts.append(clean_include(matching_line))
 
             if 'research_file' in arg_includeadv:
-                filepath = research_file(arg_includeadv)
+                filepath = research_file(arg_includeadv, log)
                 filepath_local = filepath[len(arg_includeadv['root']):]
                 parts.append(file_content[prev:it.span()[0]])
                 parts.append(filepath_local)

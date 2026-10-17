@@ -11,11 +11,11 @@ from collections import Counter
 
 from lib import source_scan
 from lib.source_map import strip as strip_markers
-from lib.structure import built_pages, structure, template_path
+from lib.generator_tool import RAW_MARKERS
+from lib.structure import built_pages, page_path, structure, template_path
 
 
 TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
-RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
 
 
 def generate_new_id(text, id_storage):
@@ -44,7 +44,7 @@ def run(meta):
     if not meta.get('title_id', True):          # title_id: false in the configuration
         return
     pages = structure(meta)
-    built = {entry['dir'] + entry['filename'] for entry in built_pages(meta)}
+    built = {page_path(entry) for entry in built_pages(meta)}
     summary_path = meta['site_directory'] + 'structure/title_id.json'
     previous = {}
     if len(built) < len(pages) and os.path.isfile(summary_path):
@@ -56,7 +56,7 @@ def run(meta):
     pages_per_directory = Counter(entry['dir'] for entry in pages)
 
     for entry in pages:
-        page_key = entry['dir'] + entry['filename']
+        page_key = page_path(entry)
         if page_key not in built:
             # Ids are unique in the site: count those of the pages not generated
             title_id_summary[page_key] = previous.get(page_key, [])
@@ -95,10 +95,10 @@ def run(meta):
         json.dump(title_id_summary, fid, indent=4)
 
     for entry in pages:
-        if entry['dir'] + entry['filename'] not in built:
+        if page_path(entry) not in built:
             continue
         dirname = meta['site_directory'] + entry['dir']
-        headings = title_id_summary[entry['dir'] + entry['filename']]
+        headings = title_id_summary[page_path(entry)]
         with open(dirname + entry['filename'] + '.title_id.json', 'w', encoding='utf-8', newline='\n') as fid:
             json.dump(headings, fid, indent=4)
         # Preserve the old URL for a directory index or a single-page folder.

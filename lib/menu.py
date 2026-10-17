@@ -16,7 +16,7 @@ copy in the site no longer holds the `{{TOC}}` placeholder.
 import json
 import os
 
-from lib.structure import DISPLAY_KEYS, structure
+from lib.structure import DISPLAY_KEYS, page_path, structure
 from lib.theme import of as theme_manifest
 
 PLACEHOLDER = '{{TOC}}'
@@ -42,7 +42,7 @@ def table_of_contents(meta, manifest):
         item = {key: str(value) for key, value in entry.items() if key in keys}
         # Keep legacy string values (notably "True" for theme flags), but let
         # JSON escape quotes, backslashes and newlines in metadata and paths.
-        item['path'] = entry['dir'] + entry['filename']
+        item['path'] = page_path(entry)
         toc.append(item)
     return toc
 

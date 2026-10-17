@@ -103,7 +103,7 @@ class DeckTests(unittest.TestCase):
                 (Path(root) / 'ext' / name / 'index.html.j2').write_text('= u\n')
             loaded = deck.load_deck({'sources': {'ext': 'ext'}, 'slides': ['a/01_x', 'ext:c', '!ext:c/02_v']},
                                     root)
-            self.assertEqual(loaded.sources['ext'], str(Path(root, 'ext').resolve()) + '/')
+            self.assertEqual(loaded.sources['ext'], Path(root, 'ext').resolve().as_posix() + '/')
             result = deck.apply_deck(loaded, SLIDES + discover(Source('ext', loaded.sources['ext'])))
             self.assertEqual([p.label for p in result.pages], ['a/01_x', 'ext:c/01_u'])
             self.assertEqual(result.pages[1].site_directory, 'ext/c/01_u/')

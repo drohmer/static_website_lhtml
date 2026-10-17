@@ -168,7 +168,6 @@ Optional keys:
 |-----|-------------|
 | `debug` | Verbose logging and retained intermediate files; overridden by `--debug` / `--no-debug` |
 | `level_print` | Non-negative log indentation level (default: 0) |
-| `include_head` | List of extra head fragments passed to LHTML |
 | `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies them into the site, and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `keywords` | Extra Jinja2 template variables |
@@ -905,8 +904,7 @@ that LHTML keeps as it is (code block, multi-line Jinja or HTML tag, math)
 and inside the Jinja blocks whose content is a value (`{% set x %}`,
 `{% markdown %}`, `{% filter %}`) are not marked. A block written on one line
 in HTML or by a macro (`{{ box() }}`) gets its own line. Without the
-attributes, the HTML is the same as in a normal build (also with
-`line-breaks`).
+attributes, the HTML is the same as in a normal build.
 
 **Validity of the reports.** Each build records the files that each page
 depends on (template, includes, configuration, design, theme, plugins, its

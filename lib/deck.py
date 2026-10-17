@@ -38,9 +38,7 @@ import fnmatch
 import re
 import unicodedata
 
-import yaml
-
-from lib.filesystem import read_text
+from lib.filesystem import read_yaml
 from lib.generator_tool import STRUCTURE_KEYS
 from lib.pages import is_template, template_name
 
@@ -146,7 +144,7 @@ def _load_sources(sources, base, origin):
             root = Path(base) / root
         if not root.is_dir():
             raise DeckError(f"{where}: directory not found '{root}'")
-        result[name] = str(root.resolve()) + '/'
+        result[name] = root.resolve().as_posix() + '/'     # '/' on Windows too
     return result
 
 
@@ -193,11 +191,9 @@ def load_deck(source, base_directory='.'):
         origin = str(source)
         base_directory = Path(source).resolve().parent
         try:
-            source = yaml.safe_load(read_text(source))
-        except ValueError as exc:                   # not UTF-8: the message names the file
+            source = read_yaml(source)
+        except ValueError as exc:                   # the message names the file
             raise DeckError(str(exc)) from None
-        except (OSError, yaml.YAMLError) as exc:
-            raise DeckError(f"cannot read '{origin}': {exc}") from exc
     sources, target = {}, None
     if isinstance(source, dict):
         unknown = set(source) - {'slides', 'title', 'sources', 'duration'}

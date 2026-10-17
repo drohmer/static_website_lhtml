@@ -36,8 +36,7 @@ import copy
 import re
 
 import lhtml
-from lib.filesystem import read_text
-import yaml
+from lib.filesystem import read_yaml
 
 DESIGN_FILE = 'design.yaml'
 CSS_PATH = 'theme/css/design.css'
@@ -58,11 +57,9 @@ class DesignError(ValueError):
 
 def _read_yaml(path):
     try:
-        data = yaml.safe_load(read_text(path))
-    except ValueError as exc:                       # not UTF-8: the message names the file
+        data = read_yaml(path)
+    except ValueError as exc:                       # the message names the file
         raise DesignError(str(exc)) from None
-    except (OSError, yaml.YAMLError) as exc:
-        raise DesignError(f"cannot read '{path}': {exc}") from exc
     if data is None:
         return {}
     if not isinstance(data, dict):

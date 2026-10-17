@@ -7,13 +7,12 @@ from typing import Any
 import copy
 import difflib
 import os
-import yaml
 
-from lib.filesystem import read_text
+from lib.filesystem import read_yaml
 from lib.structure import PRIVATE_KEYS
 
 GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
-RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}
+RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}   # in 3.0
 
 
 # Keys of meta set by the generator during a build (never by the configuration)
@@ -23,13 +22,13 @@ CORE_STAGES = {
     'menu.py': "the theme's menu",
     'title_submenu.py': 'the heading ids (configuration key title_id:)',
     'auto_wrap.py': 'the wrapping of a page in the template of its theme',
+    'auto-wrap.py': 'the wrapping of a page in the template of its theme',
     'redirection_first_page.py': 'the index of a site that has none',
     'cache_video.py': "the transcoded videos (set 'cache_video_directory:' to ask for them)",
 }
 
 RUNTIME_KEYS = frozenset((
     'args', 'log', 'plugin_paths', 'config_file', 'config_directory', 'lib_directory', 'extras',
-    'current_directory',
     'published_site_directory',     # the site, while the build is made in a staging directory
     'only',                         # --only: the build is made in the site, for some pages
     'structure', 'built',           # all the pages of the site / those generated (lib/structure.py)
@@ -39,7 +38,7 @@ RUNTIME_KEYS = frozenset((
     'measure',                      # --only: the pages the layout report measures again
     'source_roots',                 # the sources read by each page (lib/tracking.py)
     'dependency_contexts', 'dependency_store', 'dependency_measure',
-    'page_contexts',                # what each page depends on (lib/dependencies.py)
+    'template_dependencies',        # what each page depends on (lib/dependencies.py)
     'analyse_layout',               # --layout: the build runs the layout analysis (lib/layout/build.py)
     'publish_site',                 # a target asks for its intermediate site not to be published
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
@@ -66,7 +65,6 @@ class Config:
     title_id: bool = True
     keywords: dict = field(default_factory=dict)
     use_tidy: bool = False
-    include_head: list[str] = field(default_factory=list)
     # Page settings a custom theme needs in the site, beyond the ones the
     # bundled themes display (lib/structure.py, PUBLIC_KEYS). Everything else
     # an author writes in a config.yaml or a deck entry stays out of the site.
@@ -83,10 +81,7 @@ class Config:
     def to_meta(self):
         values = asdict(self)
         values.update(values.pop('extras'))
-        for key in ('cache_video_directory', 'chrome'):
-            if values[key] is None:
-                del values[key]
-        for key in ('design', 'deck'):
+        for key in ('cache_video_directory', 'chrome', 'design', 'deck'):
             if values[key] is None:
                 del values[key]
         return values
@@ -107,7 +102,7 @@ class BuildContext:
         self.meta.update(config_file=str(self.config_file),
                          config_directory=self.config_file.parent.as_posix() + '/',
                          lib_directory=GENERATOR_DIRECTORY.as_posix() + '/',
-                         path_config='', args=self.args, log=self.log,
+                         args=self.args, log=self.log,
                          plugin_paths=self.plugin_paths)
 
 
@@ -161,26 +156,23 @@ def load_config(filename, debug_override=None):
     path = Path(filename).expanduser().resolve()
     warnings = []
     if not path.exists() and path.name == 'configure_default.yaml':
-        replacement = path.with_name('configure_example.yaml')
-        if replacement.is_file():
-            warnings.append("'configure_default.yaml' was renamed 'configure_example.yaml'; update your command.")
-            path = replacement
+        raise ConfigError("'configure_default.yaml' was renamed 'configure_example.yaml' (3.0): "
+                          "update your command")
     try:
-        data = yaml.safe_load(read_text(path))
-    except ValueError as exc:                       # not UTF-8: the message names the file
+        data = read_yaml(path)
+    except ValueError as exc:                       # the message names the file
         raise ConfigError(str(exc)) from None
-    except (OSError, yaml.YAMLError) as exc:
-        raise ConfigError(f"Cannot read configuration '{path}': {exc}") from exc
     if data is None:
         data = {}
     if not isinstance(data, dict) or any(not isinstance(k, str) for k in data):
         raise ConfigError('Configuration must contain named key: value pairs')
 
     if 'plugin_post' in data:
-        warnings.append("'plugin_post' is deprecated; use 'plugin' (all hooks are executed).")
-        if 'plugin' in data:
-            raise ConfigError("Use only 'plugin', not both 'plugin' and 'plugin_post'")
-        data['plugin'] = data.pop('plugin_post')
+        raise ConfigError("'plugin_post' was removed (3.0): list its plugins under 'plugin' "
+                          "(all their hooks are run)")
+    if 'include_head' in data:
+        raise ConfigError("'include_head' was removed (3.0): it was read nowhere; a theme "
+                          "places what goes in <head>")
 
     defaults = Config().to_meta()
     known = set(defaults) | {'cache_video_directory', 'chrome', 'design', 'deck'}
@@ -210,7 +202,7 @@ def load_config(filename, debug_override=None):
     elif plugins is None:
         plugins = []
     values['plugin'] = plugins
-    for key in ('plugin', 'include_head', 'public_page_keys'):
+    for key in ('plugin', 'public_page_keys'):
         if not isinstance(values[key], list) or any(not isinstance(v, str) or not v.strip() for v in values[key]):
             raise ConfigError(f"'{key}' must be a list of non-empty strings")
     for name in sorted(set(values['public_page_keys']) & set(PRIVATE_KEYS)):
@@ -256,8 +248,8 @@ def load_config(filename, debug_override=None):
         if key in ('source_directory', 'theme') and not directory.is_dir():
             renamed = Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts])
             if renamed.is_dir():
-                warnings.append(f"'{directory}' was renamed; using '{renamed}'. Update '{key}'.")
-                directory = renamed
+                raise ConfigError(f"'{key}': '{directory.as_posix()}' was renamed "
+                                  f"'{renamed.as_posix()}' (3.0): update '{key}'")
         values[key] = directory.resolve().as_posix() + '/'     # '/' on Windows too
     if debug_override is not None:
         values['debug'] = debug_override

@@ -191,8 +191,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         self.page('nested/index.html.j2', 'First')
         (self.source / 'nested/loop').symlink_to(self.source, target_is_directory=True)
         entries = find_files_in_hierarchy(str(self.source), lambda name: name.endswith('.html.j2'))
-        self.assertEqual([e['path'].filepath_local() for e in entries], ['nested/index.html.j2'])
-        self.assertEqual(find_files_in_hierarchy(str(self.source), lambda name: True, max_depth=0), [])
+        self.assertEqual(entries, [('nested/', 'index.html.j2')])
 
     def test_pdf_failures_preserve_html_and_previous_export(self):
         for failing_command in ('node', 'pdftoppm', 'magick', 'pdfunite'):

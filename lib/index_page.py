@@ -7,7 +7,7 @@ precedence and the stage does nothing.
 """
 import os
 
-from lib.structure import structure
+from lib.structure import page_path, structure
 
 
 def create_html_redirection(url):
@@ -25,13 +25,13 @@ def create_html_redirection(url):
 
 def run(meta):
     pages = structure(meta)
-    if not pages or any(os.path.normpath(entry['dir'] + entry['filename']) == 'index.html'
+    if not pages or any(os.path.normpath(page_path(entry)) == 'index.html'
                         for entry in pages):
         return
     # A hand-written HTML homepage also takes precedence over a redirect.
     if os.path.isfile(os.path.join(meta['source_directory'], 'index.html')):
         return
-    url = pages[0]['dir'] + pages[0]['filename']
+    url = page_path(pages[0])
     html = create_html_redirection(url)
 
     redirection_path = meta['site_directory'] + '/index.html'

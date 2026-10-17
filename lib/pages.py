@@ -17,9 +17,7 @@ import os
 import shutil
 import unicodedata
 
-import yaml
-
-from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy, read_text
+from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy, read_text, read_yaml
 from lib import front_matter, source_scan
 from lib.generator_tool import STRUCTURE_KEYS
 
@@ -100,12 +98,7 @@ class Page:
     @cached_property
     def text(self):
         """Its source, read once by the scanners (titles, lint, credits...)."""
-        try:
-            with open(self.src, encoding='utf-8') as fid:
-                return fid.read()
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"'{Path(self.src).as_posix()}' is not UTF-8 text (byte {exc.start}): "
-                             f"save it in UTF-8") from None
+        return read_text(self.src)
 
     @cached_property
     def front_matter(self):
@@ -158,9 +151,7 @@ def _read_config(directory, cache):
         path = os.path.join(directory, PAGE_CONFIG)
         config = {}
         if os.path.isfile(path):
-            config = yaml.safe_load(read_text(path))      # names the file when it is not UTF-8
-            if config is None:
-                config = {}
+            config = read_yaml(path) or {}
             if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
                 raise ValueError(f"Invalid page configuration '{path}': expected key: value pairs")
             reserved = sorted(set(config) & STRUCTURE_KEYS)
@@ -187,12 +178,11 @@ def discover(source, exclude=(), include_hidden=False):
     copied into the site either. `include_hidden` keeps them, for a deck:
     naming one is the choice of its author."""
     cache = {}
-    found = [f['path'] for f in find_files_in_hierarchy(source.root, is_template, exclude=exclude)]
+    found = find_files_in_hierarchy(source.root, is_template, exclude=exclude)
     if not include_hidden:
-        found = [f for f in found if not hidden(f.path_local, f.filename)]
-    return [Page(source, f.path_local, f.filename, position=k,
-                 config=_read_config(source.root + f.path_local, cache))
-            for k, f in enumerate(found)]
+        found = [(local, name) for local, name in found if not hidden(local, name)]
+    return [Page(source, local, name, position=k, config=_read_config(source.root + local, cache))
+            for k, (local, name) in enumerate(found)]
 
 
 def name_outputs(pages):

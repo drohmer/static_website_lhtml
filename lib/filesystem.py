@@ -5,6 +5,8 @@ import os
 import shutil
 from pathlib import Path
 
+import yaml
+
 
 # Directories of a build in progress or of a backup (lib/build_output.py)
 BUILD_DIRECTORIES = ('.site-build-', '.site-backup-')
@@ -32,82 +34,46 @@ def read_text(path):
                          f"save it in UTF-8") from None
 
 
-def directory_name_clean(d_in):
-    d = d_in
-    if d == '' or d == '.':
-        return ''
-    if not d.endswith('/'):
-        d = d + '/'
-    return d
+def read_yaml(path):
+    """The YAML of a file of the project (None when it is empty). A file
+    that cannot be read, is not UTF-8 or is not YAML raises ValueError
+    naming it."""
+    try:
+        return yaml.safe_load(read_text(path))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"cannot read '{Path(path).as_posix()}': {exc}") from None
 
 
-class FilepathRelative:
-    def __init__(self, **kwargs):
-        self.root_directory = ''
-        self.path_local = ''
-        self.filename = ''
-        self.level = 0
+def find_files_in_hierarchy(root, condition, exclude=()):
+    """The files under `root` whose name satisfies `condition`, as pairs
+    (directory relative to root - '' or 'a/b/', with '/' on Windows too -,
+    file name), in order: by directory, then by name.
 
-        for k in kwargs:
-            getattr(self, k)
-        vars(self).update(kwargs)
-
-    def __str__(self):
-        return f"FilepathRelative('root_directory':'{self.root_directory}', 'path_local':'{self.path_local}', 'filename':'{self.filename}', 'level':'{self.level}')"
-
-    def __repr__(self):
-        return str(self)
-
-    def filepath(self):
-        return directory_name_clean(self.root_directory) + directory_name_clean(self.path_local) + self.filename
-
-    def filepath_local(self):
-        return directory_name_clean(self.path_local) + self.filename
-
-    def path_to_root(self):
-        return '../' * self.level
-
-
-def find_files_in_hierarchy(src_dir, condition, max_depth=None, exclude=()):
-    """Find files at any depth, avoiding directory symlink cycles.
-
-    An optional explicit depth limit remains available to callers. Separate
-    aliases of a directory are traversed, but an ancestor cannot be revisited.
-    The directories `exclude` (e.g. the site, reached through a link) and the
-    build directories of the generator (.site-build-*, .site-backup-*) are
-    not visited.
-    """
+    A directory is visited once per path that reaches it, but never inside
+    itself (a link to an ancestor). The directories `exclude` (e.g. the
+    site, reached through a link) and the build directories of the
+    generator (.site-build-*, .site-backup-*) are not visited."""
+    root = os.fspath(root)
     excluded = {os.path.realpath(p) for p in exclude if p}
-    roots = [src_dir] if isinstance(src_dir, (str, os.PathLike)) else src_dir
-    files_found = []
-    for root in roots:
-        root = os.fspath(root)
-        pending = [(root, 0, 0, frozenset())]   # heap: smallest path first
-        counter = 0
-        while pending:
-            directory, _, depth, ancestors = heapq.heappop(pending)
-            real_directory = os.path.realpath(directory)
-            if real_directory in ancestors or real_directory in excluded \
-                    or os.path.basename(real_directory).startswith(BUILD_DIRECTORIES):
-                continue
-            ancestors = ancestors | {real_directory}
-            for name in sorted(os.listdir(directory)):
-                path = os.path.join(directory, name)
-                if os.path.isfile(path) and condition(name):
-                    # a page is named by a POSIX path, '/' on Windows too
-                    local = Path(os.path.relpath(directory, root)).as_posix()
-                    if local == '.':
-                        local = ''
-                    files_found.append({'path': FilepathRelative(
-                        root_directory=directory_name_clean(root),
-                        path_local=directory_name_clean(local), level=depth, filename=name)})
-            if max_depth is None or depth < max_depth:
-                for name in sorted(os.listdir(directory)):
-                    path = os.path.join(directory, name)
-                    if os.path.isdir(path):
-                        counter += 1
-                        heapq.heappush(pending, (path, counter, depth + 1, ancestors))
-    return files_found
+    found = []
+    pending = [(root, 0, frozenset())]      # heap: smallest path first
+    counter = 0
+    while pending:
+        directory, _, ancestors = heapq.heappop(pending)
+        real = os.path.realpath(directory)
+        if real in ancestors or real in excluded or os.path.basename(real).startswith(BUILD_DIRECTORIES):
+            continue
+        ancestors = ancestors | {real}
+        local = Path(os.path.relpath(directory, root)).as_posix()
+        local = '' if local == '.' else local + '/'
+        for name in sorted(os.listdir(directory)):
+            path = os.path.join(directory, name)
+            if os.path.isfile(path) and condition(name):
+                found.append((local, name))
+            elif os.path.isdir(path):
+                counter += 1
+                heapq.heappush(pending, (path, counter, ancestors))
+    return found
 
 
 def ignore_hidden(root, skip=None):
