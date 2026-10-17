@@ -45,7 +45,7 @@ def run(meta):
         return
     pages = structure(meta)
     built = {page_path(entry) for entry in built_pages(meta)}
-    summary_path = meta['site_directory'] + 'structure/title_id.json'
+    summary_path = meta['site_directory'] / 'structure/title_id.json'
     previous = {}
     if len(built) < len(pages) and os.path.isfile(summary_path):
         with open(summary_path, encoding='utf-8') as fid:        # --only: headings of the other pages
@@ -97,11 +97,11 @@ def run(meta):
     for entry in pages:
         if page_path(entry) not in built:
             continue
-        dirname = meta['site_directory'] + entry['dir']
+        dirname = meta['site_directory'] / entry['dir']
         headings = title_id_summary[page_path(entry)]
-        with open(dirname + entry['filename'] + '.title_id.json', 'w', encoding='utf-8', newline='\n') as fid:
+        with open(dirname / (entry['filename'] + '.title_id.json'), 'w', encoding='utf-8', newline='\n') as fid:
             json.dump(headings, fid, indent=4)
         # Preserve the old URL for a directory index or a single-page folder.
         if entry['filename'] == 'index.html' or pages_per_directory[entry['dir']] == 1:
-            with open(dirname + 'title_id.json', 'w', encoding='utf-8', newline='\n') as fid:
+            with open(dirname / 'title_id.json', 'w', encoding='utf-8', newline='\n') as fid:
                 json.dump(headings, fid, indent=4)

@@ -54,7 +54,7 @@ def run(meta):
     toc_file = (manifest.get('toc') or {}).get('file')
     if not toc_file:
         return
-    source = os.path.join(meta['theme'].rstrip('/'), toc_file)
+    source = os.path.join(meta['theme'], toc_file)
     target = os.path.join(meta['site_directory'], 'theme', toc_file)
     with open(source, 'r', encoding='utf-8') as fid:
         content = fid.read()

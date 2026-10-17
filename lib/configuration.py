@@ -52,9 +52,10 @@ class ConfigError(ValueError):
 
 @dataclass(frozen=True)
 class Config:
-    source_directory: str = 'src_site/'
-    site_directory: str = '.site/'
-    theme: str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
+    # Directories: as written in the YAML, absolute Paths once load_config resolved them
+    source_directory: Path | str = 'src_site'
+    site_directory: Path | str = '.site'
+    theme: Path | str = str(GENERATOR_DIRECTORY / 'themes/webpage-frame')
     # Extensions, and nothing else: everything a bundled theme needs to
     # render a project written in LHTML is a stage of the build now
     # (lib/wrap.py, lib/headings.py, lib/menu.py, lib/index_page.py), so the
@@ -71,7 +72,7 @@ class Config:
     public_page_keys: list[str] = field(default_factory=list)
     plugin_arg: dict = field(default_factory=dict)
     layout: dict = field(default_factory=dict)      # options of the layout analysis (--layout)
-    cache_video_directory: str | None = None
+    cache_video_directory: Path | str | None = None
     chrome: str | None = None
     design: dict | str | None = None
     deck: list | dict | str | None = None
@@ -100,8 +101,8 @@ class BuildContext:
         # Plugins keep a real, mutable dict, but never mutate the configuration.
         self.meta = self.config.to_meta()
         self.meta.update(config_file=str(self.config_file),
-                         config_directory=self.config_file.parent.as_posix() + '/',
-                         lib_directory=GENERATOR_DIRECTORY.as_posix() + '/',
+                         config_directory=self.config_file.parent,
+                         lib_directory=GENERATOR_DIRECTORY,
                          args=self.args, log=self.log,
                          plugin_paths=self.plugin_paths)
 
@@ -250,7 +251,7 @@ def load_config(filename, debug_override=None):
             if renamed.is_dir():
                 raise ConfigError(f"'{key}': '{directory.as_posix()}' was renamed "
                                   f"'{renamed.as_posix()}' (3.0): update '{key}'")
-        values[key] = directory.resolve().as_posix() + '/'     # '/' on Windows too
+        values[key] = directory.resolve()
     if debug_override is not None:
         values['debug'] = debug_override
     return Config(**values, extras=copy.deepcopy(extras)), path, warnings

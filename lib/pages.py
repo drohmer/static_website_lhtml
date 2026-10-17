@@ -53,7 +53,10 @@ def template_name(name):
 @dataclass(frozen=True)
 class Source:
     name: str | None            # None: the project itself
-    root: str                   # absolute directory, with trailing /
+    root: Path                  # absolute directory
+
+    def __post_init__(self):
+        object.__setattr__(self, 'root', Path(self.root))
 
     @property
     def prefix(self):
@@ -93,7 +96,7 @@ class Page:
 
     @property
     def src(self):
-        return Path(self.source.root) / self.directory / self.template
+        return self.source.root / self.directory / self.template
 
     @cached_property
     def text(self):
@@ -181,7 +184,7 @@ def discover(source, exclude=(), include_hidden=False):
     found = find_files_in_hierarchy(source.root, is_template, exclude=exclude)
     if not include_hidden:
         found = [(local, name) for local, name in found if not hidden(local, name)]
-    return [Page(source, local, name, position=k, config=_read_config(source.root + local, cache))
+    return [Page(source, local, name, position=k, config=_read_config(source.root / local, cache))
             for k, (local, name) in enumerate(found)]
 
 
@@ -223,27 +226,27 @@ def copy_assets(source_dir, target_dir):
     return copy_tree(source_dir, target_dir, ignore)
 
 
-def place(pages, site_directory, project_assets=False, transform=None, source_transform=None):
+def place(pages, site_directory, project_assets=False, source_transform=None):
     """Copy the templates of the pages into the site, with the assets of their
     directory for the pages of other projects (those of the project are copied
     with its whole directory), and of the project too with `project_assets`
-    (--only: the sources are not copied). `transform(text)`: applied to the
-    templates (source map). Returns the warnings."""
-    site = os.path.join(site_directory, '')
-    real_site = os.path.join(os.path.realpath(site), '')
+    (--only: the sources are not copied). `source_transform(text, source)`:
+    applied to the templates (source map). Returns the warnings."""
+    site = Path(site_directory)
+    real_site = site.resolve()
     copied, warnings = set(), []
     for page in pages:
-        target_dir = site + page.site_directory
-        if not os.path.join(os.path.realpath(target_dir), '').startswith(real_site):
+        target_dir = site / page.site_directory
+        if not target_dir.resolve().is_relative_to(real_site):
             raise ValueError(f"'{target_dir}' leads out of the site directory (symbolic link?): "
                              f"refusing to write {page.label} there")
-        os.makedirs(target_dir, exist_ok=True)
+        target_dir.mkdir(parents=True, exist_ok=True)
         if (page.source.name or project_assets) and page.site_directory not in copied:
-            warnings += copy_assets(str(page.src.parent), target_dir)
+            warnings += copy_assets(str(page.src.parent), str(target_dir))
             copied.add(page.site_directory)
-        if transform is None and source_transform is None:
-            shutil.copy2(page.src, site + page.site_template)
+        if source_transform is None:
+            shutil.copy2(page.src, site / page.site_template)
         else:
-            with open(site + page.site_template, 'w', encoding='utf-8', newline='\n') as fid:
-                fid.write(source_transform(page.text, page.src) if source_transform else transform(page.text))
+            with open(site / page.site_template, 'w', encoding='utf-8', newline='\n') as fid:
+                fid.write(source_transform(page.text, page.src))
     return warnings

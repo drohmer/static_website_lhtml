@@ -63,7 +63,7 @@ def _videos_of(meta, pages):
     found = []
     for entry in pages:
         assets = entry['dir'] + ASSET_DIRECTORY
-        directory = meta['site_directory'] + assets
+        directory = meta['site_directory'] / assets
         if not os.path.isdir(directory):
             continue
         for name in sorted(os.listdir(directory)):
@@ -102,7 +102,7 @@ def run(meta):
     work = _missing_variants(cache_directory, videos)
     log.keyvalue('info', f'{len(videos)} video(s) in the assets, '
                          f'{len(work)} to transcode', indent_level=1)
-    jobs = [(meta['site_directory'] + source, codec, destination)
+    jobs = [(meta['site_directory'] / source, codec, destination)
             for source, destinations in work for codec, destination in destinations.items()]
     if jobs:
         with Pool(processes=min(MAX_JOBS, len(jobs))) as pool:

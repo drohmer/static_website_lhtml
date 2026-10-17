@@ -109,8 +109,8 @@ def resolve_plugin_path(meta, plugin_path):
     if os.path.isabs(plugin_path):
         return plugin_path if os.path.isfile(plugin_path) else None
     for base in (meta['config_directory'], meta['lib_directory']):
-        if os.path.isfile(base + plugin_path):
-            return base + plugin_path
+        if (base / plugin_path).is_file():
+            return (base / plugin_path).as_posix()
     return None
 
 
@@ -251,12 +251,12 @@ def prepare_data(meta, selected, built, log):
                      meta['deck'] if isinstance(meta.get('deck'), str) else None,
                      str(documents_directory(meta))])
         log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
-        warnings += filesystem.copy_directories(meta['theme'], dir_site + 'theme/')
+        warnings += filesystem.copy_directories(meta['theme'], dir_site / 'theme/')
     if only:        # a page that fails keeps its previous version
         meta['previous_pages'] = {}
         for page in built:
-            if os.path.isfile(dir_site + page.site_html):
-                with open(dir_site + page.site_html, 'rb') as fid:
+            if os.path.isfile(dir_site / page.site_html):
+                with open(dir_site / page.site_html, 'rb') as fid:
                     meta['previous_pages'][page.site_html] = fid.read()
     source_transform = marker_transform(meta)
     warnings += pages.place(built, dir_site, project_assets=only, source_transform=source_transform)
@@ -264,8 +264,8 @@ def prepare_data(meta, selected, built, log):
         meta['dependency_store'].refresh_assets(meta, built)
     for warning in warnings:
         log.warning(warning)
-    directories = sorted({dir_site + page.site_directory for page in built}) if only else [dir_site]
-    made, cached, errors = figures.build_figures(directories, meta['config_directory'] + figures.CACHE)
+    directories = sorted({dir_site / page.site_directory for page in built}) if only else [dir_site]
+    made, cached, errors = figures.build_figures(directories, meta['config_directory'] / figures.CACHE)
     if made or cached:
         log.keyvalue('info', f'Figures: {made} made, {cached} from the cache', indent_level=1)
     for script, error in errors:
@@ -273,8 +273,8 @@ def prepare_data(meta, selected, built, log):
 
     log.debug(f"Found {len(selected)} template files")
     sitemap = generator_tool.extract_titles(selected)
-    generator_tool.export_sitemap(sitemap, dir_site + 'sitemap/')
-    meta['structure'] = generator_tool.export_structure(selected, dir_site + 'structure/',
+    generator_tool.export_sitemap(sitemap, dir_site / 'sitemap/')
+    meta['structure'] = generator_tool.export_structure(selected, dir_site / 'structure/',
                                                        meta.get('public_page_keys') or ())
     shutil.copy2(AGENTS_GUIDE, documents_directory(meta) / 'agents.md')
     built_set = set(built)
@@ -316,7 +316,7 @@ def discard_page(meta, page):
     (restore_previous_pages), not before the next stages."""
     paths = [page.site_html] + ([] if meta['debug'] else [page.site_template])
     for path in paths:
-        full_path = meta['site_directory'] + path
+        full_path = meta['site_directory'] / path
         if os.path.isfile(full_path):
             os.remove(full_path)
 
@@ -334,7 +334,7 @@ def restore_previous_pages(meta, failed):
     for page in failed:
         previous = meta.get('previous_pages', {}).get(page.site_html)
         if previous is not None:
-            with open(meta['site_directory'] + page.site_html, 'wb') as fid:
+            with open(meta['site_directory'] / page.site_html, 'wb') as fid:
                 fid.write(previous)
 
 
@@ -383,7 +383,7 @@ def jinja_environment(meta, selected, built):
     dir_site = meta['site_directory']
     templates = {}
     for page in built:
-        with open(dir_site + page.site_template, encoding='utf-8') as fid:
+        with open(dir_site / page.site_template, encoding='utf-8') as fid:
             templates[page.site_template] = fid.read()
     roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
@@ -438,7 +438,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
             continue
 
         meta.setdefault('template_dependencies', {})[page.site_html] = sorted(env.loader.used | {str(page.src)})
-        filesystem.write_file(dir_site + page.site_html, output_html)
+        filesystem.write_file(dir_site / page.site_html, output_html)
 
     return failed
 
@@ -459,7 +459,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
 
     skipped = set(failed_before)
     for page in selected:
-        html_path = meta['site_directory'] + page.site_html
+        html_path = meta['site_directory'] / page.site_html
 
         if page in skipped or not os.path.isfile(html_path):
             # Jinja2 rendering failed for this page (error already reported)
@@ -471,7 +471,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
         # The macros of the design, the video variants; not `wrap-auto`: the
         # theme wraps the page (lib/wrap.py)
         options = {'macros': meta.get('macros'),
-                   'media': video_cache.media(meta['site_directory'] + page.site_directory)}
+                   'media': video_cache.media(meta['site_directory'] / page.site_directory)}
 
         try:
             with python_warnings.catch_warnings(record=True) as caught:
@@ -501,7 +501,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
         filesystem.write_file(html_path, output_html)
 
         if not meta['debug']:
-            j2_path = meta['site_directory'] + page.site_template
+            j2_path = meta['site_directory'] / page.site_template
             if os.path.isfile(j2_path):
                 os.remove(j2_path)
 
@@ -523,11 +523,10 @@ def compile_sass(meta, log):
     log.debug(f'Compile {len(sass_files)} sass files')
 
     for local, name in sass_files:
-        path_sass = dir_site + local + name
+        path_sass = dir_site / local / name
         css_txt = sass.compile(filename=path_sass)
 
-        path_css = path_sass[:-len('.sass')] + '.css'
-        filesystem.write_file(path_css, css_txt)
+        filesystem.write_file(path_sass.with_suffix('.css'), css_txt)
 
         os.remove(path_sass)
 
@@ -647,12 +646,13 @@ def build_once(args):
             sys.exit(1)
         print(yaml.safe_dump({
             'config_file': str(config_file),
-            'source_directory': config.source_directory,
-            'site_directory': config.site_directory,
-            'theme': {'directory': config.theme, **loaded_theme},
+            'source_directory': config.source_directory.as_posix(),
+            'site_directory': config.site_directory.as_posix(),
+            'theme': {'directory': config.theme.as_posix(), **loaded_theme},
             'deck': meta['deck'] if loaded_deck is None else {
                 'file': meta['deck'] if isinstance(meta['deck'], str) else '(inline)',
-                'slides': len(loaded_deck.entries), 'sources': loaded_deck.sources},
+                'slides': len(loaded_deck.entries),
+                'sources': {name: root.as_posix() for name, root in loaded_deck.sources.items()}},
             'design': {'tokens': len(design.flatten_tokens(loaded_design['tokens'])),
                        'macros': sorted(loaded_design['macros'])},
             'plugin_paths': context.plugin_paths,

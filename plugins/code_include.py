@@ -141,7 +141,7 @@ def research_line_in_header_files(arg):
 
 def mid_process(meta):
     global CODE_DIRECTORY
-    CODE_DIRECTORY = meta.get('config_directory', '') + 'code/'
+    CODE_DIRECTORY = (meta['config_directory'] / 'code').as_posix() + '/'
 
     # Code to download
     if 'plugin_arg' in meta and 'includeadv' in meta['plugin_arg']:
@@ -156,7 +156,7 @@ def mid_process(meta):
 
     log = meta['log']
     for entry in built_pages(meta):
-        file_path = meta['site_directory'] + page_path(entry)
+        file_path = meta['site_directory'] / page_path(entry)
         if not os.path.isfile(file_path):       # the page failed
             continue
 

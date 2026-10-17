@@ -12,8 +12,8 @@ def staged_site(meta):
     target.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix='.site-build-', dir=target.parent))
     original = meta['site_directory']
-    meta['published_site_directory'] = target.as_posix() + '/'     # '/' on Windows too
-    meta['site_directory'] = staging.as_posix() + '/'
+    meta['published_site_directory'] = target
+    meta['site_directory'] = staging
     try:
         yield
         # A target may publish something else than the site it rendered: the

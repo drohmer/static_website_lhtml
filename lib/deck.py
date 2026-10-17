@@ -144,7 +144,7 @@ def _load_sources(sources, base, origin):
             root = Path(base) / root
         if not root.is_dir():
             raise DeckError(f"{where}: directory not found '{root}'")
-        result[name] = root.resolve().as_posix() + '/'     # '/' on Windows too
+        result[name] = root.resolve()
     return result
 
 

@@ -77,4 +77,4 @@ def built_pages(meta):
 
 def template_path(meta, entry):
     """Template of a page of the structure in the site (before rendering)."""
-    return meta['site_directory'] + entry['template']
+    return meta['site_directory'] / entry['template']
