@@ -29,6 +29,13 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(markdown_page.convert('## A *b* {: #a_b_l2}\n'), '<h2 id="a_b_l2">A <em>b</em></h2>\n')
         self.assertEqual(markdown_page.plain('A *b* `c` &amp; [d](e)'), 'A b c & d')
 
+    def test_what_is_not_mathematics_nor_text(self):
+        self.assertIn('href="https://en.wikipedia.org/wiki/Foo_(bar)"',
+                      markdown_page.convert('[Foo](https://en.wikipedia.org/wiki/Foo_\\(bar\\))\n'))
+        self.assertIn('<p>\\(a_1 * b_2\\)</p>', markdown_page.convert('```\ncode\n````\n\n\\(a_1 * b_2\\)\n'))
+        self.assertIn('<code>\\(a&lt;b\\)', markdown_page.convert('text\n\n    \\(a<b\\)\n'))
+        self.assertEqual(markdown_page.plain('\\(x_1\\) and *y*'), '\\(x_1\\) and y')
+
     def test_tables_and_raw_html(self):
         html = markdown_page.convert('| a |\n|---|\n| 1 |\n\n<div class="x">y</div>\n')
         self.assertIn('<td>1</td>', html)
@@ -44,9 +51,10 @@ class NamesTests(unittest.TestCase):
         self.assertEqual(pages.template_name('extra.html', 'markdown'), 'extra.md.j2')
 
     def test_the_zones_and_images_of_a_markdown_source(self):
-        scan = source_scan.Scan('# T\n```\n# no\n![a](no.png)\n```\n![b](assets/y.png "t")\n', 'markdown')
+        scan = source_scan.Scan('# T\n```\n# no\n![a](no.png)\n```\n![b](assets/y.png "t")\n'
+                                '![c](<assets/my z.jpg>) ![d][r]\n\n[r]: assets/w.png\n', 'markdown')
         self.assertEqual([z.kind for z in scan.zones], ['code'])
-        self.assertEqual(credits.files_used(scan), ['assets/y.png'])
+        self.assertEqual(credits.files_used(scan), ['assets/y.png', 'assets/my z.jpg', 'assets/w.png'])
 
 
 class BuildTests(unittest.TestCase):
@@ -90,6 +98,44 @@ class BuildTests(unittest.TestCase):
         self.write('src/a/index.md.j2', '# A\n\ntext\n\n{{ missing.x }}\n')
         result = self.build()
         self.assertIn("src/a/index.md.j2:5: error: Jinja: 'missing' is undefined", result.stdout)
+
+    def test_headings_as_written(self):
+        self.write('src/a/index.md.j2', "---\nlayout: stack\n# a yaml comment\n---\n"
+                                        "# Calling `main`\n\n## Learning C# today ##\n\n  ### Energy \\(x_1\\)\n\n"
+                                        "## Mine {: #custom}\n\n```\n# no\n````\n\n## After\n")
+        result = self.build()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        html = (self.site / 'a/index.html').read_text()
+        self.assertIn('<title> Calling main </title>', html)
+        self.assertIn('<h1 id="calling_main_l1">Calling <code>main</code></h1>', html)
+        self.assertIn('<h2 id="learning_c#_today_l2">Learning C# today</h2>', html)
+        self.assertIn('<h3 id="energy_\\x_1\\_l3">Energy \\(x_1\\)</h3>', html)
+        self.assertIn('<h2 id="custom">Mine</h2>', html)
+        self.assertIn('<h2 id="after_l2">After</h2>', html)
+        self.assertNotIn('yaml', html)
+
+    def test_two_templates_of_one_page_are_refused(self):
+        self.write('src/a/index.html.j2', '= A\n')
+        self.write('src/a/index.md.j2', '# A\n')
+        result = self.build()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('index.html.j2 and index.md.j2 are the same page, index.html', ' '.join(result.stdout.split()))
+
+    def test_extends_shown_in_code_does_not_place_the_page(self):
+        self.write('src/a/index.md.j2', '# A\n\n```jinja\n{% raw %}{% extends "base.html" %}{% endraw %}\n```\n')
+        result = self.build()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('<!DOCTYPE html>', (self.site / 'a/index.html').read_text())
+
+    def test_an_included_markdown_file_keeps_its_text_in_a_development_build(self):
+        self.write('src/parts/table.md', 'Sub\n---\n')
+        self.write('src/parts/block.html', '= Block\n')
+        from jinja2 import FileSystemLoader
+        from lib.tracking import TrackingLoader
+        loader = TrackingLoader(FileSystemLoader(self.root / 'src'), [self.root / 'src'],
+                                mark=lambda text, path: 'MARKED')
+        self.assertEqual(loader.get_source(None, 'parts/table.md')[0], 'Sub\n---\n')    # Markdown: as written
+        self.assertEqual(loader.get_source(None, 'parts/block.html')[0], 'MARKED')
 
     def test_scaffold_writes_the_markup_of_the_name(self):
         created = deck.scaffold([deck.Entry(pointer='a/extra.md.j2', meta={'title': 'New'})], self.root)

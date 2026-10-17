@@ -241,7 +241,8 @@ The generator runs the following stages:
 
 A page is written in LHTML (`index.html.j2`) or in Markdown (`index.md.j2`):
 the file says which, the generator never guesses it. Both give `index.html`,
-and both can sit in the same project, the same deck, the same directory.
+and both can sit in the same project, the same deck, the same directory -
+not as the same page: `index.html.j2` next to `index.md.j2` is refused.
 
 ~~~markdown
 ---
@@ -267,11 +268,13 @@ def noise(x): ...
   (Markdown alone would read `\(` as `(` and `_` as emphasis).
 - A heading gets an id as in LHTML (`{: #id}` sets it by hand: `{#id}`
   would be a Jinja comment); the title of the page is its first heading,
-  without its marks.
+  without its marks. Only the `#` headings: an underlined one
+  (`Title` / `=====`) gets no id and does not title the page.
 - What is LHTML's is not available: the macros of the design (`gap::`),
   `video::` and its transcoded variants (write `<video>` in HTML), the line
   breaks option, the lint of the values written by hand, and the source map
-  of the layout report (a block of a Markdown page names no line).
+  (a block of a Markdown page names no line in the layout report nor in the
+  comments on the render; a problem is still placed at its line).
 
 ## Template variables
 

@@ -27,6 +27,8 @@ class TrackingLoader(BaseLoader):
         if filename:
             path = Path(filename).resolve()
             self.used.add(str(path))
-            if self.mark and any(path.is_relative_to(root) for root in self.roots):
+            # Markers are LHTML's: a Markdown file keeps its text (lib/markdown_page.py)
+            if (self.mark and not path.name.endswith(('.md', '.md.j2'))
+                    and any(path.is_relative_to(root) for root in self.roots)):
                 text = self.mark(text, str(path))
         return text, filename, uptodate

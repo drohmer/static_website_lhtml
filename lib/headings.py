@@ -17,8 +17,12 @@ from lib.structure import built_pages, page_path, structure, template_path
 
 
 TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
-# A Markdown heading, with an id written by hand or by this stage: # Title {: #id}
-MARKDOWN_TITLE = re.compile(r'^(#{1,6})[ \t]+(.*?)(?:[ \t]+\{:[ \t]*(#[\w-]+)[ \t]*\})?[ \t]*$', re.MULTILINE)
+# A Markdown heading (ATX), found in the text read as Markdown, then read on
+# its line as written - a code span or mathematics ending it is blank in the
+# masked text. An id written by hand or by this stage: # Title {: #id}
+MARKDOWN_TITLE = re.compile(r'^ {0,3}(#{1,6})[ \t]+\S.*$', re.MULTILINE)
+MARKDOWN_ID = re.compile(r'[ \t]+\{:[ \t]*(#[^\s}]+)[ \t]*\}[ \t]*$')
+MARKDOWN_CLOSING = re.compile(r'[ \t]+#+[ \t]*$')       # # Title ## : the closing sequence
 
 
 def generate_new_id(text, id_storage):
@@ -83,8 +87,13 @@ def run(meta):
         for it in source_scan.find(pattern, source_scan.Scan(file_content, kind)):
             n = str(len(it.group(1)))
             if markdown:
-                title, class_id = file_content[it.start(2):it.end(2)], it.group(3) or ''
-                written, title = title, markdown_page.plain(title)       # the text, without its marks
+                line = file_content[it.start():it.end()].rstrip()
+                written = line[line.index('#') + int(n):].strip()
+                found = MARKDOWN_ID.search(' ' + written)
+                class_id = found.group(1) if found else ''
+                written = (' ' + written)[:found.start()].strip() if found else written
+                written = MARKDOWN_CLOSING.sub('', ' ' + written).strip()
+                title = markdown_page.plain(written)                # the text, without its marks
             else:
                 class_id = file_content[it.start(2):it.end(2)].strip() if it.group(2) is not None else ''
                 title = file_content[it.start(3):it.end(3)]

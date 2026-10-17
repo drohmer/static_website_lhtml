@@ -32,7 +32,9 @@ TEXT_FIELDS = ('author', 'source', 'license')
 # files used by a page: the value of img::, video::... (and of the macros
 # rendering an image or a video), src="..." (not the URLs)
 SRC = re.compile(r'\bsrc=["\']([^"\']+)["\']')
-MARKDOWN_IMAGE = re.compile(r'!\[[^\]\n]*\]\(\s*<?([^\s)>]+)>?')    # ![alt](file "title")
+# ![alt](file "title"), ![alt](<file with spaces>), [ref]: file (of ![alt][ref])
+MARKDOWN_IMAGE = re.compile(r'!\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))'
+                            r'|^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?([^\s>]+)>?', re.MULTILINE)
 MEDIA = re.compile(r'\.(png|jpe?g|gif|webp|bmp|tiff?|mp4|webm|mkv|mov)$', re.IGNORECASE)
 PLACEHOLDER = re.compile(r'(?<![\w-])placeholder::(.*?)(?:::|$)')
 # characters of the LHTML syntax, shown as written in a credit
@@ -103,7 +105,7 @@ def files_used(source, macros=None):
     source = source_scan.scan(source)
     values = [v for _, v, _ in source_scan.tag_values(source, source_scan.value_tags(macros))]
     if source.markup == 'markdown':
-        values += MARKDOWN_IMAGE.findall(source.masked)
+        values += [next(g for g in m if g) for m in MARKDOWN_IMAGE.findall(source.masked)]
     for file in values + SRC.findall(source.masked):
         if '://' not in file and not file.startswith(('/', '{', 'data:')) and MEDIA.search(file) \
                 and file not in found:

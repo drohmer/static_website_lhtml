@@ -202,6 +202,12 @@ def discover(source, exclude=(), include_hidden=False):
     found = find_files_in_hierarchy(source.root, is_template, exclude=exclude)
     if not include_hidden:
         found = [(local, name) for local, name in found if not hidden(local, name)]
+    pages = {}
+    for local, name in found:               # index.html.j2 and index.md.j2 would both be index.html
+        other = pages.setdefault((local, html_name(name)), name)
+        if other != name:
+            raise ValueError(f"'{(source.root / local).as_posix()}': {other} and {name} are the same "
+                             f"page, {html_name(name)}: keep one")
     return [Page(source, local, name, position=k, config=_read_config(source.root / local, cache))
             for k, (local, name) in enumerate(found)]
 

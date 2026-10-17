@@ -23,15 +23,49 @@ import re
 from lhtml.code import export_html_code
 from markdown_it import MarkdownIt
 
-# Code is read first, so that the mathematics inside it stays code
+# A fence: ``` or ~~~, closed by a run of the same character at least as long
+FENCE = (r'(?m:^[ \t]{0,3}(?P<mark>(?P<fc>[`~])(?P=fc){2,})[^\n]*\n.*?'
+         r'(?:^[ \t]{0,3}(?P=mark)(?P=fc)*[ \t]*$|\Z))')
+# Code is read first, so that the mathematics inside it stays code; nor is a
+# URL (a link destination, an autolink, a reference) mathematics: `\(` is
+# how a URL writes a parenthesis
 _CODE_OR_MATH = re.compile(
-    r'(?P<fence>^[ \t]{0,3}(?P<mark>`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]{0,3}(?P=mark)[ \t]*$|\Z))'
+    r'(?P<fence>' + FENCE + r')'
     r'|(?P<icode>(?P<ticks>`+)[^`].*?(?P=ticks))'
+    r'|(?P<url>\]\((?:[^()\s]|\\[()]|\([^()\s]*\))*|<[a-zA-Z][\w+.-]*:[^\s<>]*>'
+    r'|(?m:^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*\S+))'
     r'|(?P<math>\\\[.*?\\\]|\\\(.*?\\\))',
-    re.DOTALL | re.MULTILINE)
-_HEADING_ID = re.compile(r'\s*\{:\s*#([\w-]+)\s*\}\s*$')
+    re.DOTALL)
+_HEADING_ID = re.compile(r'\s*\{:\s*#([^\s}]+)\s*\}\s*$')
 _KEPT = '\ue100{}\ue101'
 _KEPT_BACK = re.compile('\ue100(\\d+)\ue101')
+_CODE_ELEMENT = re.compile(r'<code\b[^>]*>.*?</code>', re.DOTALL)
+
+
+def _protect(text):
+    """`text` with its mathematics replaced by placeholders, and what they hide."""
+    kept = []
+
+    def keep(m):
+        if m.group('math') is None:
+            return m.group(0)
+        kept.append(m.group(0))
+        return _KEPT.format(len(kept) - 1)
+    return _CODE_OR_MATH.sub(keep, text), kept
+
+
+def _restore(html_text, kept):
+    """The mathematics back, as written; escaped where it is code (an
+    indented code block, which _protect cannot tell from text)."""
+    def restore(text, escape):
+        return _KEPT_BACK.sub(lambda m: html.escape(kept[int(m.group(1))], quote=False) if escape
+                              else kept[int(m.group(1))], text)
+    parts, position = [], 0
+    for m in _CODE_ELEMENT.finditer(html_text):
+        parts += [restore(html_text[position:m.start()], False), restore(m.group(0), True)]
+        position = m.end()
+    parts.append(restore(html_text[position:], False))
+    return ''.join(parts)
 
 
 def _heading_ids(state):
@@ -63,18 +97,14 @@ _parser.add_render_rule('fence', _fence)
 
 def convert(text):
     """The HTML of a Markdown text."""
-    kept = []
-
-    def keep(m):
-        if m.group('math') is None:
-            return m.group(0)
-        kept.append(m.group(0))
-        return _KEPT.format(len(kept) - 1)
-    html = _parser.render(_CODE_OR_MATH.sub(keep, text))
-    return _KEPT_BACK.sub(lambda m: kept[int(m.group(1))], html)
+    protected, kept = _protect(text)
+    return _restore(_parser.render(protected), kept)
 
 
 def plain(text):
     """The text of a line of Markdown without its marks (`Hello *world*` ->
-    `Hello world`): a title as the menu, <title> and the ids read it."""
-    return html.unescape(re.sub(r'<[^>]*>', '', _parser.renderInline(text))).strip()
+    `Hello world`, the mathematics as written): a title as the menu,
+    <title> and the ids read it."""
+    protected, kept = _protect(text)
+    rendered = re.sub(r'<[^>]*>', '', _parser.renderInline(protected))
+    return _KEPT_BACK.sub(lambda m: kept[int(m.group(1))], html.unescape(rendered)).strip()

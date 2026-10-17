@@ -17,6 +17,8 @@ import re
 
 from lhtml import patterns
 
+from lib import front_matter
+
 # kinds of zones, in the order of the groups of patterns.PROTECTED_BLOCKS
 KINDS = ('code', 'jinja', 'comment', 'raw', 'icode', 'urltag', 'math', 'tag')
 # zones whose text is not read as LHTML (what the lint and the credits skip)
@@ -26,8 +28,9 @@ URL_TAGS = frozenset(patterns.URL_TAGS)
 # the value of a tag: a URL, a file (img::a.png(.wide): the class group is not part of it)
 VALUE = patterns.URL_TOKEN
 # A Markdown page: a fenced code block is its `code` zone
-MARKDOWN_BLOCKS = re.compile(r'(?P<code>(?m:^[ \t]{0,3}(?P<mark>`{3,}|~{3,})[^\n]*\n.*?'
-                             r'(?:^[ \t]{0,3}(?P=mark)[ \t]*$|\Z)))|' + patterns.PROTECTED.pattern, re.DOTALL)
+MARKDOWN_BLOCKS = re.compile(r'(?P<code>(?m:^[ \t]{0,3}(?P<mark>(?P<fc>[`~])(?P=fc){2,})[^\n]*\n.*?'
+                             r'(?:^[ \t]{0,3}(?P=mark)(?P=fc)*[ \t]*$|\Z)))|' + patterns.PROTECTED.pattern,
+                             re.DOTALL)
 BLOCKS = {'lhtml': patterns.PROTECTED_BLOCKS, 'markdown': MARKDOWN_BLOCKS}
 LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
 # Lines kept before {% extends %} by auto_wrap: blank lines, Jinja comments,
@@ -47,7 +50,10 @@ class Zone:
 def zones(text, markup='lhtml'):
     """Zones of a source that its markup does not read as text, in order: [Zone]."""
     found = []
-    for m in BLOCKS[markup or 'lhtml'].finditer(text):
+    header = front_matter.FRONT_MATTER.match(text)      # the settings of the page, not its text
+    if header:
+        found.append(Zone(0, header.end(), 'comment'))
+    for m in BLOCKS[markup or 'lhtml'].finditer(text, header.end() if header else 0):
         kind = next(k for k in KINDS if m.group(k) is not None)
         if kind == 'jinja' and m.group(0).startswith('{#'):
             kind = 'comment'            # a Jinja comment writes nothing, as an HTML one

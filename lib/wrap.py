@@ -11,7 +11,7 @@ import re
 
 from lib import front_matter
 from lib.pages import markup
-from lib.source_scan import leading_settings
+from lib.source_scan import Scan, leading_settings
 from lib.structure import built_pages, template_path
 from lib.theme import of as theme_manifest
 
@@ -49,9 +49,10 @@ WRAPPED = re.compile(r'{%-?\s*(?:block\s+content|extends)\b')
 DOCUMENT = re.compile(r'\A\s*(?:<!doctype\b|<html\b)', re.IGNORECASE)
 
 
-def wrapped(text):
-    """Whether a source already places itself: the theme leaves it alone."""
-    return bool(WRAPPED.search(text) or DOCUMENT.match(text))
+def wrapped(text, kind='lhtml'):
+    """Whether a source already places itself: the theme leaves it alone.
+    A {% extends %} shown in a code block does not place the page."""
+    return bool(WRAPPED.search(Scan(text, kind).masked) or DOCUMENT.match(text))
 
 
 def run(meta):
@@ -62,12 +63,13 @@ def run(meta):
         with open(file_path, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
-        is_markdown = markup(entry['template']) == 'markdown'
-        if is_markdown and wrapped(file_content):
+        kind = markup(entry['template'])
+        is_markdown = kind == 'markdown'
+        if is_markdown and wrapped(file_content, kind):
             raise ValueError(f"{entry.get('src', entry['template'])}: a Markdown page is placed in the theme "
                              f"by the build, its content converted alone: write no {{% extends %}}, "
                              f"{{% block content %}} or <html> in it (or write the page in LHTML, index.html.j2)")
-        if not wrapped(file_content):
+        if not wrapped(file_content, kind):
             # The front matter is read as the settings of the page
             # (lib/pages.py) and removed here: once the page is placed in
             # the template, it is no longer at the top of the document, and
