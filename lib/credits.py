@@ -126,10 +126,10 @@ def _tree_files(document, tags):
         return []
     values, sources = [], []
     for node in document.walk():
-        if node.kind in ('Element', 'Video'):
-            if node.tag in tags:
-                values.append(node.written.get('text', ''))
-            sources += SRC.findall(node.written.get('{}', ''))
+        if node.kind in ('Element', 'Video') and node.written is not None:
+            if node.written.tag in tags:
+                values.append(node.written.text)
+            sources += SRC.findall(node.written.braces)
         elif node.kind == 'Raw' and node.raw_kind in ('html', 'jinja') or node.kind == 'Text':
             sources += SRC.findall(node.value if node.kind == 'Text' else node.text)
     return values + sources
@@ -180,7 +180,7 @@ def placeholders(pages, macros=None):
             continue
         document = page.scan.document(macros)
         for node in document.walk() if document else ():
-            if node.kind == 'Element' and node.tag == 'placeholder':
+            if node.kind == 'Element' and node.written and node.written.tag == 'placeholder':
                 after = page.scan.text[node.span[0] + len('placeholder::'):].split('\n', 1)[0]
                 found.append((page, node.line, after.split('::', 1)[0].strip()))
     return found
