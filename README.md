@@ -25,7 +25,7 @@ reliable launcher: another program may put its own `python` first in the
 `PATH`.
 
 **Optional**, each unlocking one feature and needed only for it:
-- **PDF export** (a target whose theme says `export: pdf`, such as `slides-pdf`, see [Decks and targets](#decks-and-targets)): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `<deck>.pdf` (`slides.pdf` for a project of one deck) and `images/` next to the site directory of the target, and that site directory is not published (kept with `-d`, and kept as it is with `--only`).
+- **PDF export** (a target whose theme says `export: pdf`, such as `slides-pdf`, see [Decks and targets](#decks-and-targets)): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `<deck>.pdf` (`slides.pdf` for a project of one deck) and `images/` next to the site directory of the target, and that site directory is not published (kept with `-d`; a later build without `-d` removes it). `--only` on such a target rebuilds it whole.
 - **Layout report** (`--layout`, `--render`): Node.js and `npm install` in
   this directory. If `npm install` leaves no Chrome behind (recent npm
   versions skip that step), run `npx puppeteer browsers install chrome`; a
@@ -168,6 +168,7 @@ Optional keys:
 | `level_print` | Non-negative log indentation level (default: 0) |
 | `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies them into the site, and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
+| `line-breaks` | The line breaks of the sources are rendered as `<br>` (LHTML's option; default: false) |
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
 | `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
@@ -214,6 +215,14 @@ _site/01_procedural/images/slide_000.jpg ...
   `--only 01_procedural/03_noise` pages of it.
 - The builds run one after the other; one that fails does not stop the
   next ones, and the command fails if one did.
+- Each build keeps its state apart, under `<deck>/<target>/`: the record of
+  what its pages depend on (`.verification/`, for `--only`), its layout
+  report (`.layout/`), its credits and todo (`.structure/`; the design and
+  the guide for agents stay at the top, they are the project's).
+- `--check-config` prints one YAML document per build (`build: {deck,
+  target}`); `--lint` checks each deck once; `--render` renders once.
+- The pages at the top of the sources belong to no deck: the build says so.
+  A project with `decks: directories` and no deck directory is an error.
 
 ## Pipeline
 
@@ -716,7 +725,7 @@ def post_process(meta):  # After all conversions
     ...
 ```
 
-Each plugin module is loaded once per build, so it can keep a state from a hook to the next, but not from a build to the next (`--watch` loads it again). The plugins that run after the rendering (`mid_process`) only get the pages generated: a page that failed is no longer in `built_pages`. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets the macros of the design and the `media` resolver of the videos, and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
+Each plugin module is loaded once per build, so it can keep a state from a hook to the next, but not from a build to the next (`--watch` loads it again). The plugins that run after the rendering (`mid_process`) only get the pages generated: a page that failed is no longer in `built_pages`. Each hook still receives a real mutable `meta` dictionary with configuration and runtime state (the keys set by the generator are declared in `RUNTIME_KEYS` of `lib/configuration.py`). LHTML gets the macros of the design, the `media` resolver of the videos and `line-breaks`, and its warnings are logged with the page they come from. Internally, `Config` holds the resolved user settings, and `BuildContext` creates an independent copy for plugins and generation. Plugin changes (including nested `keywords` changes and generated heading IDs) do not alter the original configuration. Existing hook signatures and dictionary access remain supported.
 
 With the heading ids (`title_id: true`), each page exports its own `<filename>.title_id.json` (for example `index.html.title_id.json`). The bundled theme reads the current page's file. `structure/title_id.json` is indexed by relative HTML page path. A legacy `title_id.json` is also written for directory indexes or single-page folders; custom themes with multiple pages per folder should use the per-page files.
 

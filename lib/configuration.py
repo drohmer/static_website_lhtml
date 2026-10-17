@@ -46,6 +46,7 @@ RUNTIME_KEYS = frozenset((
     'source_map', 'feedback',       # builds for development (lib/source_map.py, lib/feedback.py)
     'planned_slides',               # entries of the deck without a source yet
     'export_name',                  # the name of the PDF of a deck (lib/pdf_export.py)
+    'build_scope',                  # <deck>/<target>: where its state is kept (lib/project.py)
 ))
 
 
@@ -69,6 +70,7 @@ class Config:
     title_id: bool = True
     keywords: dict = field(default_factory=dict)
     use_tidy: bool = False
+    line_breaks: bool = False       # 'line-breaks:' in the YAML, as LHTML spells it
     # Page settings a custom theme needs in the site, beyond the ones the
     # bundled themes display (lib/structure.py, PUBLIC_KEYS). Everything else
     # an author writes in a config.yaml or a deck entry stays out of the site.
@@ -190,6 +192,9 @@ def _decks_and_targets(values, data, config_directory):
     for name, spec in targets.items():
         if not isinstance(name, str) or not TARGET_NAME.match(name):
             raise ConfigError(f"'targets': invalid name {name!r} (letters, digits, - and _)")
+        if name == 'images':
+            raise ConfigError("'targets': 'images' is where the PDF export writes the slide images; "
+                              "choose another name")
         if not isinstance(spec, dict) or set(spec) != {'theme'} or not isinstance(spec['theme'], str):
             raise ConfigError(f"'targets': {name}: expected {{theme: <theme>}}")
         theme = theme_directory(spec['theme'], config_directory)
@@ -214,6 +219,8 @@ def load_config(filename, debug_override=None):
     if not isinstance(data, dict) or any(not isinstance(k, str) for k in data):
         raise ConfigError('Configuration must contain named key: value pairs')
 
+    if 'line-breaks' in data:                       # the spelling of LHTML
+        data['line_breaks'] = data.pop('line-breaks')
     if 'plugin_post' in data:
         raise ConfigError("'plugin_post' was removed (3.0): list its plugins under 'plugin' "
                           "(all their hooks are run)")
@@ -232,7 +239,7 @@ def load_config(filename, debug_override=None):
         warnings.append(f"Unknown configuration key '{key}'.{hint} Retained for custom plugins.")
         extras[key] = data[key]
     values = {**defaults, **{k: v for k, v in data.items() if k in known}}
-    for key in ('debug', 'title_id', 'use_tidy'):
+    for key in ('debug', 'title_id', 'use_tidy', 'line_breaks'):
         if type(values[key]) is not bool:
             raise ConfigError(f"'{key}' must be a boolean (true or false)")
     if type(values['level_print']) is not int or values['level_print'] < 0:
@@ -293,6 +300,8 @@ def load_config(filename, debug_override=None):
         directory = Path(value).expanduser()
         if not directory.is_absolute():
             directory = path.parent / directory
+        if key == 'theme':          # a directory, or the name of a theme of the generator
+            directory = theme_directory(value, path.parent)
         if key in ('source_directory', 'theme') and not directory.is_dir():
             renamed = Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts])
             if renamed.is_dir():

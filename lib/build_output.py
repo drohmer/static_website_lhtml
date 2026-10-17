@@ -17,11 +17,17 @@ def staged_site(meta):
     try:
         yield
         # A target may publish something else than the site it rendered: the
-        # PDF export keeps slides.pdf and images/, and asks for the HTML it
+        # PDF export keeps <deck>.pdf and images/, and asks for the HTML it
         # used as an intermediate not to be published. It says so rather
-        # than deleting the directory under whatever runs next.
+        # than deleting the directory under whatever runs next. In a project
+        # of decks or targets, the directory of the target is its own: a site
+        # published there before (--debug keeps it) goes too, it would be
+        # stale. A project of one site may have published something else
+        # there, which is kept.
         if not meta.get('publish_site', True):
             shutil.rmtree(staging, ignore_errors=True)
+            if meta.get('build_scope'):
+                shutil.rmtree(target, ignore_errors=True)
         if staging.is_dir():
             backup = target.with_name('.site-backup-' + uuid.uuid4().hex)
             had_target = target.exists()

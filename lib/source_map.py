@@ -43,7 +43,7 @@ import html as html_lib
 import os
 import re
 
-from lib import source_scan
+from lib import front_matter, source_scan
 
 OPEN, CLOSE = '', ''
 LEADING = ''              # written at the start of the line of the block that follows
@@ -86,6 +86,8 @@ def add_markers(text, source, tags):
         return marker(f'{source}:{number}', leading)
     found = source_scan.zones(text)
     skipped = source_scan.multiline_lines(text, found) | _value_block_lines(text, found)
+    header = front_matter.FRONT_MATTER.match(text)      # the YAML stays as it is: removed later
+    skipped |= set(range(text.count('\n', 0, header.end()) + 1)) if header else set()
     offsets = source_scan.line_offsets(text)
     out = []
     for index, line in enumerate(text.split('\n')):

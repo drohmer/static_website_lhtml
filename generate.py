@@ -256,7 +256,7 @@ def prepare_data(meta, selected, built, log):
             exclude=[meta.get('published_site_directory'), meta.get('config_file'),
                      meta['deck'] if isinstance(meta.get('deck'), str) else None,
                      str(documents_directory(meta))])
-        log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site}theme/'")
+        log.debug(f"Copy theme '{meta['theme']}' -> '{dir_site / 'theme'}'")
         warnings += filesystem.copy_directories(meta['theme'], dir_site / 'theme/')
     if only:        # a page that fails keeps its previous version
         meta['previous_pages'] = {}
@@ -300,7 +300,7 @@ def write_credits_and_todo(meta, selected, log):
             credits_of[page] = credits.page_credits(page)
         except credits.CreditsError as exc:
             credits_of[page], errors[page] = {}, str(exc)
-    documents = documents_directory(meta)
+    documents = documents_directory(meta, scoped=True)
     text, credited, missing = credits.credits_markdown(selected, credits_of, meta['config_directory'],
                                                        meta['macros'])
     with open(documents / 'credits.md', 'w', encoding='utf-8', newline='\n') as fid:
@@ -474,9 +474,9 @@ def render_lhtml(meta, selected, log, failed_before=()):
         with open(html_path, 'r', encoding='utf-8') as fid:
             input_html = front_matter.split(fid.read())[0]   # LHTML 3 reads none
 
-        # The macros of the design, the video variants; not `wrap-auto`: the
-        # theme wraps the page (lib/wrap.py)
-        options = {'macros': meta.get('macros'),
+        # The macros of the design, the video variants, the line breaks; not
+        # `wrap-auto`: the theme wraps the page (lib/wrap.py)
+        options = {'macros': meta.get('macros'), 'line-breaks': meta.get('line_breaks', False),
                    'media': video_cache.media(meta['site_directory'] / page.site_directory)}
 
         try:
@@ -490,7 +490,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
-            log.error(f'{html_path}: {e}')
+            log.error(f'{filesystem.shown(page.src)}: {e}')
             failed.append(page)
             discard_page(meta, page)
             continue
@@ -618,10 +618,17 @@ def build_once(args):
     if args.clean and not args.check_config:     # --check-config diagnoses, and deletes nothing
         clean_directories(config.site_directory, log)
         return
+    if config.decks and any(pages.is_template(p.name) for p in config.source_directory.iterdir()):
+        log.warning(f"decks: directories: the pages at the top of '{filesystem.shown(config.source_directory)}' "
+                    f"belong to no deck and are not built")
+    if args.render:                 # no build: the files are rendered once
+        builds = builds[:1]
+    elif args.lint:                 # the sources of a deck are the same for each of its targets
+        builds = [b for k, b in enumerate(builds) if b.deck not in {c.deck for c in builds[:k]}]
     failed = []
     for build in builds:
-        if build.label:
-            log.title(build.label.capitalize(), pre='\n')
+        if build.label and not args.check_config:     # --check-config prints YAML only
+            log.title(build.label, pre='\n')
         if not build_site(args, build, config_file, log):
             failed.append(build.label or 'the site')
     if failed:
@@ -640,13 +647,14 @@ def build_site(args, build, config_file, log):
     meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
     meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lib/layout/build.py)
     meta['export_name'] = build.export_name     # the PDF of a deck (lib/pdf_export.py)
+    meta['build_scope'] = build.scope           # its state, apart from the other builds
 
     # Diagnostic mode takes precedence over --clean and never runs plugins.
     if args.check_config or not args.clean:
         paths, plugin_failures = resolve_plugins(meta, log)
         context.plugin_paths.extend(paths)
         if plugin_failures:
-            sys.exit(1)
+            return False
     if (meta['analyse_layout'] or (args.check_config and meta.get('layout'))) and not args.clean:
         # What the analysis will refuse, refused here: before the build, and
         # with --check-config, which builds nothing (lib/layout_options.py).
@@ -658,7 +666,7 @@ def build_site(args, build, config_file, log):
             layout_options.validate(meta, log)
         except ConfigError as exc:
             log.error(str(exc))
-            sys.exit(1)
+            return False
     if args.render:
         render_files(meta, args.render, log)
         return True
@@ -670,8 +678,9 @@ def build_site(args, build, config_file, log):
             loaded_theme = theme.of(meta)
         except (deck.DeckError, design.DesignError, ConfigError) as exc:
             log.error(str(exc))
-            sys.exit(1)
+            return False
         print(yaml.safe_dump({
+            **({'build': {'deck': build.deck, 'target': build.target}} if build.label else {}),
             'config_file': str(config_file),
             'source_directory': config.source_directory.as_posix(),
             'site_directory': config.site_directory.as_posix(),
@@ -686,7 +695,7 @@ def build_site(args, build, config_file, log):
             'debug': config.debug,
             'level_print': config.level_print,
             'use_tidy': config.use_tidy,
-        }, sort_keys=False))
+        }, sort_keys=False, explicit_start=bool(build.label)))
         return True
     if args.lint:
         try:
@@ -700,7 +709,7 @@ def build_site(args, build, config_file, log):
             loaded_design = load_project_design(meta)
         except (deck.DeckError, design.DesignError, ValueError) as exc:
             log.error(str(exc))
-            sys.exit(1)
+            return False
         lint_pages(selected, loaded_design, log, details=True)
         return True
 

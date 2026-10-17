@@ -72,6 +72,8 @@ def export(meta):
 
         images = output / 'images'
         images.mkdir(exist_ok=True)
+        for old in images.glob('slide_*.jpg'):     # a deck that lost slides keeps none of theirs
+            old.unlink()
         for _, image in outputs:
             shutil.copy2(image, images)
         os.replace(merged, output / (name + '.pdf'))

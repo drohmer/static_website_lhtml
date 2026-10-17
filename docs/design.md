@@ -1553,6 +1553,34 @@ ran without `cache_video_directory`. And `video_convert` joined the
 command into a string for the log, which a `Path` broke: no test ran the
 transcoding, one does now.
 
+*Verified* (2026-10-17) by four independent reviews (LHTML, the core,
+the layout code and N2, and an end-to-end run with Chrome). What they
+found is fixed, each with a test:
+
+- a project of several builds shared its state: `.verification/` (so
+  `--only` rebuilt everything), `.layout/` and the credits of
+  `.structure/` were overwritten by the last build. Each build keeps them
+  under `<deck>/<target>/` now (`Build.scope`);
+- the PDF export: the images of a deck without targets went to a shared
+  `images/`, old slide images stayed, a site kept by `--debug` stayed
+  published and stale - each fixed, and `images` is not a target name;
+- `--check-config` printed no valid YAML with several builds, `--render`
+  and `--lint` ran once per build, an error of one build (a missing
+  plugin) stopped the others, `--watch` ignored the themes of the
+  targets, a theme of the generator could be named only in `targets`, and
+  `decks: directories` without a deck built nothing silently;
+- regressions of the redesign: `line-breaks:` no longer reached LHTML
+  (it is a configuration key again), malformed front matter was ignored
+  silently (it fails the page, naming it), a front matter after a BOM or
+  in a build for development (marked by the source map) was shown as text,
+  and an LHTML error named the staging file instead of the source;
+- LHTML: `::#` or `verbatim::[]` inside an attribute group was refused
+  (it is text, as in 2.5.1), and the groups of an element with a stray
+  closing bracket were no longer kept from formatting.
+
+Left for step C: the console of `rich` cuts a long path in two (seen on
+Windows, where the temporary paths are long).
+
 **N3. The migration tool** - *dropped* (2026-10-16). LHTML 3 and the
 generator after N2 are major versions; a project migrates by hand, with
 the errors of section 8. The corpus copies are migrated that way at N2,

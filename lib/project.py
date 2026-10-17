@@ -19,6 +19,7 @@ own configuration; the build of one of them is the build of a site.
 """
 from dataclasses import dataclass, replace
 
+from lib import theme
 from lib.configuration import ConfigError, Config
 
 
@@ -32,6 +33,12 @@ class Build:
     @property
     def label(self):
         return ' '.join(f'{kind} {name}' for kind, name in (('deck', self.deck), ('target', self.target)) if name)
+
+    @property
+    def scope(self):
+        """Where the state of this build is kept, under .verification/, .layout/
+        and .structure/: '<deck>/<target>', '' for a project of one site."""
+        return '/'.join(name for name in (self.deck, self.target) if name)
 
     @property
     def export_name(self):
@@ -54,6 +61,9 @@ def plan(config, only=None, targets=None):
         or pages of it (01_procedural/03_noise); only the decks named are built.
     targets: the names of the targets to build (--target), all by default."""
     names = decks(config)
+    if not names:
+        raise ConfigError(f"decks: directories: '{config.source_directory.as_posix()}' has no deck "
+                          f"(a directory of pages)")
     chosen = dict(config.targets or {None: None})
     if targets:
         unknown = sorted(set(targets) - set(chosen))
@@ -89,5 +99,8 @@ def plan(config, only=None, targets=None):
             changes = {'source_directory': source, 'site_directory': site, 'cache_video_directory': cache}
             if target is not None:
                 changes.update(site_directory=site / target, theme=spec['theme'])
+            elif deck is not None and theme.read(config.theme)['export']:
+                # the export lands next to the site it renders: in the directory of the deck
+                changes.update(site_directory=site / 'pdf')
             result.append(Build(deck, target, replace(config, **changes), pointers[deck]))
     return result

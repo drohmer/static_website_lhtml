@@ -14,13 +14,16 @@ from lib.configuration import ConfigError, GENERATOR_DIRECTORY, load_config
 
 
 def watch_paths(config, filename, deck_arg=None):
-    paths = [filename, Path(config.source_directory), Path(config.theme)]
+    # the theme of each target, or the theme of a project without targets
+    themes = [spec['theme'] for spec in (config.targets or {}).values()] or [config.theme]
+    paths = [filename, Path(config.source_directory)] + [Path(t) for t in themes]
     for plugin in config.plugin:
         candidate = filename.parent / plugin
         paths.append(candidate if candidate.is_file() else GENERATOR_DIRECTORY / plugin)
     for include in config.plugin_arg.get('pre_include', []):
         paths.append(filename.parent / include)
-    paths += design.design_files(config.theme, config.design, filename.parent)
+    for theme in themes:
+        paths += design.design_files(theme, config.design, filename.parent)
     paths += deck.watched_paths(deck.deck_source(deck_arg, config.deck, filename.parent), filename.parent)
     return paths
 

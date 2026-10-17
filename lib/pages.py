@@ -115,7 +115,10 @@ class Page:
         A page says what it is without a Jinja statement
         ({% set layout = 'stack' %}) or a config.yaml sitting next to it for
         one page out of five (lib/front_matter.py)."""
-        return front_matter.split(self.text)[1]
+        try:
+            return front_matter.split(self.text)[1]
+        except ValueError as exc:                   # malformed YAML: named with its page
+            raise ValueError(f"'{Path(self.src).as_posix()}': {exc}") from None
 
     @cached_property
     def scan(self):

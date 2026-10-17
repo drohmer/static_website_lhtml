@@ -45,9 +45,13 @@ def public_entry(entry, extra=()):
     return {key: value for key, value in entry.items() if key in keys}
 
 
-def documents_directory(meta):
-    """Where the documents of the project are written, created if needed."""
+def documents_directory(meta, scoped=False):
+    """Where the documents of the project are written, created if needed;
+    `scoped`: those of this build (credits, todo), in a project of several
+    decks or targets under .structure/<deck>/<target>/ (lib/project.py)."""
     path = Path(meta.get('config_directory') or '.') / DOCUMENTS
+    if scoped:
+        path /= meta.get('build_scope') or ''
     path.mkdir(parents=True, exist_ok=True)
     return path
 

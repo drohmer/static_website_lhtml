@@ -107,4 +107,4 @@ def output_directory(meta):
             raise ConfigError(f"Unsafe layout output '{output}': would remove '{path}'")
     if output.exists() and not output.is_dir():
         raise ConfigError(f'Layout output is not a directory: {output}')
-    return output
+    return output / (meta.get('build_scope') or '')     # one report per deck and target

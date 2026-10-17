@@ -196,7 +196,7 @@ def freshness(manifest, meta, entry):
 
 class BuildStore:
     def __init__(self, meta):
-        self.path = Path(meta['config_directory']) / '.verification' / 'builds.json'
+        self.path = Path(meta['config_directory']) / '.verification' / (meta.get('build_scope') or '') / 'builds.json'
         try:
             value = json.loads(self.path.read_text())
             self.pages = value.get('pages', {}) if value.get('schema_version') == SCHEMA else {}
