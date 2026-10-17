@@ -1673,7 +1673,10 @@ with `lhtml.run(...)` kept as the façade. Raw HTML must stay faithful:
 LHTML nodes, and **opaque fragments** for HTML, code and mathematics, with
 significant whitespace preserved.
 
-**The shape of the tree, proposed for validation (2026-10-17).** Measured
+**The shape of the tree, validated (2026-10-17)** - with the two choices it
+left open: a crossing is closed at the end of its container with a warning
+(not an error), and a tag declares itself as `Tag(container, render)`, the
+handlers of 3.0 not kept. Measured
 first, on the 914 recorded calls of the corpus (the text LHTML receives,
 after Jinja):
 
