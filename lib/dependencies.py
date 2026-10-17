@@ -55,19 +55,38 @@ def scope_files(root, kind):
 def source_files(meta):
     """The files of the sources, relative to their directory: what a
     partial build cannot remove from the site when one goes. As the copy
-    publishes them: hidden ones left out, a linked directory followed
-    (once), __pycache__ included."""
+    publishes them: hidden ones left out, __pycache__ included, a linked
+    directory followed (each route to it: the copy publishes each), a link
+    itself listed too (removing it removes what it published), a link back
+    to a directory it is in listed but not followed, the site left out."""
     root = Path(meta['source_directory'])
-    found, seen = [], set()
-    for directory, dirs, files in os.walk(root, followlinks=True):
+    site = os.path.realpath(meta['site_directory'])
+    published = meta.get('published_site_directory')
+    skipped = {site} | ({os.path.realpath(published)} if published else set())
+    found = []
+    pending = [(root, frozenset())]     # a directory, the real paths of the directories above it
+    while pending:
+        directory, above = pending.pop()
         real = os.path.realpath(directory)
-        if real in seen:                # a link back up the tree
-            dirs[:] = []
+        if real in skipped:
             continue
-        seen.add(real)
-        dirs[:] = sorted(d for d in dirs if not d.startswith('.'))
-        found += [(Path(directory) / name).relative_to(root).as_posix()
-                  for name in sorted(files) if not name.startswith('.')]
+        above = above | {real}
+        try:
+            entries = sorted(os.scandir(directory), key=lambda e: e.name)
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith('.'):
+                continue
+            path = Path(entry.path)
+            relative = path.relative_to(root).as_posix()
+            if entry.is_symlink():
+                found.append(relative + '@')        # the link, apart from what it holds
+            if entry.is_dir(follow_symlinks=True):
+                if os.path.realpath(entry.path) not in above:    # not a link back up the tree
+                    pending.append((path, above))
+            elif entry.is_file(follow_symlinks=True) or not entry.is_symlink():
+                found.append(relative)
     return sorted(found)
 
 
@@ -236,7 +255,8 @@ class BuildStore:
             self.pages = value.get('pages', {}) if current else {}
             self.sources = value.get('sources') if current else None
             # a store of pages written before the source files were recorded
-            self.sources_unrecorded = bool(self.pages) and 'sources' not in value
+            self.sources_unrecorded = bool(self.pages) and not (
+                isinstance(self.sources, list) and self.sources)     # missing, null, empty: not recorded
         except (OSError, ValueError):
             self.pages, self.sources, self.sources_unrecorded = {}, None, False
 

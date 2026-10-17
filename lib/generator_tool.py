@@ -134,15 +134,26 @@ def export_structure(pages, structure_path, public_keys=()):
     return structure_to_export
 
 
+REDIRECTION = '<html><head><meta http-equiv="refresh" content="0; url=../{}"></head></html>'
+
+
 def export_sitemap(sitemap, dir_sitemap):
-    """A redirection per page, named after its title id; those of the ids a
-    page no longer has (a title renamed, --only) are removed."""
+    """A redirection per page, named after its title id. The redirections
+    of ids no page has any more (a title renamed, --only) are removed:
+    the files this function wrote, by their content, never a page or a
+    file of the project that the sitemap directory may hold."""
     os.makedirs(dir_sitemap, exist_ok=True)
     current = {f'{id}.html' for id in sitemap}
+    prefix, suffix = REDIRECTION.split('{}')
     for name in os.listdir(dir_sitemap):
-        if name.endswith('.html') and name not in current:
-            os.remove(os.path.join(dir_sitemap, name))
+        path = os.path.join(dir_sitemap, name)
+        if name.endswith('.html') and name not in current and os.path.isfile(path) \
+                and not os.path.islink(path) and os.path.getsize(path) < 4096:
+            with open(path, encoding='utf-8', errors='replace') as fid:
+                text = fid.read()
+            if text.startswith(prefix) and text.endswith(suffix):
+                os.remove(path)
 
     for id, page in sitemap.items():
         with open(dir_sitemap / f'{id}.html', 'w', encoding='utf-8', newline='\n') as fid:
-            fid.write(f'<html><head><meta http-equiv="refresh" content="0; url=../{page.site_html}"></head></html>')
+            fid.write(REDIRECTION.format(page.site_html))

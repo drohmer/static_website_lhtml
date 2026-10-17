@@ -8,8 +8,10 @@ import uuid
 
 
 def links_out_of(site):
-    """The symbolic links of a site that lead out of it: a build that writes
-    in the site (--only) would write through them (into the sources)."""
+    """The links of a site a build that writes in it (--only) would write
+    through: a symbolic link leading out of it, a file with another hard
+    link (a file of the sources, `cp -al`, `rsync -H`). As (path, what it
+    reaches)."""
     site = Path(site)
     if not site.is_dir():
         return []
@@ -22,6 +24,8 @@ def links_out_of(site):
                 target = path.resolve()
                 if target != real and real not in target.parents:
                     found.append((path, target))
+            elif name in files and os.lstat(path).st_nlink > 1:
+                found.append((path, 'another hard link to the same file'))
     return found
 
 

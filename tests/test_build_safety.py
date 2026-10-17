@@ -413,9 +413,11 @@ def test_only_refuses_a_link_out_of_the_site(tmp_path):
     assert not link.is_symlink()
 
 
-def test_a_store_without_its_source_files_widens_once(tmp_path):
-    """A builds.json written before the source files were recorded: the
-    next --only is a full build (a file deleted before it would stay)."""
+@pytest.mark.parametrize('recorded', ['missing', None, []])
+def test_a_store_without_its_source_files_widens_once(tmp_path, recorded):
+    """A builds.json written before the source files were recorded (or
+    edited by hand: null, empty): the next --only is a full build (a file
+    deleted before it would stay)."""
     source = tmp_path / 'src'
     (source / 'b').mkdir(parents=True)
     (source / 'b/index.html.j2').write_text('= Page b\n')
@@ -426,9 +428,74 @@ def test_a_store_without_its_source_files_widens_once(tmp_path):
     assert build(config).returncode == 0
     store = tmp_path / '.verification/builds.json'
     value = json.loads(store.read_text())
-    del value['sources']
+    if recorded == 'missing':
+        del value['sources']
+    else:
+        value['sources'] = recorded
     store.write_text(json.dumps(value))
     (source / 'b/s.js').unlink()
     result = build(config, '--only', 'b', '-v')
     assert result.returncode == 0 and 'not recorded' in result.stdout, result.stdout
     assert not (tmp_path / 'site/b/s.js').exists()
+
+
+def _project(tmp_path, **files):
+    source = tmp_path / 'src'
+    for name in ('a', 'b'):
+        (source / name).mkdir(parents=True)
+        (source / name / 'index.html.j2').write_text(f'= Page {name}\n')
+    for name, text in files.items():
+        (source / name).parent.mkdir(parents=True, exist_ok=True)
+        (source / name).write_text(text)
+    config = tmp_path / 'configure.yaml'
+    config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
+                                      'theme': str(REPO / 'themes/slides')}))
+    return config, source, tmp_path / 'site'
+
+
+def test_the_sitemap_keeps_what_it_did_not_write(tmp_path):
+    """Only the redirections of ids no page has are removed from sitemap/:
+    a page or a file of the project there stays."""
+    config, source, site = _project(tmp_path, **{'sitemap/index.html.j2': '= Map\n',
+                                                 'sitemap/extra.html': '<p>extra</p>\n'})
+    assert build(config).returncode == 0
+    assert (site / 'sitemap/extra.html').is_file() and (site / 'sitemap/index.html').is_file()
+    (source / 'b/index.html.j2').write_text('= Renamed b\n')
+    assert build(config, '--only', 'b').returncode == 0
+    assert (site / 'sitemap/index.html').is_file() and (site / 'sitemap/extra.html').is_file()
+    assert not (site / 'sitemap/page_b.html').exists() and (site / 'sitemap/renamed_b.html').is_file()
+
+
+@pytest.mark.parametrize('route', ['a second route', 'a link up the tree'])
+def test_a_link_removed_widens_only(tmp_path, route):
+    """Each route to a directory is published: removing a link to one widens
+    --only to a full build, whatever else reaches that directory."""
+    config, source, site = _project(tmp_path, **{'a/data/f.txt': 'f\n'})
+    link = source / 'b/lnk'
+    link.symlink_to('../a/data' if route == 'a second route' else '..', target_is_directory=True)
+    assert build(config).returncode == 0
+    link.unlink()
+    assert build(config, '--only', 'b').returncode == 0
+    partial = site_fingerprint(site)
+    shutil.rmtree(site)
+    assert build(config).returncode == 0
+    assert partial == site_fingerprint(site)
+
+
+def test_only_refuses_a_hard_link_of_the_site(tmp_path):
+    config, source, site = _project(tmp_path, **{'b/notes.txt': 'notes\n'})
+    assert build(config).returncode == 0
+    (site / 'b/index.html').unlink()
+    os.link(source / 'b/notes.txt', site / 'b/index.html')
+    result = build(config, '--only', 'b')
+    assert result.returncode == 1 and 'another hard link' in result.stdout, result.stdout
+    assert (source / 'b/notes.txt').read_text() == 'notes\n'
+
+
+def test_strict_with_a_configuration_warning_still_diagnoses(tmp_path):
+    config, source, site = _project(tmp_path)
+    config.write_text(config.read_text() + 'unknown_key: 1\n')
+    result = build(config, '--check-config', '--strict')
+    assert result.returncode == 1 and 'nothing built' not in result.stdout, result.stdout
+    result = build(config, '--strict')
+    assert result.returncode == 1 and 'nothing built' in result.stdout and not site.exists()

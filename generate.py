@@ -645,7 +645,9 @@ def build_once(args):
         builds = [b for k, b in enumerate(builds) if b.deck not in {c.deck for c in builds[:k]}]
     failed = []
     strict_failed = bool(args.strict and log.counts['warning'])     # of the configuration, before any build
-    if strict_failed:               # a refused build publishes nothing: none is made
+    if strict_failed and not (args.check_config or args.lint or args.render):
+        # a refused build publishes nothing: none is made (the modes that
+        # build nothing still diagnose, and fail at the end)
         log.error(f"{log.counts['warning']} warning(s) with --strict: nothing built")
         raise SystemExit(1)
     for build in builds:
@@ -761,9 +763,10 @@ def build_site(args, build, config_file, log):
         meta['only'] = built is not None
         if meta['only'] and (links := links_out_of(meta['site_directory'])):
             path, target = links[0]
-            raise BuildFailed(f"Unsafe output: '{filesystem.shown(path)}' is a symbolic link to "
-                              f"'{filesystem.shown(target)}', out of the site; --only writes in the "
-                              f"site: remove it (or build without --only)")
+            what = ('a file with another hard link' if isinstance(target, str)
+                    else f"a symbolic link to '{filesystem.shown(target)}', out of the site")
+            raise BuildFailed(f"Unsafe output: '{filesystem.shown(path)}' is {what}; --only writes "
+                              f"in the site: remove it (or build without --only)")
         meta['strict'] = strict         # checked before the pages are kept (generate_site)
         if meta['only'] and args.strict:
             # a refused build publishes nothing: built in a copy of the site
