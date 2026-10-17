@@ -3,11 +3,20 @@
 A core stage, not a plugin: every page of a site needs stable ids for its
 headings, and the theme's menu reads the summary. `title_id: false` in the
 configuration turns it off for a project that writes its own ids.
+
+The headings of an LHTML page are those of its document tree
+(lhtml.parse, on the template before Jinja: Jinja is opaque to LHTML), so
+that a heading is exactly what LHTML makes one (not in a code block, a
+comment, raw HTML...); those of a Markdown page are found in the text read
+as Markdown (source_scan).
 """
 import os
 import re
 import json
+import warnings
 from collections import Counter
+
+import lhtml
 
 from lib import markdown_page, source_scan
 from lib.source_map import strip as strip_markers
@@ -16,7 +25,9 @@ from lib.pages import markup
 from lib.structure import built_pages, page_path, structure, template_path
 
 
-TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
+# The start of an LHTML heading the tree found, to read its attributes as
+# written ((.c #id), Jinja included) and where its title starts
+HEADING_START = re.compile(r'(=+)(?:\((.*?)\))? ')
 # A Markdown heading (ATX), found in the text read as Markdown, then read on
 # its line as written - a code span or mathematics ending it is blank in the
 # masked text. An id written by hand or by this stage: # Title {: #id}
@@ -45,6 +56,40 @@ def generate_new_id(text, id_storage):
         return text_id + '_id' + str(id_storage[text_id])
     id_storage[text_id] = 1
     return text_id
+
+
+def lhtml_headings(text):
+    """The headings of an LHTML page, those of its document tree: (start,
+    end, level, attributes as written, title as written). A page that LHTML
+    refuses has none here: its run reports why."""
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')         # the run of the page warns
+        try:
+            document = lhtml.parse(text)
+        except lhtml.LHTMLError:
+            return []
+    found = []
+    for node in document.walk():
+        if node.kind == 'Heading':
+            start, end = node.span
+            m = HEADING_START.match(text, start)
+            found.append((start, end, node.level, (m.group(2) or '').strip(), text[m.end():end]))
+    return found
+
+
+def markdown_headings(text):
+    """The headings of a Markdown page, as lhtml_headings."""
+    found = []
+    for it in source_scan.find(MARKDOWN_TITLE, source_scan.Scan(text, 'markdown')):
+        level = len(it.group(1))
+        line = text[it.start():it.end()].rstrip()
+        written = line[line.index('#') + level:].strip()
+        found_id = MARKDOWN_ID.search(' ' + written)
+        class_id = found_id.group(1) if found_id else ''
+        written = (' ' + written)[:found_id.start()].strip() if found_id else written
+        written = MARKDOWN_CLOSING.sub('', ' ' + written).strip()
+        found.append((it.start(), it.end(), level, class_id, written))
+    return found
 
 
 def run(meta):
@@ -80,33 +125,20 @@ def run(meta):
         # The headings of the text read as its markup reads it (not in a
         # code block or a comment), each replaced at its own position
         # (identical headings get distinct ids)
-        kind = markup(entry['template'])
+        markdown = markup(entry['template']) == 'markdown'
         parts, position = [], 0
-        markdown = kind == 'markdown'
-        pattern = MARKDOWN_TITLE if markdown else TITLE_REGEX
-        for it in source_scan.find(pattern, source_scan.Scan(file_content, kind)):
-            n = str(len(it.group(1)))
-            if markdown:
-                line = file_content[it.start():it.end()].rstrip()
-                written = line[line.index('#') + int(n):].strip()
-                found = MARKDOWN_ID.search(' ' + written)
-                class_id = found.group(1) if found else ''
-                written = (' ' + written)[:found.start()].strip() if found else written
-                written = MARKDOWN_CLOSING.sub('', ' ' + written).strip()
-                title = markdown_page.plain(written)                # the text, without its marks
-            else:
-                class_id = file_content[it.start(2):it.end(2)].strip() if it.group(2) is not None else ''
-                title = file_content[it.start(3):it.end(3)]
-
-            generated_id = generate_new_id(strip_markers(title), id_storage) + '_l' + str(n)
+        for start, end, level, class_id, written in (markdown_headings if markdown
+                                                     else lhtml_headings)(file_content):
+            title = markdown_page.plain(written) if markdown else written    # the text, without its marks
+            generated_id = generate_new_id(strip_markers(title), id_storage) + '_l' + str(level)
             if not class_id:
                 class_id = '#' + generated_id
-
-            title_id_summary[page_key].append({'level': n, 'title': strip_markers(title), 'id': class_id[1:]})
-            heading = (f"{'#' * int(n)} {written} {{: {class_id}}}" if markdown
-                       else '=' * int(n) + '(' + class_id + ') ' + title)
-            parts += [file_content[position:it.start()], heading]
-            position = it.end()
+            title_id_summary[page_key].append({'level': str(level), 'title': strip_markers(title),
+                                               'id': class_id[1:]})
+            heading = (f"{'#' * level} {written} {{: {class_id}}}" if markdown
+                       else '=' * level + '(' + class_id + ') ' + written)
+            parts += [file_content[position:start], heading]
+            position = end
         file_content = ''.join(parts) + file_content[position:]
 
         with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:

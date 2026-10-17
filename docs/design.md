@@ -1872,6 +1872,20 @@ check them; a parser over tokens would be a rewrite, not a simplification.
 
 **N6. The consumers migrated to the tree, one at a time** (the old N5).
 
+*Headings, done* (2026-10-17). The relevance of the tree for the
+generator was measured first: its scanners read the templates before
+Jinja, and LHTML keeps Jinja opaque, so `lhtml.parse` reads them as they
+are. On the 1034 pages of the corpus it finds the headings and the media
+files the scanners find, no page refused (0.48 s against 0.16 s for the
+scanners). `lib/headings.py` now takes the headings of an LHTML page from
+its tree (`lhtml_headings`): what LHTML makes a heading is a heading,
+nothing else; the id is still written on the heading's line of the
+template. `TITLE_REGEX`, a copy of LHTML's own, goes. Checked: the
+headings, their places, attributes and titles identical on the 1337
+templates of the corpus (1766 headings); a page LHTML refuses gets no ids
+(its run reports why, as before). Markdown pages keep their scan. Next:
+the media files of the credits (`credits.files_used`), then the lint.
+
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint
 and the parse do not read the same document, and the ambiguity count of the
