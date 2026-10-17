@@ -44,7 +44,7 @@ def test_serve_watch_rebuild_and_recover(tmp_path):
             page.write_text('<h1>Second version</h1>')
             wait_for(lambda: 'Second version' in html())
             page.write_text('{% invalid %}')
-            wait_for(lambda: 'previous site preserved' in output.read_text())
+            wait_for(lambda: 'previous site kept' in output.read_text())
             assert 'Second version' in html()
             page.write_text('<h1>Recovered</h1>')
             wait_for(lambda: 'Recovered' in html())
