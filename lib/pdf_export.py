@@ -20,6 +20,11 @@ from tempfile import TemporaryDirectory
 from lib.structure import built_pages, page_path, structure, template_path
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'plugins/assets/template_html_to_pdf.js'
+# Chrome loads a page within 4 s (the script); a page showing videos misses it
+# when too many Chromes run at once: a few at a time, and a page that missed
+# it is tried again before the export fails
+JOBS = min(6, os.cpu_count() or 1)
+ATTEMPTS = 3
 
 
 def remove_video_controls(meta):
@@ -51,8 +56,14 @@ def export(meta):
             counter, entry = item
             stem = os.path.join(staging, 'slide_' + str(counter).zfill(3))
             pdf = stem + '.pdf'
-            subprocess.run(['node', str(SCRIPT), '--input=' + str(site / page_path(entry)),
-                            '--output=' + pdf] + chrome, check=True)
+            command = ['node', str(SCRIPT), '--input=' + str(site / page_path(entry)), '--output=' + pdf] + chrome
+            for attempt in range(ATTEMPTS):
+                result = subprocess.run(command, capture_output=True, text=True)
+                if result.returncode == 0:
+                    break
+            else:
+                raise RuntimeError(f"PDF of {page_path(entry)} not made after {ATTEMPTS} attempts: "
+                                   f"{result.stderr.strip().splitlines()[0] if result.stderr.strip() else result.returncode}")
             if not os.path.isfile(pdf):
                 raise RuntimeError(f'PDF not generated: {pdf}')
             subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf, stem], check=True)
@@ -62,7 +73,7 @@ def export(meta):
             return pdf, stem + '.jpg'
 
         meta['log'].detail(f'PDF of {len(pages)} page(s) ...')
-        with ThreadPoolExecutor() as pool:
+        with ThreadPoolExecutor(max_workers=JOBS) as pool:
             outputs = list(pool.map(export_page, enumerate(pages)))
 
         merged = os.path.join(staging, name + '.pdf')

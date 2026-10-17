@@ -810,11 +810,13 @@ def generate_site(meta, selected, built):
         headings.run(meta)
         wrap.run(meta)
         # Transcoded videos next to the assets, before LHTML writes the <video>
-        # tags whose sources video_cache.media lists
-        video_cache.run(meta)
+        # tags whose sources video_cache.media lists. Not for a PDF: a page
+        # shows one frame, and Chrome loads the source faster than a variant
         export = theme.of(meta)['export']
         if export == 'pdf':
             pdf_export.remove_video_controls(meta)
+        else:
+            video_cache.run(meta)
 
     with log.stage('Convert HTML'):
         failed = render_jinja(meta, selected, built, sitemap, log, credits_of, credit_errors)
