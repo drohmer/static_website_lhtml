@@ -1673,6 +1673,107 @@ with `lhtml.run(...)` kept as the façade. Raw HTML must stay faithful:
 LHTML nodes, and **opaque fragments** for HTML, code and mathematics, with
 significant whitespace preserved.
 
+**The shape of the tree, proposed for validation (2026-10-17).** Measured
+first, on the 914 recorded calls of the corpus (the text LHTML receives,
+after Jinja):
+
+| | count |
+|---|---|
+| elements opened by a `::` tag | 3162 |
+| ... closed in another container than their own (a heading line, a list item, a bold or italic span) | **2** |
+| ... never closed (warned today) | 18 |
+| heading lines / list lines / bold spans | 1251 / 4568 / 1206 |
+| code blocks / inline code / mathematics | 982 / 819 / 2853 |
+| raw HTML tags | 46370 |
+| `std::` and other unknown names before `::` (text) | 488 + |
+
+The passes let an element cross a heading, a list item or a bold span,
+because each pass writes HTML into the text the next one reads; a tree
+nests. Content written by hand almost never crosses: the two crossings are
+one line of csc written twice, a `span::[-]` that LHTML 3 reads as a style
+(and warns about). So the tree can nest, and the question is only what to
+do with a crossing.
+
+```
+Document(children, problems)                 problems: warnings with their place
+Text(value)                                  as written, newlines included (no <p>)
+Heading(level, attributes, children)         = Title, =(.c #id) Title
+List(items)                                  * / ** / ***: ListItem(children, sublist)
+Strong(children), Emphasis(children)         **...**, __...__ (one line)
+Element(name, groups, value, children, closed)
+    name      the tag: div, img, link, a macro...
+    groups    the bracket groups as written: style [..], classes and id (..), attributes {..}
+    value     the word glued after the groups (a URL, a variant: img::a.png, gap::l)
+    children  for a container (div::, span::, a macro with a class); a link's
+              label [..] is its children, read as text
+    closed    'tag' (closed by ::), 'inline' (div::text::), 'void' (img::), 'never'
+Code(language, body)                         code::[lang] ... code::[-]   opaque
+InlineCode(text)                             `...`                        opaque
+Math(text, display)                          \(..\), \[..\]               opaque
+Raw(kind, text)                              an HTML tag, comment, <script>/<style>,
+                                             a Jinja zone                 opaque
+```
+
+Every node carries its `span` (start and end offsets in the text given to
+`parse`): line and column are exact by construction, and no longer depend
+on the passes adding no `::` (step C). The opaque nodes are the kinds of
+the protected zones kept apart on purpose (C, R, I, and math): the tree
+never descends into them, which deletes the family of `::` glued to a
+placeholder (4.4). URLs and attribute groups are no longer zones: they are
+fields of an Element.
+
+Raw HTML stays a leaf: a raw `<div>` and its `</div>` are two Raw nodes,
+not a pair. LHTML never matched HTML tags and must not start: the theme
+wraps the page in 46370 of them, often open in one template and closed in
+another.
+
+```python
+document = lhtml.parse(text, tags=None, macros=None)   # no file read, no rendering
+html     = lhtml.render(document, media=None, line_breaks=False)
+lhtml.run(text, meta, tags)                            # parse + render, as today
+```
+
+`parse` needs to know the tags, because an unknown name followed by `::`
+is text (`std::vector`) and because a container waits for its `::` where a
+void element does not. Today the handler decides that while rendering, by
+pushing onto `tag_to_close`; a parser must know it before. So a tag
+declares it:
+
+```python
+lhtml.TAGS['alert'] = lhtml.Tag(container=True,
+                                render=lambda element, children, context: ...)
+```
+
+`render` receives the element and the HTML of its children, and returns
+the HTML of the element (opening and closing tags included). The handlers
+of 3.0 (`(element, tag_to_close, context) -> (html, is_real_tag)`) are
+not kept: LHTML 3 is unreleased, and no project of the corpus writes one
+(the generator's tags are macros, declared in YAML, whose kind is known).
+
+The line breaks (`line-breaks`, unused in the corpus) become a rule of the
+renderer over the tree: a newline in a Text between inline nodes gets a
+`<br>`; next to a block node (Heading, List, Code, a block Element, a block
+Raw) it does not. The 86 lines guessing structure from flat text go.
+
+**What changes in the output: only a crossing.** An element whose `::` is
+in another container than its opening is closed at the end of its own
+container, with a warning at its opening and at the `::` that no longer
+closes it (today: the HTML is malformed, `<li><span>...</li>...</span>`).
+Everything else must be identical, byte for byte.
+
+**How the prototype is checked, before anything uses it:** `lhtml.run`
+through the tree against the current engine on the 304 tests, the 914
+corpus calls and the fuzzer of the review of step C (60 000 documents
+mixing every construct): identical HTML but for the crossings, and the
+same problems at the same places. The current engine stays the façade until
+then; the tree replaces it in one commit once the three are identical.
+
+What the tree does not do (4.4 still holds): it is the document after
+Jinja, so it names no file of the project and no line of a template; the
+generator keeps reading its sources before Jinja (`source_scan`) and
+carrying provenance through Jinja (the source map). It deletes the rendered
+side of the source map (N6), not the source side.
+
 **N6. The consumers migrated to the tree, one at a time** (the old N5).
 
 Three expectations of this note were corrected by the review, and 4.4
