@@ -66,7 +66,7 @@ def string_literal(s):
     when it is not one."""
     s = s.strip()
     if len(s) >= 2 and s[0] == s[-1] and s[0] in '\'"':
-        quote, inner = s[0], s[1:-1]
+        inner = s[1:-1]
         return re.sub(r'\\(.)', lambda m: {'n': '\n', 't': '\t'}.get(m.group(1), m.group(1)), inner) \
             if '\\' in inner else inner
     return s

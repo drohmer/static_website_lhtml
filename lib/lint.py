@@ -13,7 +13,7 @@ and the layout report give it).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import re
 
 from lib import source_scan
@@ -44,7 +44,7 @@ class Finding:
     advice: str         # what replaces it
 
     def as_dict(self):
-        return {'line': self.line, 'kind': self.kind, 'text': self.text, 'advice': self.advice}
+        return asdict(self)
 
 
 def _px_tokens(tokens):
@@ -171,13 +171,13 @@ class Linter:
             advice = [f'{n}:: (tight lines)' for n in ('small', 'tiny') if n in self.macros]
             found.append(Finding(line, 'line-height', f"line-height:{declarations['line-height']}",
                                  ' or '.join(advice + ['the line height of the theme'])))
-        if declarations.get('display', '').lower() == 'none':
+        display = declarations.get('display', '').lower()
+        if display == 'none':
             found.append(Finding(line, 'display', 'display:none', '(.hidden)'))
         sizes = [f'{k}:{declarations[k]}' for k in ('width', 'height') if k in declarations]
         if sizes and layout in ('side', 'stack') and macro in ('img', 'video', 'videoplay'):
             found.append(Finding(line, 'size', '; '.join(sizes),
                                  'media:: fits the figures (media::(.fill) enlarges them)'))
-        display = declarations.get('display', '').lower()
         if (display in ('flex', 'inline-block') or 'justify-content' in declarations) and 'cols' in self.macros:
             found.append(Finding(line, 'flex', f'display:{display}' if display else 'justify-content',
                                  'cols:: with col:: children'))

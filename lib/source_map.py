@@ -64,6 +64,7 @@ VALUE_BLOCK = re.compile(r'\{%-?\s*(?:(?:end)?(markdown|filter)\b|endset\b|set\s
 VOID = frozenset(('area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source',
                   'track', 'wbr'))
 WRAPPERS = frozenset(('div', 'main', 'section', 'article'))
+TAG_NAME = re.compile(r'<[A-Za-z][\w-]*')         # the name of an opening tag
 
 
 def marker(place, leading=False):
@@ -77,22 +78,18 @@ def marker(place, leading=False):
     return f'{OPEN}{place}{LEADING if leading else ""}{CLOSE}'
 
 
-def add_markers(text, source, tags=source_scan.value_tags(), marker_for=marker, mark_protected=False):
+def add_markers(text, source, tags):
     """The template `text` with a marker of `<source>:<line>` on each line
-    where LHTML reads it as before (see the module documentation)."""
-    marker_for = lambda number, leading=False, _m=marker_for: _m(f'{source}:{number}', leading)
+    where LHTML reads it as before (see the module documentation); `tags`
+    are the tags whose value ends a line (source_scan.value_tags)."""
+    def marker_for(number, leading=False):
+        return marker(f'{source}:{number}', leading)
     found = source_scan.zones(text)
     skipped = source_scan.multiline_lines(text, found) | _value_block_lines(text, found)
     offsets = source_scan.line_offsets(text)
-    protected_starts = {text.count('\n', 0, z.start) for z in found
-                        if z.kind in ('code', 'math', 'raw', 'tag')
-                        and '\n' in text[z.start:z.end]} if mark_protected else set()
     out = []
     for index, line in enumerate(text.split('\n')):
         number = index + 1
-        if index in protected_starts:
-            out.append(marker_for(number) + line)
-            continue
         if (index in skipped or not line.strip() or CLOSER.match(line)
                 or JINJA_LINE.match(line) or EMPTY_ITEM.match(line)):
             out.append(line)
@@ -317,7 +314,7 @@ def apply(html):
     except Exception:           # malformed HTML: no source map, but no markers either
         return strip(html)
     for offset in sorted(lines, reverse=True):
-        name_end = re.compile(r'<[A-Za-z][\w-]*').match(html, offset)
+        name_end = TAG_NAME.match(html, offset)
         if name_end:
             insert = name_end.end()
             place, exact = lines[offset]

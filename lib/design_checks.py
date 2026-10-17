@@ -3,6 +3,8 @@ from copy import deepcopy
 from statistics import median
 import math
 
+from lib.layout.geometry import ancestors, nearest_ancestor, rect
+
 ROLES = ('title', 'heading', 'body', 'caption', 'reference', 'code', 'formula', 'figure', 'decorative')
 DEFAULTS = {
     'title': {'min_font': 32, 'min_body_ratio': 1.25, 'max_lines': 2},
@@ -55,7 +57,7 @@ def analyse_design(layout, spec=None):
     rules = rules_for(layout, spec)
     nodes = layout.get('subblocks', []) + [b for b in layout.get('blocks', []) if b.get('design_role')]
     # Thresholds are CSS pixels at a 1920px-wide render, scaled to the viewport.
-    scale = layout.get('design_pixel_scale', (layout.get('viewport') or {}).get('w', 1920) / 1920)
+    scale = (layout.get('viewport') or {}).get('w', 1920) / 1920
     def text(b):
         return b.get('design_text', b.get('text')) or {}
     body = [b['font_size'] for b in nodes if b.get('design_role') == 'body'
@@ -63,7 +65,7 @@ def analyse_design(layout, spec=None):
     baseline = median(body) if body else None
     info = {'enabled': spec.get('enabled', True), 'layout': layout.get('layout_name'),
             'rules': rules, 'pixel_scale': scale, 'body_font': baseline,
-            'measured': bool(layout.get('design_measurement')), 'aesthetic_review': False}
+            'measured': bool(layout.get('design_measurement'))}
     result = []
     if not info['enabled'] or not nodes:
         return result, info
@@ -100,23 +102,18 @@ def analyse_design(layout, spec=None):
                         'Enlarge the figure; use data-lhtml-role="decorative" for an ornament.')
         if role == 'caption' and policy.get('max_figure_gap'):
             # Pair only within an explicit figure/media container or a column.
-            parent = by_id.get(b.get('parent'))
-            while parent and not parent.get('figure_container') and parent.get('role') != 'column':
-                parent = by_id.get(parent.get('parent'))
+            parent = nearest_ancestor(b, by_id, lambda n: n.get('figure_container') or n.get('role') == 'column')
             if not parent:
                 continue
-            def in_container(node):
-                while node.get('parent') in by_id:
-                    node = by_id[node['parent']]
-                    if node['id'] == parent['id']:
-                        return True
-                return False
-            candidates = [n for n in nodes if n.get('design_role') == 'figure' and in_container(n)]
+            candidates = [n for n in nodes if n.get('design_role') == 'figure'
+                          and any(a['id'] == parent['id'] for a in ancestors(n, by_id))]
             c = b.get('visual') or b['box']
+            cx0, _, cx1, _ = rect(c)
             distances = []
             for n in candidates:
                 r = n['box']
-                if min(c['x'] + c['w'], r['x'] + r['w']) <= max(c['x'], r['x']):
+                rx0, _, rx1, _ = rect(r)
+                if min(cx1, rx1) <= max(cx0, rx0):        # not above or below one another
                     continue
                 gap = max(0, c['y'] - r['y'] - r['h'], r['y'] - c['y'] - c['h'])
                 distances.append((gap, n['id']))

@@ -10,13 +10,16 @@ enough to run them, which is what makes them testable one by one
 Coordinates are in CSS pixels, origin at the top-left corner of the page.
 """
 from lib.design_checks import analyse_design
+from lib.layout.geometry import ancestors, nearest_ancestor, rect, area as rect_area
 from lib.layout.findings import findings
 
 FLOW_POSITIONS = ('static', 'relative', 'sticky')
+# px: two edges closer than this are the same, a smaller overlap is the rounding of the render
+THRESHOLD = 4
 
 
 def _as_tuple(r, t='paint'):
-    return r['x'], r['y'], r['x'] + r['w'], r['y'] + r['h'], r.get('t', t)
+    return rect(r) + (r.get('t', t),)
 
 
 def _rect(block):
@@ -46,10 +49,10 @@ def _visible(blocks):
 def _bounds(parts):
     return {'x0': min(p[0] for p in parts), 'y0': min(p[1] for p in parts),
             'x1': max(p[2] for p in parts), 'y1': max(p[3] for p in parts),
-            'area': sum((p[2] - p[0]) * (p[3] - p[1]) for p in parts)}
+            'area': sum(rect_area(p) for p in parts)}
 
 
-def find_overlaps(blocks, threshold=4, tight_ratio=0.4):
+def find_overlaps(blocks, threshold=THRESHOLD, tight_ratio=0.4):
     """Classify the overlaps between the ink of pairs of blocks.
 
     - text on the background of another block: ignored (whether the text is
@@ -97,13 +100,13 @@ def find_hidden_text(blocks):
     result = []
     for b in blocks:
         for h in b.get('hidden_text', []):
-            result.append({'id': b['id'], 'by': h['by'], 'x0': h['x'], 'y0': h['y'],
-                           'x1': h['x'] + h['w'], 'y1': h['y'] + h['h'],
+            x0, y0, x1, y1 = rect(h)
+            result.append({'id': b['id'], 'by': h['by'], 'x0': x0, 'y0': y0, 'x1': x1, 'y1': y1,
                            'fraction': round(h['samples'] / max(h['total'], 1), 2)})
     return result
 
 
-def find_background_overlaps(blocks, collisions, threshold=4):
+def find_background_overlaps(blocks, collisions, threshold=THRESHOLD):
     """Blocks that overlap only the uniform or transparent background of an
     image of another block (not its drawn content): informational, not a
     problem. Returns dicts (image, other, src)."""
@@ -131,7 +134,7 @@ def _overlay(block):
     return bool(block.get('intentional')) or block.get('position') == 'fixed'
 
 
-def find_out_of_area(blocks, area, threshold=4, scrolling=False, page=None):
+def find_out_of_area(blocks, area, threshold=THRESHOLD, scrolling=False, page=None):
     """Blocks extending beyond the usable area: {id, left, top, right, bottom} in px.
     On a scrolling page (web page, not a slide), the bottom side is not checked.
     An overlay (_overlay) is compared with the whole page when it is known:
@@ -140,8 +143,7 @@ def find_out_of_area(blocks, area, threshold=4, scrolling=False, page=None):
     result = []
     for b in blocks:
         bounds = page if page and _overlay(b) else area
-        ax0, ay0 = bounds['x'], bounds['y']
-        ax1, ay1 = bounds['x'] + bounds['w'], bounds['y'] + bounds['h']
+        ax0, ay0, ax1, ay1 = rect(bounds)
         x0, y0, x1, y1 = _rect(b)
         out = {'left': ax0 - x0, 'top': ay0 - y0, 'right': x1 - ax1, 'bottom': y1 - ay1}
         out = {k: v for k, v in out.items() if v > threshold and not (scrolling and k == 'bottom')}
@@ -157,7 +159,7 @@ def _page_rect(layout):
     return {'x': 0, 'y': 0, 'w': viewport['w'], 'h': viewport['h']} if viewport else None
 
 
-def find_clipped(blocks, threshold=4):
+def find_clipped(blocks, threshold=THRESHOLD):
     """Blocks whose content is cut by overflow hidden/clip/scroll: {id, w, h} hidden px."""
     result = []
     for b in blocks:
@@ -194,7 +196,7 @@ def find_collapsed(blocks, minimum=8):
             and (m['w'] < minimum or m['h'] < minimum)]
 
 
-def find_svg_overflow(blocks, threshold=4):
+def find_svg_overflow(blocks, threshold=THRESHOLD):
     """SVG figures drawing beyond their viewBox: what is beyond is cut when
     the figure is shown as an image. {id, src, left, top, right, bottom} (px
     as displayed)."""
@@ -221,7 +223,7 @@ def find_svg_labels(blocks):
     return found
 
 
-def find_reserved_overlaps(blocks, reserved, threshold=4):
+def find_reserved_overlaps(blocks, reserved, threshold=THRESHOLD):
     """Blocks whose ink covers an area reserved by the theme (the
     navigation): {id, name, x0, y0, x1, y1}. An element of the theme is
     measured as one rectangle per part that paints, so a block covering a
@@ -233,7 +235,7 @@ def find_reserved_overlaps(blocks, reserved, threshold=4):
     is for, while a text written there is unreadable."""
     covered = {}
     for zone in reserved or []:
-        z = (zone['x'], zone['y'], zone['x'] + zone['w'], zone['y'] + zone['h'])
+        z = rect(zone)
         for b in blocks:
             parts = [o for r in _ink(b) if r[4] == 'text' and (o := _overlap(r, z, threshold))]
             if parts:
@@ -341,7 +343,7 @@ def _ink_rects(blocks):
 
 
 def _reserved_rects(reserved):
-    return [(z['x'], z['y'], z['x'] + z['w'], z['y'] + z['h']) for z in reserved or []]
+    return [rect(z) for z in reserved or []]
 
 
 def _covered_share(rows):
@@ -509,7 +511,7 @@ def density(blocks, area):
     fonts = [s['min_font'] for s in stats if s.get('min_font')]
     surface = max(area['w'] * area['h'], 1)
     ink = [r for b in blocks for r in _ink(b)]
-    covered = lambda t: sum((r[2] - r[0]) * (r[3] - r[1]) for r in ink if r[4] == t)
+    covered = lambda t: sum(rect_area(r) for r in ink if r[4] == t)
     return {'words': sum(s.get('words', 0) for s in stats),
             'formulas': sum(s.get('formulas', 0) for s in stats),
             'code_lines': sum(s.get('code_lines', 0) for s in stats),
@@ -607,8 +609,8 @@ def deck_norms(layouts, min_share=0.25, min_pages=3):
         for b in blocks:
             if b['kind'] in ('title', 'code') or not (b.get('text') or {}).get('words'):
                 continue
-            area = sum((r[2] - r[0]) * (r[3] - r[1]) for r in _ink(b) if r[4] == 'text')
-            surface[b['font_size']] = surface.get(b['font_size'], 0) + area
+            surface[b['font_size']] = (surface.get(b['font_size'], 0)
+                                       + sum(rect_area(r) for r in _ink(b) if r[4] == 'text'))
             sizes.add(b['font_size'])
         for size in sizes:
             font_pages[size] = font_pages.get(size, 0) + 1
@@ -661,21 +663,15 @@ def find_deviations(blocks, norms, tolerance=4):
     return result
 
 
-def find_internal(layout, threshold=4):
+def find_internal(layout, threshold=THRESHOLD):
     nodes = layout.get('subblocks', [])
     by_id = {b['id']: b for b in nodes}
-    def ancestors(b):
-        result = set()
-        while b.get('parent') in by_id:
-            b = by_id[b['parent']]
-            result.add(b['id'])
-        return result
-    parents = {b['id']: ancestors(b) for b in nodes}
+    parents = {b['id']: {a['id'] for a in ancestors(b, by_id)} for b in nodes}
     collisions, tight, intentional = [], [], []
     visible = [b for b in nodes if b.get('ink')]
     for i, a in enumerate(visible):
         for b in visible[i + 1:]:
-            if a['owner'] != b['owner'] or a['legacy_block'] != b['legacy_block']:
+            if a['owner'] != b['owner'] or a['top_block'] != b['top_block']:
                 continue  # already covered by aggregate block analysis
             aa, bb = dict(a), dict(b)
             if a['id'] in parents[b['id']]:
@@ -691,9 +687,7 @@ def find_internal(layout, threshold=4):
         if b.get('intentional') or b.get('position') in ('absolute', 'fixed'):
             continue
         # Explicit column boundaries are meaningful even when CSS overflow is visible.
-        parent = by_id.get(b.get('parent'))
-        while parent and parent.get('role') != 'column':
-            parent = by_id.get(parent.get('parent'))
+        parent = nearest_ancestor(b, by_id, lambda n: n.get('role') == 'column')
         if not parent:
             continue
         if parent.get('overflow', 'visible') != 'visible':
@@ -710,7 +704,7 @@ def find_internal(layout, threshold=4):
             'internal_clipped': find_clipped(nested, threshold)}
 
 
-def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
+def analyse(layout, threshold=THRESHOLD, norms=None, limits=None, design_rules=None):
     """Add an 'analysis' entry to a measured layout and return it. norms:
     usual values of the deck (deck_norms), for the consistency checks;
     limits: max_words, min_font of find_density_warnings."""
@@ -736,7 +730,7 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
         'reserved': find_reserved_overlaps(blocks, layout.get('reserved'), threshold),
         'collisions': collisions,
         'hidden_text': hidden_text,
-        'out_of_area': find_out_of_area(blocks, area, threshold, layout.get('scrolling', False),
+        'out_of_area': find_out_of_area(blocks, area, threshold, scrolling,
                                        page=_page_rect(layout)),
         'clipped': find_clipped(blocks, threshold),
         'upscaled_images': find_upscaled_images(blocks),
@@ -778,7 +772,7 @@ def analyse(layout, threshold=4, norms=None, limits=None, design_rules=None):
     layout['analysis']['canvas_overlaps'] = uncertain
 
     # the limits are meant for slides, not for scrolling web pages
-    layout['analysis']['dense'] = [] if layout.get('scrolling') else \
+    layout['analysis']['dense'] = [] if scrolling else \
         find_density_warnings(layout['analysis']['density'], **(limits or {}))
     layout['analysis']['role_design'], layout['design_checks'] = analyse_design(layout, design_rules)
     if layout.get('design_measurement') and layout['design_checks']['enabled']:

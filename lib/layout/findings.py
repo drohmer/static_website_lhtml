@@ -1,7 +1,7 @@
 """What the analysis found, as records of one shape.
 
 Every check of lib/layout/analysis.py measures its own thing and returns its
-own kind of row - 18 shapes whose only common field is `id`. This module is
+own kind of row - one shape per check, whose only common field is `id`. This module is
 the one place that turns them into findings:
 
     {key, code, severity, blocks, subject, detail, text, data}
@@ -95,10 +95,6 @@ def _internal_clipped(c):
 def _internal_overflow(c):
     return ('COLUMN OVERFLOW', [c['id'], c['parent']], f"#{c['id']} outside #{c['parent']}",
             ', '.join(f"{c[k]} px {k}" for k in ('left', 'right') if k in c))
-
-
-def _interactive(e):
-    return 'INTERACTIVE STATE', [], e['kind'], e['message']
 
 
 def _tight(t):
@@ -205,7 +201,6 @@ CHECKS = (
     ('internal_collisions', 'problem', _internal_collision),
     ('internal_clipped', 'problem', _internal_clipped),
     ('internal_overflow', 'problem', _internal_overflow),
-    ('interactive_errors', 'problem', _interactive),
     ('tight', 'warning', _tight),
     ('internal_tight', 'warning', _internal_tight),
     ('near_aligned', 'warning', _near_aligned),

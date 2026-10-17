@@ -47,7 +47,6 @@ Options (configure.yaml, under `layout:`):
 import json
 import os
 import shutil
-import tempfile
 import time
 import traceback
 
@@ -56,7 +55,7 @@ from lib.filesystem import shown
 from lib.configuration import ConfigError
 from lib.layout.analysis import analyse, deck_norms
 from lib.layout.findings import count_problems
-from lib.layout.measure import run_node, warn_degenerate_root, write_contact_sheets
+from lib.layout.measure import run_node_on, warn_degenerate_root, write_contact_sheets
 from lib.layout.report import changes_markdown, layout_changes, page_markdown, summary_markdown
 from lib.layout_options import jobs, options_of, output_directory, validate as validate_options
 from lib.lint import Linter
@@ -64,7 +63,7 @@ from lib.report_lock import report_lock
 from lib.structure import built_pages, page_path, structure
 
 
-def _clean_after_measure(output_dir, pages, previous, partial, meta, start):
+def _clean_after_measure(output_dir, pages, previous, partial, start):
     """Once the measurement has run: the report of a page it could not write
     is removed (it would be read as fresh), and the reports of pages that
     are no longer in the site go with them. Nothing of this happens when the
@@ -90,15 +89,25 @@ def _clean_after_measure(output_dir, pages, previous, partial, meta, start):
                 pass
 
 
+def _read_json(path):
+    """The JSON of a file, or None when it cannot be read."""
+    try:
+        with open(path, encoding='utf-8') as fid:
+            return json.load(fid)
+    except (OSError, ValueError):
+        return None
+
+
+def _write(path, text):
+    with open(path, 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
+        fid.write(text)
+
+
 def _same_source(report, page, meta):
     """Whether the report of a page (layout.json) was made from its source: the
     pages of a deck that changed may now have the path of another one."""
-    try:
-        with open(report, encoding='utf-8') as fid:
-            source = json.load(fid).get('source')
-    except (OSError, ValueError):
-        return False
-    return source == shown(page['source'], meta.get('config_directory') or '.')
+    layout = _read_json(report)
+    return layout is not None and layout.get('source') == shown(page['source'], meta.get('config_directory') or '.')
 
 
 def run(meta):
@@ -125,28 +134,20 @@ def run(meta):
         meta['log'].debug(traceback.format_exc())
 
 
-def _measure_and_report(meta):
-    options = options_of(meta)
-    meta.setdefault('dependency_contexts', {})
-    log = meta['log']
-    site_dir = meta['site_directory']
-    output_dir = str(output_directory(meta))
-    # --only: the pages built (or, when the pages of the site changed, the full
-    # build measures only the pages named); the others keep their report
-    requested = meta.get('measure')
+def _select_pages(meta, output_dir, requested):
+    """The pages to measure, those whose report is kept (previous), the
+    entries of the structure by page name, and whether the build is partial."""
     built = set(requested) if requested else {page_path(entry) for entry in built_pages(meta)}
     partial = len(built) < len(structure(meta))
-    entries = {}
-
-    pages, previous = [], []
+    entries, pages, previous = {}, [], []
     for entry in structure(meta):
         relative = page_path(entry)
         if os.path.isabs(relative) or '..' in relative.replace('\\', '/').split('/'):
             raise ValueError(f'Invalid page path in layout structure: {relative}')
         entries[relative] = entry
-        html = site_dir + relative
+        html = os.path.join(meta['site_directory'], relative)
         page = {'html': os.path.abspath(html),
-                'out': os.path.abspath(os.path.join(output_dir, 'pages', entry['dir'], entry['filename'])),
+                'out': os.path.abspath(os.path.join(output_dir, 'pages', relative)),
                 'name': relative, 'source': entry['src'], 'layout': entry.get('layout')}
         if relative not in built:
             report = os.path.join(page['out'], 'layout.json')
@@ -156,6 +157,32 @@ def _measure_and_report(meta):
                 pages.append(page)
         elif os.path.isfile(html):
             pages.append(page)
+    return pages, previous, entries, partial
+
+
+def _analyse_page(meta, p, entry, layout, norms, options, linter):
+    """The analysis of a page measured again, its lint, and what it depends on."""
+    limits = {k: options[k] for k in ('max_words', 'min_font')}
+    analyse(layout, options['threshold'], norms, limits, options.get('design_rules'))
+    if p['source'] in (meta.get('lint_findings') or {}):       # lint of the build
+        layout['analysis']['lint'] = meta['lint_findings'][p['source']]
+    elif linter is not None and os.path.isfile(p['source']):
+        layout['analysis']['lint'] = [f.as_dict() for f in linter.lint_file(p['source'], p['layout'])]
+    layout['source'] = shown(p['source'], meta.get('config_directory') or '.')
+    # the files the page depends on, to know whether a retained report is still valid
+    meta.setdefault('runtime_resources', {})[p['name']] = layout.get('resources', [])
+    layout['dependencies'] = dependencies.make_manifest(meta, entry, layout.get('resources', []))
+
+
+def _measure_and_report(meta):
+    options = options_of(meta)
+    meta.setdefault('dependency_contexts', {})
+    log = meta['log']
+    output_dir = str(output_directory(meta))
+    # --only: the pages built (or, when the pages of the site changed, the full
+    # build measures only the pages named); the others keep their report
+    requested = meta.get('measure')
+    pages, previous, entries, partial = _select_pages(meta, output_dir, requested)
 
     # Read (and do not remove) the previous measure of the pages measured
     # again, for changes.md: nothing is deleted before the measurement, so a
@@ -163,12 +190,10 @@ def _measure_and_report(meta):
     previous_layouts = {}
     for p in pages:
         path = os.path.join(p['out'], 'layout.json')
-        if os.path.isfile(path) and not (requested and not _same_source(path, p, meta)):
-            try:
-                with open(path, encoding='utf-8') as fid:
-                    previous_layouts[p['name']] = json.load(fid)
-            except (OSError, ValueError):
-                pass
+        if not (requested and not _same_source(path, p, meta)):
+            layout = _read_json(path)
+            if layout is not None:
+                previous_layouts[p['name']] = layout
     os.makedirs(output_dir, exist_ok=True)
 
     if requested:
@@ -176,80 +201,47 @@ def _measure_and_report(meta):
                              f'the others keep their report (--layout for all)', indent_level=2)
     log.keyvalue('*', f'Measure layout of {len(pages)} pages ...', indent_level=2)
     start = time.time()
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
-        json.dump([{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages], fid)
-        pages_json = fid.name
-    try:
-        stderr = run_node('layout_measure.js', [
-            f'--input={pages_json}', f"--root={options['root']}", f"--exclude={options['exclude']}",
-            f"--width={options['width']}", f"--height={options['height']}",
-            f"--images={1 if options['images'] else 0}", f"--jobs={jobs(options)}"],
-            label='Measure layout', chrome=options['chrome'], log=log) if pages else ''
-        for line in stderr.splitlines():
-            if line.startswith('layout_measure:'):
-                log.error(line)
-    except RuntimeError:
-        raise
-    finally:
-        os.remove(pages_json)
-
-    _clean_after_measure(output_dir, pages, previous, partial, meta, start)
+    if pages:
+        run_node_on('layout_measure.js', [{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages],
+                    [f"--root={options['root']}", f"--exclude={options['exclude']}",
+                     f"--width={options['width']}", f"--height={options['height']}",
+                     f"--images={1 if options['images'] else 0}", f"--jobs={jobs(options)}"],
+                    'Measure layout', options['chrome'], log)
+    _clean_after_measure(output_dir, pages, previous, partial, start)
 
     remeasured = {p['name'] for p in pages}
     measured = []
     for p in previous + pages:
         layout_path = os.path.join(p['out'], 'layout.json')
         if os.path.isfile(layout_path):
-            with open(layout_path, encoding='utf-8') as fid:
-                measured.append((p, layout_path, json.load(fid)))
+            measured.append((p, layout_path, _read_json(layout_path)))
     warn_degenerate_root(measured, options, log)
     norms = deck_norms([layout for _, _, layout in measured])
-    limits = {k: options[k] for k in ('max_words', 'min_font')}
-
-    rows = []
-    loaded_design = meta.get('loaded_design')
-    linter = Linter(loaded_design) if loaded_design else None
     order = {page_path(entry): k for k, entry in enumerate(structure(meta))}
     measured.sort(key=lambda m: order[m[0]['name']])
+
+    loaded_design = meta.get('loaded_design')
+    linter = Linter(loaded_design) if loaded_design else None
+    rows = []
     for p, layout_path, layout in measured:
         entry = entries[p['name']]
-        if p['name'] not in remeasured:         # retained measure: its validity is refreshed, not its geometry
-            layout['freshness'] = dependencies.freshness(layout.get('dependencies'), meta, entry)
-            with open(layout_path, 'w', encoding='utf-8', newline='\n') as fid:
-                json.dump(layout, fid, indent=1)
-            with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
-                fid.write(page_markdown(p['name'], layout['source'], layout))
-            rows.append((p['name'], shown(os.path.join(p['out'], 'layout.md'), output_dir),
-                         layout['analysis']))
-            continue
-        analyse(layout, options['threshold'], norms, limits, options.get('design_rules'))
-        if p['source'] in (meta.get('lint_findings') or {}):       # lint of the build
-            layout['analysis']['lint'] = meta['lint_findings'][p['source']]
-        elif linter is not None and os.path.isfile(p['source']):
-            layout['analysis']['lint'] = [f.as_dict() for f in linter.lint_file(p['source'], p['layout'])]
-        layout['source'] = shown(p['source'], meta.get('config_directory') or '.')
-        # the files the page depends on, to know whether a retained report is still valid
-        meta.setdefault('runtime_resources', {})[p['name']] = layout.get('resources', [])
-        layout['dependencies'] = dependencies.make_manifest(meta, entry, layout.get('resources', []))
-        layout['freshness'] = dependencies.freshness(layout['dependencies'], meta, entry)
-        with open(layout_path, 'w', encoding='utf-8', newline='\n') as fid:
-            json.dump(layout, fid, indent=1)
-        with open(os.path.join(p['out'], 'layout.md'), 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
-            fid.write(page_markdown(p['name'], layout['source'], layout))
-        rows.append((p['name'], shown(os.path.join(p['out'], 'layout.md'), output_dir),
-                     layout['analysis']))
+        if p['name'] in remeasured:
+            _analyse_page(meta, p, entry, layout, norms, options, linter)
+        # a retained measure: its validity is refreshed, not its geometry
+        layout['freshness'] = dependencies.freshness(layout.get('dependencies'), meta, entry)
+        _write(layout_path, json.dumps(layout, indent=1))
+        _write(os.path.join(p['out'], 'layout.md'), page_markdown(p['name'], layout['source'], layout))
+        rows.append((p['name'], shown(os.path.join(p['out'], 'layout.md'), output_dir), layout['analysis']))
 
-    with open(os.path.join(output_dir, 'summary.md'), 'w', encoding='utf-8', errors='replace', newline='\n') as fid:
-        reference = os.path.join(meta['config_directory'], '.structure', 'design.md')
-        fid.write(summary_markdown(rows, norms, design=shown(reference, output_dir)
-                                   if loaded_design and any(loaded_design.values()) else None))
+    reference = os.path.join(meta['config_directory'], '.structure', 'design.md')
+    _write(os.path.join(output_dir, 'summary.md'),
+           summary_markdown(rows, norms, design=shown(reference, output_dir)
+                            if loaded_design and any(loaded_design.values()) else None))
     changes = [(p['name'], lines) for p, _, layout in measured if p['name'] in remeasured
                and p['name'] in previous_layouts
                and (lines := layout_changes(previous_layouts[p['name']], layout))]
-    with open(os.path.join(output_dir, 'changes.md'), 'w', encoding='utf-8', newline='\n') as fid:
-        fid.write(changes_markdown(changes, len(pages)))
-    with open(os.path.join(output_dir, 'deck.json'), 'w', encoding='utf-8', newline='\n') as fid:
-        json.dump(norms, fid, indent=1)
+    _write(os.path.join(output_dir, 'changes.md'), changes_markdown(changes, len(pages)))
+    _write(os.path.join(output_dir, 'deck.json'), json.dumps(norms, indent=1))
     if options['images'] and measured:
         write_contact_sheets(output_dir, [(p['name'], shown(p['out'], output_dir), layout['analysis'])
                                           for p, _, layout in measured],

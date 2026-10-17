@@ -138,12 +138,8 @@ def markdown(comments):
     return '\n'.join(out) + '\n'
 
 
-def script_tag():
-    """The <script> added to the served pages."""
-    return f'<script src="{URL}feedback.js" defer></script>'
-
-
 def add_script(html):
     """The HTML of a page with the feedback script (before </body>)."""
+    tag = f'<script src="{URL}feedback.js" defer></script>'
     position = html.lower().rfind('</body>')
-    return html + script_tag() if position < 0 else html[:position] + script_tag() + html[position:]
+    return html + tag if position < 0 else html[:position] + tag + html[position:]

@@ -84,17 +84,23 @@ def write_contact_sheets(output_dir, rows, viewport, options, log, changed=None)
         sheets.append({'html': html_path, 'png': html_path[:-len('.html')] + '.png'})
     if not sheets:
         return
+    run_node_on('layout_contact.js', sheets, [], 'Contact sheets', options['chrome'], log)
+
+
+def run_node_on(script, items, arguments, label, chrome, log):
+    """Run a Node script of SCRIPTS on `items`, given as a temporary JSON file
+    (--input); the errors it reports on stderr ('<script>: ...') are logged."""
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
-        json.dump(sheets, fid)
-        sheets_json = fid.name
+        json.dump(items, fid)
+        input_json = fid.name
     try:
-        stderr = run_node('layout_contact.js', [f'--input={sheets_json}'], label='Contact sheets',
-                           chrome=options['chrome'], log=log)
+        stderr = run_node(script, [f'--input={input_json}'] + arguments, label=label, chrome=chrome, log=log)
+        prefix = script.removesuffix('.js') + ':'
         for line in stderr.splitlines():
-            if line.startswith('layout_contact:'):
+            if line.startswith(prefix):
                 log.error(line)
     finally:
-        os.remove(sheets_json)
+        os.remove(input_json)
 
 
 def warn_degenerate_root(measured, options, log):

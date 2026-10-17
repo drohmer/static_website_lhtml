@@ -41,28 +41,21 @@ class PreviewHandler(SimpleHTTPRequestHandler):
         pass
 
     def send_response(self, code, message=None):
-        self._cache_control = False
-        super().send_response(code, message)
-
-    def send_header(self, keyword, value):
-        if keyword.lower() == 'cache-control':
-            self._cache_control = True
-        super().send_header(keyword, value)
-
-    def end_headers(self):
         # Every file is checked again at each load: a page rebuilt after an edit of
         # the deck must not run with the previous menu.js (wrong previous/next pages)
-        if not getattr(self, '_cache_control', False):
-            super().send_header('Cache-Control', 'no-cache')
-        self._cache_control = False
+        self.cache_control = 'no-cache'
+        super().send_response(code, message)
+
+    def end_headers(self):
+        self.send_header('Cache-Control', getattr(self, 'cache_control', 'no-cache'))
         super().end_headers()
 
     def _send(self, status, body, content_type='application/json; charset=utf-8'):
         data = body.encode('utf-8') if isinstance(body, str) else body
         self.send_response(status)
+        self.cache_control = 'no-store'
         self.send_header('Content-Type', content_type)
         self.send_header('Content-Length', str(len(data)))
-        self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(data)
 

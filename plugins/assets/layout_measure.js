@@ -763,7 +763,7 @@ function extractBlocks(rootSelector, excludeSelector) {
         b.source_near = Boolean(b.source) && (!direct || origin.hasAttribute('data-lhtml-near'));
         b.id = n.id; b.parent = n.parent?.id || null; b.owner = n.owner; b.role = n.role;
         b.intentional = !!n.el.closest('.overlay');
-        b.legacy_block = ownerOfInternal(n.el).id;
+        b.top_block = ownerOfInternal(n.el).id;      // the top-level block it belongs to
         const cs = getComputedStyle(n.el), r = n.el.getBoundingClientRect();
         b.frame = {x: round(r.left + scrollX + parseFloat(cs.borderLeftWidth)),
                    y: round(r.top + scrollY + parseFloat(cs.borderTopWidth)),

@@ -5,7 +5,7 @@ Text in, text out: nothing here writes a file (lib/layout/measure.py does).
 """
 import posixpath
 
-from lib.layout.analysis import _rect
+from lib.layout.analysis import THRESHOLD, _rect
 from lib.layout.findings import count_problems, count_warnings, findings
 
 
@@ -223,7 +223,7 @@ def _problems_by_key(layout):
     return found
 
 
-def layout_changes(old, new, threshold=4):
+def layout_changes(old, new, threshold=THRESHOLD):
     """What changed between two measures of a page: problems that appeared or
     were solved, counts of warnings and lint, blocks moved or resized (matched
     by signature), blocks added or removed. Returns lines of Markdown (none:
