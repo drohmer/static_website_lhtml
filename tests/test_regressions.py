@@ -201,9 +201,10 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                 (self.site / 'index.html').write_text('<h1>Keep me</h1>')
                 old_pdf = self.root / 'slides.pdf'
                 old_pdf.write_bytes(b'previous PDF')
-                def run(command, check):
-                    self.assertTrue(check)
+                def run(command, check=False, **options):
                     if command[0] == failing_command:
+                        if not check:           # node: tried again, then the export fails
+                            return subprocess.CompletedProcess(command, 1, '', 'TimeoutError')
                         raise subprocess.CalledProcessError(1, command)
                     if command[0] == 'node':
                         Path(command[-1].removeprefix('--output=')).write_bytes(b'page')
@@ -213,14 +214,17 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                 meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                         'structure': [{'dir': '', 'filename': 'index.html'}]}
                 with patch.object(pdf_export.subprocess, 'run', side_effect=run):
-                    with self.assertRaises(subprocess.CalledProcessError):
+                    with self.assertRaises(RuntimeError if failing_command == 'node'
+                                           else subprocess.CalledProcessError) as raised:
                         pdf_export.export(meta)
+                if failing_command == 'node':
+                    self.assertIn('not made after 3 attempts: TimeoutError', str(raised.exception))
                 self.assertTrue((self.site / 'index.html').exists())
                 self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
 
     def test_pdf_asks_not_to_publish_instead_of_deleting(self):
         self.site.mkdir()
-        def run(command, check):
+        def run(command, check=False, **options):
             self.assertTrue(self.site.exists())
             if command[0] == 'node':
                 Path(command[-1].removeprefix('--output=')).write_bytes(b'page')
