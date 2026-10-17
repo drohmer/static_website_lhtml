@@ -1803,6 +1803,15 @@ read the intermediate HTML (`<` ends a word, `>` before a name is a
 boundary), and the line breaks still guess structure from that text. Both
 are the next steps of the tree, not of its shape.
 
+*Done* (2026-10-17): the tree is the engine of `lhtml.run` (LHTML f7cc8de);
+the text passes (`process_title`, `process_listing`, `process_bold`,
+`process_italic`, `process_tag`) are gone, and a tag is a `Tag(render,
+container)`. Checked after the switch: LHTML's 315 tests (the three of the
+old handlers migrated), the generator's 347, both on Windows too; the 914
+corpus calls (912 identical, the two crossings of csc changed on purpose);
+the five projects built (`compare.sh`), whose only new difference is that
+crossing, on one page of csc in two chapters, the PDFs unchanged.
+
 **N6. The consumers migrated to the tree, one at a time** (the old N5).
 
 Three expectations of this note were corrected by the review, and 4.4
