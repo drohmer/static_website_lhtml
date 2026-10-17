@@ -16,7 +16,10 @@ document tree (source_scan.document, with the macros of the design): the
 style group [...] of an element, the style="..." of its raw HTML, its Jinja,
 the attributes {...} of an element and its text, a spacer being an
 anonymous div (or a div::) holding only a height in px, alone on its line.
-The layout checks and the rules of the project still read the text.
+So are the small:: and tiny:: on list items (the nesting of the tree) and
+the media:: and aside:: the layout checks look for. The patterns of the
+project read the text, as written (not code, math, comments, Jinja, HTML
+tags nor URLs); so does a Markdown page, which has no small:: (LHTML).
 """
 from __future__ import annotations
 
@@ -37,13 +40,6 @@ OFFSET_MACROS = ('aside',)                 # their documented offsets: aside::[t
 SPACER = re.compile(r'^\s*(?:div)?::\[\s*height:\s*([\d.]+)px;?\s*\]::?\s*$')
 PX = re.compile(r'^\s*([\d.]+)px\s*$')
 PERCENT = re.compile(r'^\s*([\d.]+)%\s*$')
-# block macros (a line holding only the opener: `name::`, `name::(.c)[style]{attrs}`,
-# or anonymous `::(.c)`), their closers (`::`, `::name`), list items (column 0)
-BLOCK_OPEN = re.compile(r'^\s*(?:([A-Za-z][\w-]*)::((?:\([^()\n]*\))?(?:\{[^{}\n]*\})?(?:\[[^\[\]\n]*\])?)'
-                        r'|::((?:\([^()\n]*\))?(?:\{[^{}\n]*\})?(?:\[[^\[\]\n]*\])?))\s*$')
-BLOCK_CLOSE = re.compile(r'^\s*::(?:([A-Za-z][\w-]*?)-?)?\s*$')
-LIST_ITEM = re.compile(r'^\*+\s')
-SMALL_ITEM = re.compile(r'^\*+\s+(?:-\s+)?(small|tiny)::')
 
 
 @dataclass
@@ -104,40 +100,50 @@ class Linter:
                       for name, rule in (lint.get('rules') or {}).items() if rule]
 
     def _project_rules(self, source):
-        """Findings of the rules of the project: small::/tiny:: on list items (the
-        blocks are followed on the text read as LHTML), and the patterns (on its
-        text only: not code, math, comments, Jinja, HTML tags nor URLs)."""
+        """Findings of the rules of the project: small::/tiny:: on list items (in
+        the document tree of an LHTML page), and the patterns (on its text only:
+        not code, math, comments, Jinja, HTML tags nor URLs)."""
         found = []
         text = source_scan.mask(source.text, source_scan.NOT_TEXT | {'jinja', 'urltag', 'tag'}, source.zones)
         for number, line in enumerate(text.split('\n'), 1):
             for name, pattern, advice in self.rules:
                 if (m := pattern.search(line)):
                     found.append(Finding(number, name, m.group(0), advice))
-        if not self.small_text:
-            return sorted(found, key=lambda f: f.line)
-        stack = []                  # blocks open: [name (None: anonymous), line, list items]
-        advice = 'the text at its size: shorten it (small:: for captions, references)'
-        for number, line in enumerate(source.masked.split('\n'), 1):
-            if (m := BLOCK_OPEN.match(line)) and not (m.group(1) and m.group(1) in self.empty) \
-                    and (m.group(1) or m.group(3)):
-                stack.append([m.group(1), number, 0])
-            elif (m := BLOCK_CLOSE.match(line)):
-                name = m.group(1)
-                if name and name not in [b[0] for b in stack]:
-                    continue        # an inline macro alone on its line (::nl), not a closer
-                while stack:
-                    block = stack.pop()
-                    if block[0] in ('small', 'tiny') and block[2]:
-                        found.append(Finding(block[1], 'small-text', f'{block[0]}:: around {block[2]} list item(s)', advice))
-                    if not name or block[0] == name:
-                        break
-            elif (m := SMALL_ITEM.match(line)):
-                found.append(Finding(number, 'small-text', f'{m.group(1)}:: on a list item', advice))
-            elif LIST_ITEM.match(line):
-                for block in stack:
-                    if block[0] in ('small', 'tiny'):
-                        block[2] += 1
+        if self.small_text and source.markup != 'markdown':
+            found += self._small_text(source.document(self.lhtml_macros))
         return sorted(found, key=lambda f: f.line)
+
+    def _small_text(self, document):
+        """small:: or tiny:: starting a list item, or holding list items: the
+        text at its size, in the document tree."""
+        if document is None:            # a page LHTML refuses: its run reports why
+            return []
+        advice = 'the text at its size: shorten it (small:: for captions, references)'
+        found, on_item = [], set()
+        for node in document.walk():
+            if node.kind == 'Item':
+                first = next((c for c in node.children if not (c.kind == 'Text' and c.value.strip() in ('', '-'))),
+                             None)
+                if first is not None and first.kind == 'Element' and first.name in ('small', 'tiny'):
+                    on_item.add(node)
+                    found.append(Finding(node.line, 'small-text', f'{first.name}:: on a list item', advice))
+        for node in document.walk():
+            if node.kind == 'Element' and node.name in ('small', 'tiny'):
+                items = [n for n in node.walk() if n.kind == 'Item' and n not in on_item
+                         and not (len(n.children) == 1 and n.children[0].kind == 'List')]    # a nested list
+                if items:
+                    found.append(Finding(node.line, 'small-text',
+                                         f'{node.name}:: around {len(items)} list item(s)', advice))
+        return found
+
+    def _uses(self, source, read, name):
+        """Whether a page uses the macro `name`: in its document tree (in its
+        text for a Markdown page)."""
+        if source.markup != 'markdown':
+            document = source.document(self.lhtml_macros)
+            if document is not None:
+                return any(n.kind == 'Element' and n.name == name for n in document.walk())
+        return re.search(rf'(?<![\w-]){name}::', read) is not None
 
     def _gap(self, height):
         if 'gap' not in self.macros or not self.spaces:
@@ -230,10 +236,10 @@ class Linter:
             if base is None:
                 findings.append(Finding(layout_line, 'layout', f'layout {layout}',
                                         f"a layout of the design: {', '.join(sorted(self.layouts)) or 'none'}"))
-            elif base in ('side', 'stack') and 'media::' not in read:
+            elif base in ('side', 'stack') and not self._uses(source, read, 'media'):
                 findings.append(Finding(layout_line, 'layout', f'layout {layout} without media::',
                                         'put the figures in media:: ... ::'))
-            elif base == 'side' and re.search(r'(?<![\w-])aside::', read):
+            elif base == 'side' and self._uses(source, read, 'aside'):
                 findings.append(Finding(layout_line, 'layout', 'aside:: in layout side', 'media::'))
         return findings
 

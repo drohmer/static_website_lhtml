@@ -1906,10 +1906,18 @@ alone on its line. Checked on the 1879 pages x themes of the corpus: the
 same 3648 findings, and 20 spacers more, `div::[height:20px;] ::` (a space
 before the `::`, which the regular expression missed). It found an LHTML
 bug: the groups of an element held the placeholders of the zones they hold
-(`top:{{ top }}px`), not the text as written (fixed in LHTML). What still
-reads the text: the layout checks (`media::`, `aside::` present) and the
-rules of the project (`small::` around list items, followed by a stack of
-blocks on the lines: the tree's nesting), the next candidates.
+(`top:{{ top }}px`), not the text as written (fixed in LHTML).
+
+*The rest of the lint, done* (2026-10-17). `small::`/`tiny::` starting a
+list item or holding list items is read in the tree's nesting (the stack
+of blocks followed line by line, and its four regular expressions, go), as
+are the `media::` and `aside::` the layout checks look for. Checked on the
+1879 pages x themes of the corpus with `small_text` on and each page linted
+without a layout, in `side` and in `stack`: the same 14863 findings (3617
+of layouts, 39 of small text). The tree also sees what the lines could
+not: a `small:: Notes` opener with text on its line, a `media::` written
+in an HTML attribute or a code block (not the media of the layout). The
+patterns of a project stay on the text, as written: they are about words.
 
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint

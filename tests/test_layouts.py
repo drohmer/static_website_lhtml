@@ -265,6 +265,19 @@ class ProjectRulesTests(unittest.TestCase):
         for text, expected in cases.items():
             self.assertEqual(self.kinds(text), expected, text)
 
+    def test_small_text_in_the_document_tree(self):
+        # an opener with text on its line still holds the items that follow;
+        # a nested list counts its items, not the item that holds it
+        self.assertEqual(self.linter.lint('small:: Notes\n* a\n** b\n::\n')[0].text,
+                         'small:: around 2 list item(s)')
+        self.assertEqual(self.kinds('* - small:: a whole item ::\n'), [(1, 'small-text')])
+
+    def test_layout_checks_read_the_elements(self):
+        # media:: in an HTML attribute or in code is not the media:: of the layout
+        text = '<p title="media::">x</p>\ncode::[text]\nmedia::\ncode::[-]\n'
+        self.assertEqual([f.text for f in self.linter.lint(text, 'side')], ['layout side without media::'])
+        self.assertEqual(self.linter.lint('media::\nimg::a.png\n::\n', 'side'), [])
+
     def test_patterns_only_in_the_text(self):
         text = ("{# Part 1 #}\n<p title=\"Part 2\">x</p>\n{% set t = 'Part 3' %}\n"
                 "img::assets/Part 4.png\n* real Part 5\n")
