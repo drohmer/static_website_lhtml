@@ -4,7 +4,7 @@ Pipeline: copy sources → Jinja2 rendering → LHTML conversion → SASS compil
 with plugin hooks at pre/mid/post stages.
 """
 
-from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, TemplateError
+from jinja2 import ChoiceLoader, Environment, FileSystemLoader, FunctionLoader, TemplateError
 from jinja2 import meta as jinja_meta
 import tidylib
 import yaml
@@ -16,6 +16,7 @@ import argparse
 import sys
 import time
 import traceback
+from pathlib import Path
 import warnings as python_warnings
 
 from lib import deck
@@ -50,6 +51,9 @@ from lib.build_output import staged_site
 from lib.structure import documents_directory
 
 import lhtml
+
+
+PAGE_TEMPLATE = '<page:{}>'          # the file name Jinja gives a page template
 
 
 class BuildFailed(Exception):
@@ -329,11 +333,12 @@ def sitemap_keywords_used(env, templates):
         try:
             source = env.loader.get_source(env, name)[0]
             ast = env.parse(source)
+            variables = jinja_meta.find_undeclared_variables(ast)       # compiles: an unknown filter
+            references = list(jinja_meta.find_referenced_templates(ast))
         except TemplateError:
             continue                    # reported when the page is rendered
-        used.update(n for n in jinja_meta.find_undeclared_variables(ast)
-                    if n.startswith(('pathTo_', 'linkTo_')))
-        for reference in jinja_meta.find_referenced_templates(ast):
+        used.update(n for n in variables if n.startswith(('pathTo_', 'linkTo_')))
+        for reference in references:
             if reference is None:
                 return None
             pending.append(reference)
@@ -364,7 +369,11 @@ def jinja_environment(meta, selected, built):
         with open(dir_site / page.site_template, encoding='utf-8') as fid:
             templates[page.site_template] = fid.read()
     roots = [meta['source_directory']] + sorted(set(other_sources(selected).values()))
-    loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
+    # A page template is named `<page:a/index.html.j2>`: a Jinja error in it,
+    # or in a page it includes, says which page (jinja_place)
+    pages = FunctionLoader(lambda name: (templates[name], PAGE_TEMPLATE.format(name), lambda: True)
+                           if name in templates else None)
+    loader = ChoiceLoader([pages] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
     loader = TrackingLoader(loader, roots, marker_transform(meta))
     env = Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
@@ -412,7 +421,7 @@ def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=No
                                            'credits': deck_credits,
                                            'pathToRoot': page.path_to_root, 'pageID': k})
         except Exception as e:
-            log.error(f'Jinja: {e}', jinja_place(e, page, dir_site))
+            log.error(f'Jinja: {e}', jinja_place(e, page, meta, {p.site_template: p for p in selected}))
             failed.append(page)
             discard_page(meta, page)
             continue
@@ -428,29 +437,37 @@ def load_project_design(meta):
     return design.load_design(meta['theme'], meta.get('design'), meta['config_directory'])
 
 
-def lhtml_place(text, problem, page):
+def lhtml_place(text, problem, page, base=None):
     """Where a problem LHTML found in `text` (a page as Jinja wrote it) is in
     the source (a problem that is not LHTML's has no line: the page)."""
     return source_map.place(text, getattr(problem, 'line', None), getattr(problem, 'column', None),
-                            page.src, filesystem.shown(page.src))
+                            page.src, filesystem.shown(page.src), base)
 
 
-def jinja_place(error, page, dir_site):
-    """Where a Jinja error is: a line of a template it names, of the source
-    of the page when the template is the page."""
+def jinja_place(error, page, meta, pages):
+    """Where a Jinja error is: a line of the template it names - the source of
+    a page (`pages`: {site template: page}), the theme or a file of the
+    sources, never their copy in the site being built."""
     name, line = getattr(error, 'filename', None), getattr(error, 'lineno', None)
-    if line is None:
-        # while rendering: the last frame of a template ('<template>' is the
-        # page, given to Jinja as text; an include has its file)
-        frames = [f for f in traceback.extract_tb(error.__traceback__) if not f.filename.endswith('.py')]
+    if line is None:            # while rendering: the last frame of a template
+        frames = [(f.f_code.co_filename, n) for f, n in traceback.walk_tb(error.__traceback__)
+                  if f.f_code.co_filename.startswith('<page:') or f.f_code.co_filename.endswith(('.html', '.j2'))]
         if frames:
-            name, line = frames[-1].filename, frames[-1].lineno
-    if line is None:
+            name, line = frames[-1]
+    if line is None or name is None:
         return filesystem.shown(page.src)
-    if name in (None, '<template>') or getattr(error, 'name', None) == page.site_template:
-        with open(dir_site / page.site_template, encoding='utf-8') as fid:
-            return source_map.place(fid.read(), line, None, page.src, filesystem.shown(page.src))
-    return f'{filesystem.shown(name)}:{line}'
+    if name.startswith('<page:'):
+        owner = pages.get(name[len('<page:'):-1], page)
+        with open(meta['site_directory'] / owner.site_template, encoding='utf-8') as fid:
+            return source_map.place(fid.read(), line, None, owner.src, filesystem.shown(owner.src),
+                                    meta['config_directory'])
+    path = Path(name).resolve()
+    site = Path(meta['site_directory']).resolve()
+    if path.is_relative_to(site / 'theme'):
+        path = Path(meta['theme']) / path.relative_to(site / 'theme')
+    elif path.is_relative_to(site):
+        path = Path(meta['source_directory']) / path.relative_to(site)
+    return f'{filesystem.shown(path)}:{line}'
 
 
 def render_lhtml(meta, selected, log, failed_before=()):
@@ -486,13 +503,13 @@ def render_lhtml(meta, selected, log, failed_before=()):
             for warning in sorted(caught, key=lambda w: (getattr(w.message, 'line', None) or 0,
                                                          getattr(w.message, 'column', None) or 0)):
                 # where they are in the source, in the order of the page
-                log.warning(warning.message, lhtml_place(input_html, warning.message, page))
+                log.warning(warning.message, lhtml_place(input_html, warning.message, page, meta['config_directory']))
             if meta.get('source_map'):
                 output_html = source_map.apply(output_html)
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
-            log.error(e, lhtml_place(input_html, e, page))
+            log.error(e, lhtml_place(input_html, e, page, meta['config_directory']))
             failed.append(page)
             discard_page(meta, page)
             continue
@@ -557,7 +574,6 @@ def render_files(meta, files, log):
     (under its path relative to the configuration directory, or, for a file
     outside it, under _outside/<its directory>/), at the size of the slides
     of the layout report."""
-    from pathlib import Path
     from lib.layout.measure import run_node
     try:
         output = layout_options.output_directory(meta) / 'render'
@@ -626,13 +642,16 @@ def build_once(args):
     elif args.lint:                 # the sources of a deck are the same for each of its targets
         builds = [b for k, b in enumerate(builds) if b.deck not in {c.deck for c in builds[:k]}]
     failed = []
+    strict_failed = bool(args.strict and log.counts['warning'])     # of the configuration, before any build
+    if strict_failed:
+        log.error(f"{log.counts['warning']} warning(s) with --strict")
     for build in builds:
         if build.label and log.verbose and not args.check_config:     # --check-config prints YAML only
             log.info(f'[{build.label}]')
         if not build_site(args, build, config_file, log):
             failed.append(build.label or 'the site')
-    if failed:
-        if len(builds) > 1:
+    if failed or strict_failed:
+        if failed and len(builds) > 1:
             log.error(f"{len(failed)} of {len(builds)} builds failed: {', '.join(failed)}")
         raise SystemExit(1)
 
@@ -649,6 +668,7 @@ def build_site(args, build, config_file, log):
     meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lib/layout/build.py)
     meta['export_name'] = build.export_name     # the PDF of a deck (lib/pdf_export.py)
     meta['build_scope'] = build.scope           # its state, apart from the other builds
+    start, warnings_before = time.time(), log.counts['warning']
 
     # Diagnostic mode takes precedence over --clean and never runs plugins.
     if args.check_config or not args.clean:
@@ -714,7 +734,11 @@ def build_site(args, build, config_file, log):
         return True
 
     built = None
-    start, warnings_before = time.time(), log.counts['warning']
+
+    def strict():
+        """--strict: a warning fails the build, before its site is published."""
+        if args.strict and log.counts['warning'] > warnings_before:
+            raise BuildFailed(f"{log.counts['warning'] - warnings_before} warning(s) with --strict")
     try:
         selected = select_pages(meta, log, scaffold=args.scaffold)
         meta['dependency_contexts'] = {p.site_html: dependencies.page_context(p) for p in selected}
@@ -736,9 +760,11 @@ def build_site(args, build, config_file, log):
             # In the site itself: copying it into a staging directory would
             # cost more than the pages generated
             count = generate_site(meta, selected, built)
+            strict()
         else:
             with staged_site(meta):
                 count = generate_site(meta, selected, selected)
+                strict()
     except Exception as exc:
         kept = '' if built is not None else ' (previous site kept)'
         log.error(f"{build.label + ': ' if build.label else ''}build failed{kept}: {exc}")
@@ -749,9 +775,6 @@ def build_site(args, build, config_file, log):
     output = meta.get('exported') or config.site_directory
     log.info(f"{build.label + ': ' if build.label else ''}{count} page(s) built in {time.time() - start:.1f}s"
              f"{f', {warnings} warning(s)' if warnings else ''} -> {filesystem.shown(output)}")
-    if args.strict and warnings:
-        log.error(f'{warnings} warning(s) with --strict')
-        return False
     return True
 
 

@@ -195,3 +195,22 @@ def test_a_source_is_named_relative_to_the_project_never_to_the_machine():
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_a_problem_is_placed_by_the_marker_of_its_line(tmp_path, monkeypatch):
+    """A build for development: the marker names the file, relative to the
+    configuration; the message names it from the current directory, with
+    the column of the line as written."""
+    monkeypatch.chdir(tmp_path)
+    marker = source_map.marker('src/a.html.j2:3', leading=True)
+    text = 'head\n' + marker + 'gap::zz\n'
+    assert source_map.place(text, 2, len(marker) + 1, tmp_path / 'x', 'x', base=tmp_path / 'project') == \
+        'project/src/a.html.j2:3:1'
+
+
+def test_without_markers_the_lines_are_aligned_with_the_source(tmp_path):
+    src = tmp_path / 'p.html.j2'
+    src.write_text('---\ntitle: T\n---\n= T\n\nline\ngap::zz\n')
+    text = '<html>\n<body>\n= T\n\nline\ngap::zz\n</body>'
+    assert source_map.place(text, 6, 1, src, 'p') == 'p:7:1'
+    assert source_map.place(text, 1, 1, src, 'p') == 'p'                # written by the theme

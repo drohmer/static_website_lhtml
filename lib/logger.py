@@ -11,7 +11,7 @@ import time
 
 from rich.console import Console     # pip3 install rich
 
-console = Console(soft_wrap=True, highlight=False)
+console = Console(soft_wrap=True, highlight=False, emoji=False)     # a message as written: no :fire:
 STYLES = {'error': 'bold red', 'warning': 'yellow'}
 
 

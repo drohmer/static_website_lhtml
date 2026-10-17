@@ -42,9 +42,11 @@ from html.parser import HTMLParser
 import difflib
 import html as html_lib
 import os
+from pathlib import Path
 import re
 
 from lib import front_matter, source_scan
+from lib.filesystem import shown
 
 OPEN, CLOSE = '', ''
 LEADING = ''              # written at the start of the line of the block that follows
@@ -326,7 +328,7 @@ def apply(html):
     return strip(html)
 
 
-def place(text, line, column, src, label):
+def place(text, line, column, src, label, base=None):
     """Where `line`:`column` of `text` - a page as Jinja wrote it, and LHTML
     or Jinja read it - is in the sources, as `file:line:column` (a message).
 
@@ -335,14 +337,23 @@ def place(text, line, column, src, label):
     aligned with those of the page source `src`, which Jinja copies but for
     what it writes itself (a theme around the page, an expression, an
     include): a line of `text` that is in the source gets its line there.
-    A line written by Jinja gives the page alone, `label`."""
+    A line written by Jinja gives the page alone, `label`. A marker names
+    its file relative to the configuration directory, `base`: the message
+    names it as the others do (filesystem.shown).
+
+    The alignment is a guess: an included template that repeats a line of
+    the page may take its place (a build for development is exact)."""
     lines = text.split('\n')
     if not line or not 0 < line <= len(lines):
         return label
     written = lines[line - 1]
     found = MARKER.search(written)
     if found:
-        return found.group(1)
+        file, _, number = found.group(1).rpartition(':')
+        if base is not None:
+            file = shown(Path(base) / file)
+        # the column of the line as written, without the markers on it
+        return f'{file}:{number}' + (f':{len(strip(written[:column - 1])) + 1}' if column else '')
     try:
         with open(src, encoding='utf-8') as fid:
             source = fid.read().split('\n')

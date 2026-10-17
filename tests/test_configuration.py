@@ -264,13 +264,13 @@ class LoggerTests(unittest.TestCase):
         long = 'a/' * 80 + 'page.html.j2'
         with logger.console.capture() as captured:
             log = Logger()
-            log.warning('path\\ [bold]x[/bold]', f'{long}:3:5')
+            log.warning('path\\ [bold]x[/bold] :fire:', f'{long}:3:5')
             log.error('failed')
             log.detail('a stage')                   # -v only
             with log.stage('Pre-process'):
                 pass
         self.assertEqual(captured.get().split('\n'),
-                         [f'{long}:3:5: warning: path\\ [bold]x[/bold]', 'error: failed', ''])
+                         [f'{long}:3:5: warning: path\\ [bold]x[/bold] :fire:', 'error: failed', ''])
         self.assertEqual(log.counts, {'warning': 1, 'error': 1})
 
     def test_verbose_shows_the_stages(self):

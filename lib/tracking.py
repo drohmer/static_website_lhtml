@@ -24,7 +24,7 @@ class TrackingLoader(BaseLoader):
 
     def get_source(self, environment, template):
         text, filename, uptodate = self.loader.get_source(environment, template)
-        if filename:
+        if filename and not filename.startswith('<'):     # a page, given as text: not a file
             path = Path(filename).resolve()
             self.used.add(str(path))
             # Markers are LHTML's: a Markdown file keeps its text (lib/markdown_page.py)

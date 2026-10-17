@@ -198,9 +198,40 @@ class BuildTests(ProjectTests):
         self.page('src/01_a/01_x/index.html.j2', '= X\ngap::zz\n')
         self.write(decks='directories', targets={'html': {'theme': 'slides'}})
         self.assertEqual(self.build('--only', '01_a').returncode, 0)
-        result = self.build('--only', '01_a', '--strict')
+        before = (self.root / '_site/01_a/html/02_y/index.html').read_text()
+        self.page('src/01_a/02_y/index.html.j2', '= New y\n')
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(self.file), '--strict'],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('error: deck 01_a target html: build failed (previous site kept): 1 warning(s) with --strict',
+                      result.stdout)
+        self.assertEqual((self.root / '_site/01_a/html/02_y/index.html').read_text(), before)   # not published
+
+    def test_strict_counts_the_warnings_of_the_configuration(self):
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}}, unknown_key=1)
+        result = self.build('--strict')
         self.assertEqual(result.returncode, 1)
         self.assertIn('error: 1 warning(s) with --strict', result.stdout)
+
+    def test_a_jinja_error_names_the_file_it_is_in(self):
+        self.page('src/01_a/01_x/index.html.j2', '= X\n\nfirst\n{% include "01_a/02_y/index.html.j2" %}\n')
+        self.page('src/01_a/02_y/index.html.j2', '= Y\n\nfirst\n{{ missing_b.x }}\n')
+        self.page('src/02_b/01_x/index.html.j2', '= X\n{{ "abc" | nofilter }}\n')
+        theme = self.root / 'mytheme'
+        import shutil
+        shutil.copytree(REPO / 'themes/slides', theme)
+        base = theme / 'template/base.html'
+        lines = base.read_text().split('\n')
+        lines[6] = '{{ nothere.x }}'
+        base.write_text('\n'.join(lines))
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}})
+        output = self.build().stdout
+        self.assertIn("src/01_a/02_y/index.html.j2:4: error: Jinja: 'missing_b' is undefined", output)
+        self.assertIn("src/02_b/01_x/index.html.j2:2: error: Jinja: No filter named 'nofilter'", output)
+        self.assertIn('deck 02_b target html: build failed', output)
+        self.page('src/02_b/01_x/index.html.j2', '= X\n')
+        self.write(decks='directories', targets={'html': {'theme': 'mytheme'}})
+        self.assertIn("mytheme/template/base.html:7: error: Jinja: 'nothere' is undefined", self.build().stdout)
 
     def test_generate_pdf_is_a_target_now(self):
         self.write(plugin=['plugins/generate_pdf.py'])
