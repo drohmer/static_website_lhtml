@@ -10,6 +10,7 @@ import json
 import re
 
 from lib import front_matter
+from lib.pages import markup
 from lib.source_scan import leading_settings
 from lib.structure import built_pages, template_path
 from lib.theme import of as theme_manifest
@@ -34,6 +35,11 @@ template_auto_wrap = '''
 '''
 
 
+# The content of a Markdown page is converted inside the theme, by itself
+# (lib/markdown_page.py): the HTML of the theme is not Markdown
+MARKDOWN_CONTENT = '{{% filter markdown_page %}}\n{content}\n{{% endfilter %}}'
+
+
 # A page the theme must not wrap again: it places itself in the theme
 # ({% extends %}, with or without a {% block content %}) or it is a whole
 # document of its own. Wrapping the first gives two {% extends %}, which
@@ -56,6 +62,11 @@ def run(meta):
         with open(file_path, 'r', encoding='utf-8') as fid:
             file_content = fid.read()
 
+        is_markdown = markup(entry['template']) == 'markdown'
+        if is_markdown and wrapped(file_content):
+            raise ValueError(f"{entry.get('src', entry['template'])}: a Markdown page is placed in the theme "
+                             f"by the build, its content converted alone: write no {{% extends %}}, "
+                             f"{{% block content %}} or <html> in it (or write the page in LHTML, index.html.j2)")
         if not wrapped(file_content):
             # The front matter is read as the settings of the page
             # (lib/pages.py) and removed here: once the page is placed in
@@ -68,8 +79,11 @@ def run(meta):
             # first one when it scaffolds the page); keep the same one here,
             # or the rest of it is printed in the tab of the browser.
             title = str(entry['title']).strip().splitlines()
+            content = file_content[len(settings):]
+            if is_markdown:
+                content = MARKDOWN_CONTENT.format(content=content)
             content = template_auto_wrap.format(title=json.dumps(title[0] if title else '', ensure_ascii=False),
-                                                settings=settings, content=file_content[len(settings):],
+                                                settings=settings, content=content,
                                                 template=manifest['template'], block=manifest['content_block'])
             with open(file_path, 'w', encoding='utf-8', newline='\n') as fid:
                 fid.write(content)

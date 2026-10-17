@@ -40,7 +40,7 @@ import unicodedata
 
 from lib.filesystem import read_yaml
 from lib.generator_tool import STRUCTURE_KEYS
-from lib.pages import is_template, template_name
+from lib.pages import SUFFIXES, html_name, is_template, markup, template_name
 
 GLOB_CHARS = set('*?[')
 NAME = re.compile(r'[A-Za-z][A-Za-z0-9_-]*$')
@@ -269,7 +269,8 @@ class _Index:
             source = page.source.name
             self.by_source[source].append(page)
             self.by_id[(source, page.id)].append(page)
-            for key in {page.file, template_name(page.file), page.file[:-len('.html')]}:
+            template = unicodedata.normalize('NFC', page.directory + page.template)
+            for key in {page.file, template, page.file[:-len('.html')]}:
                 self.by_file[(source, key)].append(page)
         self.sorted_ids = {source: sorted((p.id, self.order[p]) for p in ps)
                            for source, ps in self.by_source.items()}
@@ -397,7 +398,8 @@ def scaffold(entries, source_directory):
         target = Path(source_directory) / e.pointer
         if target.name.endswith('.html') or is_template(target.name):     # a page file: dir/extra.html
             page = target if is_template(target.name) else target.with_name(template_name(target.name))
-            if page.exists():
+            if page.exists() or any(page.with_name(template_name(html_name(page.name), kind)).exists()
+                                    for kind in SUFFIXES):
                 continue
         else:
             page = target / template_name('index.html')
@@ -405,7 +407,8 @@ def scaffold(entries, source_directory):
                 continue
         page.parent.mkdir(parents=True, exist_ok=True)
         title = str(e.meta['title']).strip().splitlines() or ['']
-        lines = [f"= {_raw(title[0])}", '']
+        heading = '#' if markup(page.name) == 'markdown' else '='
+        lines = [f"{heading} {_raw(title[0])}", '']
         for key, value in e.meta.items():
             if key != 'title':
                 lines += [f'{{# {line} #}}' for line in f'{key}: {value}'.replace('#}', '# }').splitlines()]

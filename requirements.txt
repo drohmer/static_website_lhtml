@@ -1,6 +1,7 @@
 -c requirements-lock.txt
 lhtml-markup>=3.0
 Jinja2
+markdown-it-py
 jinja-markdown
 pytidylib
 pyyaml

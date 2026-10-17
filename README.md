@@ -229,13 +229,49 @@ _site/01_procedural/images/slide_000.jpg ...
 
 The generator runs the following stages:
 
-1. **Data preparation** — Find the `.html.j2` templates, select and order them (deck), copy the sources and theme to the site (or, with `--only`, the templates and assets of its pages), extract titles and sitemap, export `structure/`, write the design (`design.css` in the site, `design.md` in `.structure/`)
+1. **Data preparation** — Find the `.html.j2` and `.md.j2` templates, select and order them (deck), copy the sources and theme to the site (or, with `--only`, the templates and assets of its pages), extract titles and sitemap, export `structure/`, write the design (`design.css` in the site, `design.md` in `.structure/`)
 2. **Pre-process plugins** — Plugin hooks before Jinja2 rendering
 3. **Jinja2 rendering** — Render the templates with their variables (see [Template variables](#template-variables))
 4. **Mid-process plugins** — Plugin hooks between Jinja2 and LHTML
-5. **LHTML conversion** — Convert LHTML markup to HTML, with optional tidy
+5. **LHTML conversion** — Convert LHTML markup to HTML, with optional tidy (a Markdown page is converted in step 3)
 6. **SASS compilation** — Compile `.sass` files to `.css` (if libsass installed)
 7. **Post-process plugins** — Plugin hooks after all conversions
+
+## Markdown pages
+
+A page is written in LHTML (`index.html.j2`) or in Markdown (`index.md.j2`):
+the file says which, the generator never guesses it. Both give `index.html`,
+and both can sit in the same project, the same deck, the same directory.
+
+~~~markdown
+---
+layout: stack
+---
+# Noise *functions* {: #noise}
+
+Perlin noise \(n(x)\) is smooth: {{ params.detail | default('see below') }}.
+
+```python
+def noise(x): ...
+```
+~~~
+
+- Jinja runs first, as for an LHTML page: the variables, the includes and
+  the macros of Jinja work the same way. The theme wraps the page, its
+  content converted alone (the Jinja filter `markdown_page`): a Markdown
+  page writes no `{% extends %}`, `{% block content %}` or `<html>`, which
+  is refused with a message.
+- CommonMark, with tables and strikethrough; raw HTML is kept. A fenced code
+  block is highlighted as LHTML highlights `code::[python]`.
+- The mathematics `\(...\)` and `\[...\]` is kept as written for MathJax
+  (Markdown alone would read `\(` as `(` and `_` as emphasis).
+- A heading gets an id as in LHTML (`{: #id}` sets it by hand: `{#id}`
+  would be a Jinja comment); the title of the page is its first heading,
+  without its marks.
+- What is LHTML's is not available: the macros of the design (`gap::`),
+  `video::` and its transcoded variants (write `<video>` in HTML), the line
+  breaks option, the lint of the values written by hand, and the source map
+  of the layout report (a block of a Markdown page names no line).
 
 ## Template variables
 

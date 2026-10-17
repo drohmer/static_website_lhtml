@@ -12,6 +12,7 @@ import json
 import os
 
 from lib import design
+from lib.pages import is_template
 from lib.structure import load_structure, page_path
 
 SCHEMA = 1
@@ -43,7 +44,7 @@ def scope_files(root, kind):
     for directory, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if not d.startswith('.') and d != '__pycache__')
         if kind == 'assets':
-            dirs[:] = [d for d in dirs if not any((Path(directory) / d).glob('*.html.j2'))]
+            dirs[:] = [d for d in dirs if not any(is_template(f.name) for f in (Path(directory) / d).iterdir())]
         for name in sorted(files):
             if name.startswith('.') or (kind == 'assets' and name.endswith('.j2')):
                 continue

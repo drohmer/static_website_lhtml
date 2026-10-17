@@ -1494,6 +1494,22 @@ It also settles the boundary of 4.4: what the generator asks of a markup
 (text in, HTML and diagnostics out) is a contract with two implementations,
 which N5 and N6 must keep.
 
+*Done* (2026-10-17). `lib/pages.py` names the markup by the suffix
+(`SUFFIXES`: `.html.j2`, `.md.j2`, both giving `.html`), and `Page.markup`
+travels to the scanners (`source_scan.Scan(text, markup)`: a fenced block
+is the code zone of Markdown), the headings (`# Title {: #id}` - `{#id}` is
+a Jinja comment), the title, the credits (`![a](file)`), the deck (scaffold
+writes `# Title` in a `.md.j2`). Less than planned had to move: the stages
+did not need the HTML of the page, they needed to know the markup of the
+source they read. The theme wraps a Markdown page as an LHTML one, its
+content inside the Jinja filter `markdown_page` (lib/markdown_page.py,
+markdown-it-py): Jinja converts the content alone, never the HTML of the
+theme, and LHTML does not read the page. The mathematics is kept from
+Markdown (outside code); a fenced block is highlighted by the function of
+LHTML, so the theme styles both alike. Not for Markdown: the macros of the
+design, `video::`, the line breaks, the lint, the source-map markers (a
+Jinja error is still placed at its line, by the alignment of step C).
+
 The order: N1b with LHTML 3.0, W before N2, C with N2 (which rewrites the
 command anyway), M after N2 and before N4 - the contract of a markup and
 that of an extension are written together.

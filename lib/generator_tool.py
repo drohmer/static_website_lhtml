@@ -5,7 +5,7 @@ import re
 import yaml
 import json
 
-from lib import source_scan
+from lib import markdown_page, source_scan
 from lib.structure import public_entry
 
 # Keys of structure.yaml written by the generator (not available to the deck
@@ -58,7 +58,8 @@ def _sitemap_priority(page):
 
 RAW_MARKERS = re.compile(r'{%-?\s*(?:end)?raw\s*-?%}')
 TITLE_SET_REGEX = [r'tocTitle.*?=(.*?)%}', r'pageTitle.*?=(.*?)%}']
-TITLE_HEADING_REGEX = [r'^=+ (.*?)$']
+TITLE_HEADING_REGEX = {'lhtml': [r'^=+ (.*?)$'],
+                       'markdown': [r'^#{1,6}[ \t]+(.*?)(?:[ \t]+\{:[ \t]*#[\w-]+[ \t]*\})?[ \t]*$']}
 
 
 def string_literal(s):
@@ -74,12 +75,15 @@ def string_literal(s):
 
 def extract_title(source):
     """Title of a page: its tocTitle or pageTitle (a Jinja string), or its
-    first heading `= Title`, as written (apostrophes, parentheses and slashes
-    kept); None without any."""
+    first heading (`= Title`, `# Title` in Markdown), as written (apostrophes,
+    parentheses and slashes kept); None without any."""
+    source = source_scan.scan(source)
     title = extract_data(source, TITLE_SET_REGEX)
     if title is not None:
         return string_literal(RAW_MARKERS.sub('', title))
-    title = extract_data(source, TITLE_HEADING_REGEX)
+    title = extract_data(source, TITLE_HEADING_REGEX[source.markup])
+    if title is not None and source.markup == 'markdown':
+        title = markdown_page.plain(title)
     return RAW_MARKERS.sub('', title).strip() if title is not None else None
 
 

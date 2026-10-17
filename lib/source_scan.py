@@ -6,7 +6,8 @@ LHTML leaves some zones of a page as they are: code blocks
 The scanners of the generator (the
 lint, the source map, the credits and the placeholders) find these zones with
 the regular expressions of LHTML itself, so that they agree with it on what
-is code and what is text.
+is code and what is text. A Markdown page (lib/markdown_page.py) has its
+own code blocks, fenced by ``` or ~~~; its other zones are those of LHTML.
 """
 from __future__ import annotations
 
@@ -24,6 +25,10 @@ NOT_TEXT = frozenset(('code', 'comment', 'raw', 'icode', 'math'))
 URL_TAGS = frozenset(patterns.URL_TAGS)
 # the value of a tag: a URL, a file (img::a.png(.wide): the class group is not part of it)
 VALUE = patterns.URL_TOKEN
+# A Markdown page: a fenced code block is its `code` zone
+MARKDOWN_BLOCKS = re.compile(r'(?P<code>(?m:^[ \t]{0,3}(?P<mark>`{3,}|~{3,})[^\n]*\n.*?'
+                             r'(?:^[ \t]{0,3}(?P=mark)[ \t]*$|\Z)))|' + patterns.PROTECTED.pattern, re.DOTALL)
+BLOCKS = {'lhtml': patterns.PROTECTED_BLOCKS, 'markdown': MARKDOWN_BLOCKS}
 LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
 # Lines kept before {% extends %} by auto_wrap: blank lines, Jinja comments,
 # {% set name = value %}, {% import %} / {% from ... import %};
@@ -39,10 +44,10 @@ class Zone:
     kind: str
 
 
-def zones(text):
-    """Zones of a source that LHTML does not read as text, in order: [Zone]."""
+def zones(text, markup='lhtml'):
+    """Zones of a source that its markup does not read as text, in order: [Zone]."""
     found = []
-    for m in patterns.PROTECTED_BLOCKS.finditer(text):
+    for m in BLOCKS[markup or 'lhtml'].finditer(text):
         kind = next(k for k in KINDS if m.group(k) is not None)
         if kind == 'jinja' and m.group(0).startswith('{#'):
             kind = 'comment'            # a Jinja comment writes nothing, as an HTML one
@@ -91,14 +96,16 @@ def multiline_lines(text, found=None):
 
 
 class Scan:
-    """A source read once by all the scanners: its zones and the text read as LHTML."""
+    """A source read once by all the scanners: its zones and the text read as
+    its markup reads it ('lhtml', 'markdown')."""
 
-    def __init__(self, text):
+    def __init__(self, text, markup='lhtml'):
         self.text = text
+        self.markup = markup or 'lhtml'
 
     @cached_property
     def zones(self):
-        return zones(self.text)
+        return zones(self.text, self.markup)
 
     @cached_property
     def masked(self):

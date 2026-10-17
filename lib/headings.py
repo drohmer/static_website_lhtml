@@ -9,13 +9,16 @@ import re
 import json
 from collections import Counter
 
-from lib import source_scan
+from lib import markdown_page, source_scan
 from lib.source_map import strip as strip_markers
 from lib.generator_tool import RAW_MARKERS
+from lib.pages import markup
 from lib.structure import built_pages, page_path, structure, template_path
 
 
 TITLE_REGEX = re.compile(r'^(=+)(?:\((.*?)\))? (.*?)$', re.MULTILINE)
+# A Markdown heading, with an id written by hand or by this stage: # Title {: #id}
+MARKDOWN_TITLE = re.compile(r'^(#{1,6})[ \t]+(.*?)(?:[ \t]+\{:[ \t]*(#[\w-]+)[ \t]*\})?[ \t]*$', re.MULTILINE)
 
 
 def generate_new_id(text, id_storage):
@@ -70,21 +73,30 @@ def run(meta):
 
         title_id_summary[page_key] = []
 
-        # The headings of the text read as LHTML (not in a code block or a
-        # comment), each replaced at its own position (identical headings
-        # get distinct ids)
+        # The headings of the text read as its markup reads it (not in a
+        # code block or a comment), each replaced at its own position
+        # (identical headings get distinct ids)
+        kind = markup(entry['template'])
         parts, position = [], 0
-        for it in source_scan.find(TITLE_REGEX, file_content):
+        markdown = kind == 'markdown'
+        pattern = MARKDOWN_TITLE if markdown else TITLE_REGEX
+        for it in source_scan.find(pattern, source_scan.Scan(file_content, kind)):
             n = str(len(it.group(1)))
-            class_id = file_content[it.start(2):it.end(2)].strip() if it.group(2) is not None else ''
-            title = file_content[it.start(3):it.end(3)]
+            if markdown:
+                title, class_id = file_content[it.start(2):it.end(2)], it.group(3) or ''
+                written, title = title, markdown_page.plain(title)       # the text, without its marks
+            else:
+                class_id = file_content[it.start(2):it.end(2)].strip() if it.group(2) is not None else ''
+                title = file_content[it.start(3):it.end(3)]
 
             generated_id = generate_new_id(strip_markers(title), id_storage) + '_l' + str(n)
             if not class_id:
                 class_id = '#' + generated_id
 
             title_id_summary[page_key].append({'level': n, 'title': strip_markers(title), 'id': class_id[1:]})
-            parts += [file_content[position:it.start()], '=' * int(n) + '(' + class_id + ') ' + title]
+            heading = (f"{'#' * int(n)} {written} {{: {class_id}}}" if markdown
+                       else '=' * int(n) + '(' + class_id + ') ' + title)
+            parts += [file_content[position:it.start()], heading]
             position = it.end()
         file_content = ''.join(parts) + file_content[position:]
 

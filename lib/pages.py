@@ -7,6 +7,9 @@ several Page objects (occurrences). Every page goes through the same steps:
 discover (sources) -> select (deck) -> name_outputs -> place (site); then
 the generator renders them (Jinja, LHTML) and exports them (structure.yaml).
 The names of templates are given by is_template, html_name and template_name.
+The markup of a page is named by its file, never guessed from its content:
+index.html.j2 is LHTML, index.md.j2 is Markdown (lib/markdown_page.py);
+both give index.html.
 """
 from __future__ import annotations
 
@@ -21,12 +24,18 @@ from lib.filesystem import ignore_hidden, copy_tree, find_files_in_hierarchy, re
 from lib import front_matter, source_scan
 from lib.generator_tool import STRUCTURE_KEYS
 
-TEMPLATE_SUFFIX = '.j2'         # the template of a page index.html is index.html.j2
+# the template of a page index.html, by its markup
+SUFFIXES = {'lhtml': '.html.j2', 'markdown': '.md.j2'}
+
+
+def markup(name):
+    """The markup of a page template ('lhtml', 'markdown'), None for another file."""
+    return next((m for m, suffix in SUFFIXES.items() if name.endswith(suffix)), None)
 
 
 def is_template(name):
-    """Whether a file is the template of a page (index.html.j2)."""
-    return name.endswith('.html' + TEMPLATE_SUFFIX)
+    """Whether a file is the template of a page (index.html.j2, index.md.j2)."""
+    return markup(name) is not None
 
 
 PAGE_CONFIG = 'config.yaml'      # settings of the pages of a directory
@@ -41,13 +50,14 @@ def is_build_input(name):
 
 
 def html_name(name):
-    """index.html.j2 -> index.html (other names unchanged)"""
-    return name[:-len(TEMPLATE_SUFFIX)] if is_template(name) else name
+    """index.html.j2, index.md.j2 -> index.html (other names unchanged)"""
+    kind = markup(name)
+    return name[:-len(SUFFIXES[kind])] + '.html' if kind else name
 
 
-def template_name(name):
-    """index.html -> index.html.j2"""
-    return name + TEMPLATE_SUFFIX
+def template_name(name, kind='lhtml'):
+    """index.html -> index.html.j2 (index.md.j2 for 'markdown')"""
+    return name[:-len('.html')] + SUFFIXES[kind] if name.endswith('.html') else name + SUFFIXES[kind]
 
 
 @dataclass(frozen=True)
@@ -68,7 +78,7 @@ class Source:
 class Page:
     source: Source
     directory: str              # relative to the source root: '' or 'a/b/'
-    template: str               # file name in the source: index.html.j2
+    template: str               # file name in the source: index.html.j2, index.md.j2
     config: dict = field(default_factory=dict)    # config.yaml of its directory
     meta: dict = field(default_factory=dict)      # deck metadata (title, duration, notes, ...)
     params: dict = field(default_factory=dict)    # Jinja variables of this occurrence
@@ -93,6 +103,11 @@ class Page:
     def label(self):
         name = (self.id if html_name(self.template) == 'index.html' else self.file) or self.file
         return f'{self.source.name}:{name}' if self.source.name else name
+
+    @property
+    def markup(self):
+        """'lhtml' or 'markdown', named by its file."""
+        return markup(self.template)
 
     @property
     def src(self):
@@ -123,7 +138,7 @@ class Page:
     @cached_property
     def scan(self):
         """Its zones and its text read as LHTML (lib/source_scan.py), computed once."""
-        return source_scan.Scan(self.text)
+        return source_scan.Scan(self.text, self.markup)
 
     @property
     def settings(self):
@@ -209,7 +224,7 @@ def name_outputs(pages):
         while f'{stem}-{k}.html' in names:
             k += 1
         names.add(f'{stem}-{k}.html')
-        page.name = template_name(f'{stem}-{k}.html')
+        page.name = template_name(f'{stem}-{k}.html', page.markup)
 
 
 def copy_assets(source_dir, target_dir):
@@ -247,7 +262,7 @@ def place(pages, site_directory, project_assets=False, source_transform=None):
         if (page.source.name or project_assets) and page.site_directory not in copied:
             warnings += copy_assets(str(page.src.parent), str(target_dir))
             copied.add(page.site_directory)
-        if source_transform is None:
+        if source_transform is None or page.markup != 'lhtml':     # markers: LHTML only (lib/source_map.py)
             shutil.copy2(page.src, site / page.site_template)
         else:
             with open(site / page.site_template, 'w', encoding='utf-8', newline='\n') as fid:

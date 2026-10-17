@@ -28,6 +28,7 @@ from lib import filesystem
 from lib import front_matter
 from lib import generator_tool
 from lib import lint
+from lib import markdown_page
 from lib import dependencies
 from lib import source_map
 from lib.tracking import TrackingLoader
@@ -402,7 +403,9 @@ def jinja_environment(meta, selected, built):
     loader = ChoiceLoader([DictLoader(templates)] + [FileSystemLoader(root) for root in roots]
                          + [FileSystemLoader(dir_site)])
     loader = TrackingLoader(loader, roots, marker_transform(meta))
-    return Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
+    env = Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
+    env.filters['markdown_page'] = markdown_page.convert         # the content of a Markdown page
+    return env
 
 
 def render_jinja(meta, selected, built, sitemap, log, credits_of=None, errors=None):
@@ -488,8 +491,9 @@ def jinja_place(error, page, dir_site):
 
 def render_lhtml(meta, selected, log, failed_before=()):
     """Run LHTML conversion on all rendered templates, with optional HTML tidy
-    (not on the pages that failed before: `failed_before`). Returns the list
-    of pages that failed."""
+    (not on the pages that failed before: `failed_before`). A Markdown page
+    was converted by Jinja (lib/markdown_page.py): LHTML does not read it.
+    Returns the list of pages that failed."""
     tidy_options = {'doctype': 'html5', 'show-warnings': 'no', 'warn-proprietary-attributes': 'no'}
 
     tidylib.BASE_OPTIONS = {}
@@ -514,7 +518,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
         try:
             with python_warnings.catch_warnings(record=True) as caught:
                 python_warnings.simplefilter('always')
-                output_html = lhtml.run(input_html, options)
+                output_html = lhtml.run(input_html, options) if page.markup == 'lhtml' else input_html
             for warning in sorted(caught, key=lambda w: (getattr(w.message, 'line', None) or 0,
                                                          getattr(w.message, 'column', None) or 0)):
                 # where they are in the source, in the order of the page
