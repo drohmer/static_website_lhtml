@@ -626,6 +626,8 @@ def build_once(args):
         cleaning = args.clean and not args.check_config      # --check-config diagnoses, and deletes nothing
         # the decks are not looked for: cleaning needs no sources (they may be gone)
         builds = [] if cleaning else project.plan(config, args.only, args.target)
+        if cleaning and args.target:
+            project.check_targets(config, args.target)
     except ConfigError as exc:
         logger.Logger().error(str(exc))
         sys.exit(1)

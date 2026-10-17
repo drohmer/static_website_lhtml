@@ -55,6 +55,15 @@ def decks(config):
                   if d.is_dir() and not d.name.startswith(('.', '_')))
 
 
+def check_targets(config, targets):
+    """--target: names of targets of the configuration (a ConfigError otherwise)."""
+    chosen = config.targets or {}
+    unknown = sorted(set(targets) - set(chosen))
+    if unknown:
+        known = ', '.join(chosen) or 'none: the project has no targets'
+        raise ConfigError(f"--target {', '.join(unknown)}: unknown target (known: {known})")
+
+
 def plan(config, only=None, targets=None):
     """The builds of a project: each deck for each target, in that order.
 
@@ -67,10 +76,7 @@ def plan(config, only=None, targets=None):
                           f"(a directory of pages)")
     chosen = dict(config.targets or {None: None})
     if targets:
-        unknown = sorted(set(targets) - set(chosen))
-        if unknown:
-            known = ', '.join(t for t in chosen if t) or 'none: the project has no targets'
-            raise ConfigError(f"--target {', '.join(unknown)}: unknown target (known: {known})")
+        check_targets(config, targets)
         chosen = {name: spec for name, spec in chosen.items() if name in targets}
 
     pointers = {name: None for name in names}

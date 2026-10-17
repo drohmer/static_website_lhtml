@@ -130,11 +130,24 @@ class PlanTests(ProjectTests):
         self.assertIn(REPO / 'themes/slides', paths)
         self.assertIn(REPO / 'themes/slides-pdf', paths)
 
+    def test_a_missing_theme_of_a_target_stops_a_build_not_a_clean(self):
+        self.write(decks='directories', targets={'html': {'theme': 'slides'}})
+        self.assertEqual(self.build().returncode, 0)
+        self.write(decks='directories', targets={'html': {'theme': 'nowhere'}})
+        result = self.build()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("'targets: html: theme' directory not found", result.stdout + result.stderr)
+        result = self.build('--clean')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / '_site').exists())
+        result = self.build('--clean', '--target', 'nope')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('--target nope: unknown target', result.stdout + result.stderr)
+
     def test_invalid_configurations(self):
         for options, message in (({'decks': 'all'}, "'decks' must be 'directories'"),
                                  ({'targets': []}, "'targets' must map"),
                                  ({'targets': {'html': 'slides'}}, 'expected {theme'),
-                                 ({'targets': {'html': {'theme': 'nowhere'}}}, 'theme not found'),
                                  ({'targets': {'images': {'theme': 'slides'}}}, "'images' is where"),
                                  ({'targets': {'html': {'theme': 'slides'}}, 'theme': 'x'}, "'theme' and 'targets'")):
             with self.subTest(options=options):

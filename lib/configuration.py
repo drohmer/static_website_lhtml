@@ -195,10 +195,9 @@ def _decks_and_targets(values, data, config_directory):
                               "choose another name")
         if not isinstance(spec, dict) or set(spec) != {'theme'} or not isinstance(spec['theme'], str):
             raise ConfigError(f"'targets': {name}: expected {{theme: <theme>}}")
-        theme = theme_directory(spec['theme'], config_directory)
-        if not theme.is_dir():
-            raise ConfigError(f"'targets': {name}: theme not found '{spec['theme']}'")
-        resolved[name] = {'theme': theme}
+        # its existence is checked by validate_paths, as the one of the
+        # sources: --clean needs neither
+        resolved[name] = {'theme': theme_directory(spec['theme'], config_directory)}
     values['targets'] = resolved
 
 
