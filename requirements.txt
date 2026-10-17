@@ -1,6 +1,6 @@
 -c requirements-lock.txt
 # LHTML 3 is not on PyPI yet: from GitHub, at a fixed commit (the version is pinned in the lock)
-lhtml-markup @ git+https://github.com/drohmer/lhtml@1ca0c9a632ac8843034ea3764a9c0d15654858aa
+lhtml-markup @ git+https://github.com/drohmer/lhtml@6397f7ecc3967c92c0325fcb207984b31a3b902c
 Jinja2
 markdown-it-py
 jinja-markdown
