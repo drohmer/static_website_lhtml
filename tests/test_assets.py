@@ -39,6 +39,13 @@ class CreditsTests(unittest.TestCase):
         self.assertEqual(credits.files_used(text, {'figure': {'tag': 'img', 'url': 'src'}}),
                          ['e.png', 'f.mp4', 'g.jpg'])
 
+    def test_files_used_are_read_in_the_document_tree(self):
+        # img:: inside an HTML attribute is text of that tag, not an image; a
+        # src of the attributes of an element is one; a page LHTML refuses has none
+        text = '<a title="img::x.png">a</a> div::{data-src="y.png"} b :: <img src="z.png">'
+        self.assertEqual(credits.files_used(text), ['y.png', 'z.png'])
+        self.assertEqual(credits.files_used('img::a.png\ninclude::b.txt'), [])
+
     def test_credit_shown_as_written(self):
         page = Page(Source(None, '/p/'), 'a/', 'index.html.j2',
                     config={'credits': {'x.jpg': {'author': '__init__ & co', 'source': 'a::b [c] *d*'}}})

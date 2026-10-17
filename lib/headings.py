@@ -13,10 +13,7 @@ as Markdown (source_scan).
 import os
 import re
 import json
-import warnings
 from collections import Counter
-
-import lhtml
 
 from lib import markdown_page, source_scan
 from lib.source_map import strip as strip_markers
@@ -62,14 +59,9 @@ def lhtml_headings(text):
     """The headings of an LHTML page, those of its document tree: (start,
     end, level, attributes as written, title as written). A page that LHTML
     refuses has none here: its run reports why."""
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')         # the run of the page warns
-        try:
-            document = lhtml.parse(text)
-        except lhtml.LHTMLError:
-            return []
+    document = source_scan.document(text)
     found = []
-    for node in document.walk():
+    for node in document.walk() if document else ():
         if node.kind == 'Heading':
             start, end = node.span
             m = HEADING_START.match(text, start)

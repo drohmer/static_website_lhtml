@@ -1883,8 +1883,20 @@ nothing else; the id is still written on the heading's line of the
 template. `TITLE_REGEX`, a copy of LHTML's own, goes. Checked: the
 headings, their places, attributes and titles identical on the 1337
 templates of the corpus (1766 headings); a page LHTML refuses gets no ids
-(its run reports why, as before). Markdown pages keep their scan. Next:
-the media files of the credits (`credits.files_used`), then the lint.
+(its run reports why, as before). Markdown pages keep their scan.
+
+*Media files of the credits, done* (2026-10-17). `credits.files_used` reads
+an LHTML page in its tree: the values of its value tags (`img::`,
+`video::`, a macro with a url or an image), then the `src="..."` of its raw
+HTML, its Jinja, the attributes `{...}` of its elements and its text, in
+that order, as the scan did. The tree is read once per Scan of a page and
+kept there (`source_scan.document`, with the macros of the design), for the
+scanners to come; the headings read the copy of the template they rewrite,
+so they parse it on their own. Checked: the same
+files in the same order on the 1879 pages of the corpus read with each of
+their themes (1848 files, 16 macros). What changes is what the scan got
+wrong: an `img::x.png` written inside an HTML attribute is not an image.
+Next: the lint.
 
 Three expectations of this note were corrected by the review, and 4.4
 carries them: the tree does not recover file and line on its own, the lint

@@ -8,13 +8,20 @@ lint, the source map, the credits and the placeholders) find these zones with
 the regular expressions of LHTML itself, so that they agree with it on what
 is code and what is text. A Markdown page (lib/markdown_page.py) has its
 own code blocks, fenced by ``` or ~~~; its other zones are those of LHTML.
+
+The scanners move to the document tree of LHTML (`document`, lhtml.parse
+on the template before Jinja, which LHTML keeps opaque) one at a time: the
+headings and the media files of an LHTML page are read there (N6 of
+docs/design.md).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cached_property
 import re
+import warnings
 
+import lhtml
 from lhtml import patterns
 
 from lib import front_matter
@@ -116,6 +123,26 @@ class Scan:
     @cached_property
     def masked(self):
         return mask(self.text, found=self.zones)
+
+    def document(self, macros=None):
+        """The LHTML document tree of the text (lhtml.parse, with the macros
+        of the design), read once; None when LHTML refuses the text (its run
+        reports why). Its warnings are silenced: the run of the page warns."""
+        documents = self.__dict__.setdefault('_documents', {})
+        key = repr(sorted((macros or {}).items()))
+        if key not in documents:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                try:
+                    documents[key] = lhtml.parse(self.text, macros=macros or None)
+                except lhtml.LHTMLError:
+                    documents[key] = None
+        return documents[key]
+
+
+def document(source, macros=None):
+    """The LHTML document tree of a source (a text or a Scan): Scan.document."""
+    return scan(source).document(macros)
 
 
 def scan(source):

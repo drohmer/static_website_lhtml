@@ -100,17 +100,39 @@ def all_credits(pages, credits_of):
 def files_used(source, macros=None):
     """Relative files of images and videos used by a page source (a text or
     a source_scan.Scan; the macros of the design: those rendering an image or
-    a video count)."""
+    a video count). Those of an LHTML page are read in its document tree:
+    the values of its value tags (img::, video::, a macro with a url), then
+    the src="..." of its HTML, of its Jinja and of the attributes {...} of
+    its elements, in that order."""
     found = []
     source = source_scan.scan(source)
-    values = [v for _, v, _ in source_scan.tag_values(source, source_scan.value_tags(macros))]
     if source.markup == 'markdown':
+        values = [v for _, v, _ in source_scan.tag_values(source, source_scan.value_tags(macros))]
         values += [next(g for g in m if g) for m in MARKDOWN_IMAGE.findall(source.masked)]
-    for file in values + SRC.findall(source.masked):
+        values += SRC.findall(source.masked)
+    else:
+        values = _tree_files(source.document(macros), source_scan.value_tags(macros))
+    for file in values:
         if '://' not in file and not file.startswith(('/', '{', 'data:')) and MEDIA.search(file) \
                 and file not in found:
             found.append(file)
     return found
+
+
+def _tree_files(document, tags):
+    """The values of the tags `tags` in a document tree, then the src="..."
+    it writes as raw HTML, Jinja, attributes of an element, or text."""
+    if document is None:                # a page LHTML refuses: its run reports why
+        return []
+    values, sources = [], []
+    for node in document.walk():
+        if node.kind == 'Element':
+            if node.name in tags:
+                values.append(node.value)
+            sources += SRC.findall(node.groups.get('{}', ''))
+        elif node.kind == 'Raw' and node.raw_kind in ('html', 'jinja') or node.kind == 'Text':
+            sources += SRC.findall(node.value if node.kind == 'Text' else node.text)
+    return values + sources
 
 
 def _cell(value):
