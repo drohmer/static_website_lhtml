@@ -5,8 +5,8 @@ A static site generator built on [LHTML](https://github.com/drohmer/lhtml) and J
 ## Installation
 
 ```bash
-git clone https://github.com/drohmer/static_website_lhtml.git
-cd static_website_lhtml
+git clone https://github.com/drohmer/lhtml-site.git
+cd lhtml-site
 pip install -r requirements.txt
 ```
 
