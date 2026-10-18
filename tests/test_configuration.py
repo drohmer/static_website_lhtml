@@ -208,7 +208,7 @@ class ReservedKeysAndWatchTests(unittest.TestCase):
         from lhtml_site.configuration import Config, RUNTIME_KEYS
         known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
         written = {}
-        for file in [REPO / 'generate.py', *sorted((REPO / 'lhtml_site').rglob('*.py')),
+        for file in [*sorted((REPO / 'src/lhtml_site').rglob('*.py')),
                      *sorted((REPO / 'plugins').glob('*.py'))]:
             for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text(encoding='utf-8')):
                 written.setdefault(match.group(1), file.name)

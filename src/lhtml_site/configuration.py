@@ -11,7 +11,7 @@ import re
 from lhtml_site.filesystem import read_yaml
 from lhtml_site.structure import PRIVATE_KEYS
 
-GENERATOR_DIRECTORY = Path(__file__).resolve().parents[1]
+GENERATOR_DIRECTORY = Path(__file__).resolve().parents[2]
 RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}   # in 3.0
 
 

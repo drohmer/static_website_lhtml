@@ -18,7 +18,7 @@ from lhtml_site.layout.report import contact_sheets_html
 
 # The Node scripts stay next to those of the PDF export for now; they move
 # when the targets do (step 7 of docs/design.md).
-SCRIPTS = Path(__file__).resolve().parents[2] / 'plugins' / 'assets'
+SCRIPTS = Path(__file__).resolve().parents[3] / 'plugins' / 'assets'
 
 
 def run_node(script, arguments, label=None, chrome=None, log=None):

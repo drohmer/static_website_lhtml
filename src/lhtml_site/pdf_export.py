@@ -19,7 +19,7 @@ from tempfile import TemporaryDirectory
 
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'plugins/assets/template_html_to_pdf.js'
+SCRIPT = Path(__file__).resolve().parents[2] / 'plugins/assets/template_html_to_pdf.js'
 # Chrome loads a page within 4 s (the script); a page showing videos misses it
 # when too many Chromes run at once: a few at a time, and a page that missed
 # it is tried again before the export fails
