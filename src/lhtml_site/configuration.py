@@ -224,8 +224,8 @@ def load_config(filename, debug_override=None):
         raise ConfigError("'configure_default.yaml' was renamed 'configure_example.yaml' (3.0): "
                           "update your command")
     if not path.exists():
-        raise ConfigError(f"Configuration not found: '{path}' (--example writes an example "
-                          f"project in the current directory)")
+        raise ConfigError(f"Configuration not found: '{path}' (run lhtml-site in the "
+                          f"directory of a project; lhtml-site init creates one)")
     try:
         data = read_yaml(path)
     except ValueError as exc:                       # the message names the file

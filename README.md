@@ -68,22 +68,26 @@ reliable launcher: another program may put its own `python` first in the
 
 ## Quick Start
 
-In an empty directory:
-
 ```bash
-lhtml-site --example     # writes example/ and configure.yaml here
-lhtml-site               # builds the site from example/ into .site/, with the default theme
-lhtml-site --serve       # previews it on http://127.0.0.1:8000/
+pipx install git+https://github.com/drohmer/lhtml-site
+lhtml-site init mon-site       # a project: mon-site/configure.yaml and its sources, example/
+cd mon-site
+lhtml-site --serve --watch     # builds it into .site/, previews it on http://127.0.0.1:8000/
 ```
 
-For your own project, edit `configure.yaml` (commented: source directory,
+`lhtml-site` works on the project of the current directory: its
+`configure.yaml`, whose relative paths are read from that directory (`-i`
+names another configuration). `lhtml-site` alone builds the site;
+`lhtml-site init` with no directory creates the project in the current one.
+For your own content, edit `configure.yaml` (commented: source directory,
 theme, plugins) and replace `example/` with your sources. From a checkout,
 `python <checkout>/generate.py` takes the place of `lhtml-site`.
 
 ## CLI Options
 
 ```
-lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT] [--example]
+lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+lhtml-site init [DIR]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -v, --verbose        Display the stages of the build, their time, and what they did
@@ -105,7 +109,7 @@ lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINT
   --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
                        (relative to the current directory, else to the configuration file)
   --scaffold           Create the source of the deck slides that do not exist yet
-  --example            Write the example project (example/, configure.yaml) in the current directory
+  init [DIR]           Create a project in DIR (default: the current directory) from the example
 ```
 
 ## Local preview
@@ -335,7 +339,7 @@ lhtml-site/
   tests/                   # pytest suite
   src/lhtml_site/          # The package: its code, and the files it reads next to it
     generate.py            # The pipeline, and the command (main)
-    configure_example.yaml # Commented example configuration (--example)
+    configure_example.yaml # Commented example configuration (lhtml-site init)
     build_output.py        # Build in a staging directory, published only on success
     configuration.py       # Validated Config and BuildContext plugin adapter
     development.py         # --serve / --watch, server of the comments
@@ -1137,7 +1141,7 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 Version 3 is a major version: an old form is refused by name, with the
 change to make, rather than accepted with a warning.
 
-- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/`, `example/` and `configure_example.yaml`. `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...`, `<checkout>/plugins/...` and `<checkout>/example/` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site --example` writes the example project in the current directory.
+- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/`, `example/` and `configure_example.yaml`. `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...`, `<checkout>/plugins/...` and `<checkout>/example/` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site init <dir>` creates a project from the example.
 
 - `configure_default.yaml` is now `configure_example.yaml`.
 - Replace `plugin_post` with `plugin` (all the hooks of a plugin run). `include_head` is gone (it was read nowhere).

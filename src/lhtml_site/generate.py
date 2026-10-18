@@ -63,7 +63,9 @@ class BuildFailed(Exception):
 # Configuration & CLI
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Generate Website.')
+    parser = argparse.ArgumentParser(description='Generate Website: the project of the current directory '
+                                                 '(its configure.yaml), or the one of -i.',
+                                     epilog='lhtml-site init [DIR] creates a project, from the example.')
     debug_group = parser.add_mutually_exclusive_group()
     debug_group.add_argument('-d', '--debug', action='store_true', default=None,
                         help='Display more information and keep temporary files.')
@@ -101,16 +103,10 @@ def parse_arguments():
     parser.add_argument('--serve', action='store_true', help='Serve the generated site on localhost.')
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
-    parser.add_argument('--example', action='store_true',
-                        help='Write the example project (example/ and configure.yaml) in the current '
-                             'directory, to build it with the command alone; no build.')
     args = parser.parse_args()
     args.target = [t for value in args.target or [] for t in value.split(',') if t] or None
     if not 0 <= args.port <= 65535:
         parser.error('--port must be between 0 and 65535')
-    if args.example and (args.clean or args.check_config or args.serve or args.watch or args.lint or args.only
-                         or args.layout or args.render or args.deck or args.scaffold or args.input_config):
-        parser.error('--example is used alone (no build)')
     if (args.serve or args.watch) and (args.clean or args.check_config):
         parser.error('--serve/--watch cannot be combined with --clean or --check-config')
     if args.only and (args.clean or args.check_config):
@@ -932,27 +928,34 @@ def generate_site(meta, selected, built):
     return len(built)
 
 
-def write_example(directory):
-    """--example: the example project of the generator in `directory`, the
-    sources and their configuration, which the command then builds alone."""
+def init_project(arguments):
+    """lhtml-site init [DIR]: a project in DIR (created if needed, the current
+    directory by default), from the example of the generator: its sources and
+    their configure.yaml, which the command then builds alone in DIR."""
+    parser = argparse.ArgumentParser(prog='lhtml-site init',
+                                     description='Create a project from the example of the generator.')
+    parser.add_argument('directory', nargs='?', default='.',
+                        help='Directory of the project (created if needed; default: the current directory).')
+    directory = Path(parser.parse_args(arguments).directory)
     sources, config = directory / 'example', directory / 'configure.yaml'
     for path in (sources, config):
         if path.exists():
-            sys.exit(f"--example: '{path}' exists already; run it in an empty directory")
+            sys.exit(f"lhtml-site init: '{path}' exists already; give an empty or new directory")
+    directory.mkdir(parents=True, exist_ok=True)
     shutil.copytree(GENERATOR_DIRECTORY / 'example', sources)
     shutil.copy2(GENERATOR_DIRECTORY / 'configure_example.yaml', config)
-    print(f'Example project written in {directory}: build it with the same command without '
-          f'--example, and preview it with --serve.')
+    go = '' if directory.resolve() == Path.cwd().resolve() else f'cd {directory}, then '
+    print(f'Project created in {directory}: {go}lhtml-site builds it, lhtml-site --serve --watch previews it.')
 
 
 def main():
     if int(lhtml.__version__.split('.')[0]) < 3:
         # LHTML 2 ignores the `media` resolver and expands include:: on its own
         sys.exit('lhtml-site requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')
+    if sys.argv[1:2] == ['init']:
+        return init_project(sys.argv[2:])
     args = parse_arguments()
-    if args.example:
-        write_example(Path.cwd())
-    elif args.serve or args.watch:
+    if args.serve or args.watch:
         from lhtml_site.development import develop
         develop(args, build_once)
     else:

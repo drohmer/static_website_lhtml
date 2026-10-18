@@ -169,17 +169,18 @@ class ConfigurationTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, new):
                 load_config(self.file)
 
-    def test_the_example_project_is_written_then_built(self):
+    def test_init_creates_a_project_that_the_command_builds_in_its_directory(self):
         project = self.root / 'project'
         project.mkdir()
         run = lambda *args: subprocess.run([sys.executable, str(REPO / 'generate.py'), *args],
                                            cwd=project, capture_output=True, text=True)
         missing = run()
         self.assertEqual(missing.returncode, 1)
-        self.assertIn('--example', missing.stdout + missing.stderr)
-        self.assertEqual(run('--example').returncode, 0)
-        self.assertTrue((project / 'configure.yaml').is_file())
-        self.assertNotEqual(run('--example').returncode, 0)         # never over a project
+        self.assertIn('lhtml-site init', missing.stdout + missing.stderr)
+        self.assertEqual(run('init', 'mon-site').returncode, 0)
+        self.assertTrue((project / 'mon-site/configure.yaml').is_file())
+        self.assertNotEqual(run('init', 'mon-site').returncode, 0)  # never over a project
+        project = project / 'mon-site'                              # the command alone, in the project
         result = run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((project / '.site/content/01_introduction/index.html').is_file())
