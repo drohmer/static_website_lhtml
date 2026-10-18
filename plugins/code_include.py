@@ -48,7 +48,7 @@ def extract_first_matching_line(text_content, expression):
 
 
 def analyse_includeadv_match(file_content, it):
-    written = lhtml.read_tag(file_content, it.span()[0])
+    written = lhtml.read_tag(file_content, it.span()[0]).written
     arg_includeadv = {}
     tokens = split_group_with_quote(written.braces, ",")
     for token in tokens:
