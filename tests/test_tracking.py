@@ -2,7 +2,7 @@ import os
 
 from jinja2 import Environment, FileSystemLoader
 
-from lib.tracking import TrackingLoader
+from lhtml_site.tracking import TrackingLoader
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

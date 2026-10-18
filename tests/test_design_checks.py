@@ -1,5 +1,5 @@
 import pytest
-from lib.design_checks import analyse_design
+from lhtml_site.design_checks import analyse_design
 
 
 def node(id, design_role, font=36, words=8, **extra):

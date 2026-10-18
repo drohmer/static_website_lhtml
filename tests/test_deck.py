@@ -6,9 +6,9 @@ import unittest
 
 import yaml
 
-from lib import deck
-from lib.configuration import ConfigError, load_config
-from lib.pages import Page, Source, discover
+from lhtml_site import deck
+from lhtml_site.configuration import ConfigError, load_config
+from lhtml_site.pages import Page, Source, discover
 
 REPO = Path(__file__).resolve().parents[1]
 

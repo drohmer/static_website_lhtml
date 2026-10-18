@@ -6,7 +6,7 @@ of them pinned the bad outcome: auto_wrap first put the included text above
 {% extends %}, so it landed before <!DOCTYPE html> and the browser rendered
 in quirks mode. It was pinned as it was, not endorsed.
 
-The wrapping is a stage of the build now (lib/wrap.py), and it runs after
+The wrapping is a stage of the build now (lhtml_site/wrap.py), and it runs after
 the extensions of the pre stage. The bad order is no longer something a
 configuration can express, which is why the ordering debt of the extensions
 is settled rather than registered.

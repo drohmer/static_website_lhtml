@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from lib.report_lock import report_lock
+from lhtml_site.report_lock import report_lock
 
 
 class Log:

@@ -1,4 +1,4 @@
-"""The contract a theme declares in theme.yaml (lib/theme.py)."""
+"""The contract a theme declares in theme.yaml (lhtml_site/theme.py)."""
 import subprocess
 import sys
 from pathlib import Path
@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from lib import theme
-from lib.configuration import ConfigError
-from lib.layout_options import options_of
+from lhtml_site import theme
+from lhtml_site.configuration import ConfigError
+from lhtml_site.layout_options import options_of
 
 REPO = Path(__file__).resolve().parents[1]
 

@@ -1171,7 +1171,7 @@ async function waitForContent(page) {
     }
     while (next < pages.length) {
         const entry = pages[next++];
-        // progress on stdout, read by lib/layout/measure.py: "progress <done> <total> <page>"
+        // progress on stdout, read by lhtml_site/layout/measure.py: "progress <done> <total> <page>"
         console.log(`progress ${done} ${pages.length} ${entry.name || entry.html}`);
         events = [];
         resources = new Set();

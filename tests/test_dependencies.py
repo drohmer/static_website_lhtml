@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from lib import dependencies
-from lib.pages import Page, Source
+from lhtml_site import dependencies
+from lhtml_site.pages import Page, Source
 
 
 class Log:

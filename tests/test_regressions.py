@@ -11,8 +11,8 @@ from unittest.mock import patch
 
 import yaml
 
-from lib.logger import Logger
-from lib import pdf_export
+from lhtml_site.logger import Logger
+from lhtml_site import pdf_export
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -188,7 +188,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         self.assertIn('<h1>Updated</h1>', html.read_text())
 
     def test_directory_walk_avoids_symlink_cycles(self):
-        from lib.filesystem import find_files_in_hierarchy
+        from lhtml_site.filesystem import find_files_in_hierarchy
         self.page('nested/index.html.j2', 'First')
         (self.source / 'nested/loop').symlink_to(self.source, target_is_directory=True)
         entries = find_files_in_hierarchy(str(self.source), lambda name: name.endswith('.html.j2'))
@@ -262,7 +262,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
             self.assertNotIn('publish_site', partial)
             pdf_export.export(meta)
         # The site it rendered was an intermediate of the export: the export
-        # says so, and the publication step drops it (lib/build_output.py).
+        # says so, and the publication step drops it (lhtml_site/build_output.py).
         # It does not delete a directory other stages may still be reading.
         self.assertTrue(self.site.exists())
         self.assertFalse(meta['publish_site'])

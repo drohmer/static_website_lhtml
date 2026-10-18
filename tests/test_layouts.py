@@ -1,5 +1,5 @@
 """Layouts of the pages (design.yaml, section layouts), the Jinja variable
-`page`, and the design lint (lib/lint.py)."""
+`page`, and the design lint (lhtml_site/lint.py)."""
 from pathlib import Path
 import subprocess
 import sys
@@ -8,8 +8,8 @@ import unittest
 
 import yaml
 
-from lib import design, lint
-from lib.configuration import ConfigError, load_config
+from lhtml_site import design, lint
+from lhtml_site.configuration import ConfigError, load_config
 
 REPO = Path(__file__).resolve().parents[1]
 SLIDES = design.load_design(REPO / 'themes/slides')
@@ -77,7 +77,7 @@ class LayoutBuildTests(unittest.TestCase):
         self.assertEqual((self.root / '.structure/agents.md').read_text(),
                          (REPO / 'docs/agents.md').read_text())          # the guide for agents
         self.assertFalse((self.site / 'structure/agents.md').exists())   # the site is published
-        from lib.layout import report
+        from lhtml_site.layout import report
         self.assertIn('`../.structure/agents.md`',
                       report.summary_markdown([], design='../.structure/design.md'))
         self.assertIn('Lint: 2 value(s) written by hand in 2 of 3', output)    # b, c: a layout without media::

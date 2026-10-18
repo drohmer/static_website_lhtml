@@ -8,8 +8,8 @@ import unittest
 import lhtml
 import yaml
 
-from lib import design
-from lib.configuration import ConfigError, load_config
+from lhtml_site import design
+from lhtml_site.configuration import ConfigError, load_config
 
 REPO = Path(__file__).resolve().parents[1]
 HAS_MACROS = hasattr(lhtml, 'registry_with_macros')

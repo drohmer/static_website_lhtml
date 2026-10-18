@@ -9,9 +9,9 @@ import tempfile
 import unittest
 import yaml
 
-from lib import deck, design
-from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
-from lib.logger import Logger
+from lhtml_site import deck, design
+from lhtml_site.configuration import BuildContext, ConfigError, load_config, validate_paths
+from lhtml_site.logger import Logger
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -205,10 +205,10 @@ class ReservedKeysAndWatchTests(unittest.TestCase):
         """A key the generator writes in meta must be in RUNTIME_KEYS: the same
         key written in the YAML is then refused as runtime state, rather than
         taken for a typo."""
-        from lib.configuration import Config, RUNTIME_KEYS
+        from lhtml_site.configuration import Config, RUNTIME_KEYS
         known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
         written = {}
-        for file in [REPO / 'generate.py', *sorted((REPO / 'lib').rglob('*.py')),
+        for file in [REPO / 'generate.py', *sorted((REPO / 'lhtml_site').rglob('*.py')),
                      *sorted((REPO / 'plugins').glob('*.py'))]:
             for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text(encoding='utf-8')):
                 written.setdefault(match.group(1), file.name)
@@ -260,7 +260,7 @@ if __name__ == '__main__':
 
 class LoggerTests(unittest.TestCase):
     def test_one_line_per_problem_as_written_never_cut(self):
-        from lib import logger
+        from lhtml_site import logger
         long = 'a/' * 80 + 'page.html.j2'
         with logger.console.capture() as captured:
             log = Logger()
@@ -274,7 +274,7 @@ class LoggerTests(unittest.TestCase):
         self.assertEqual(log.counts, {'warning': 1, 'error': 1})
 
     def test_verbose_shows_the_stages(self):
-        from lib import logger
+        from lhtml_site import logger
         with logger.console.capture() as captured:
             with Logger(verbose=True).stage('Pre-process'):
                 pass
@@ -283,7 +283,7 @@ class LoggerTests(unittest.TestCase):
 
 class CheckConfigTests(unittest.TestCase):
     """--check-config answers for what the build will refuse, and it loads no
-    plugin to do it (the options live in lib/layout_options.py)."""
+    plugin to do it (the options live in lhtml_site/layout_options.py)."""
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix='lhtml-check-')
@@ -309,6 +309,6 @@ class CheckConfigTests(unittest.TestCase):
             self.assertEqual(self.check(images=images).returncode, 0, images)
 
     def test_images_are_the_render_alone_by_default(self):
-        from lib.layout_options import DEFAULTS
+        from lhtml_site.layout_options import DEFAULTS
         self.assertEqual(DEFAULTS['images'], 'render')
         self.assertIn('unknown: widht', ' '.join(self.check(widht=10).stdout.split()))

@@ -6,7 +6,7 @@
     = Title
 
 LHTML read and removed this form until 3.0; the build reads it now
-(lib/front_matter.py) and removes it before LHTML. Before it, a page setting was either
+(lhtml_site/front_matter.py) and removes it before LHTML. Before it, a page setting was either
 a Jinja statement in the page ({% set layout = 'stack' %}) or a config.yaml
 sitting next to it - a file per directory, for a setting of one page.
 """
@@ -69,7 +69,7 @@ class FrontMatterTests(unittest.TestCase):
         self.assertIn('invalid YAML front matter', output)
 
     def test_not_shown_in_a_build_for_development(self):
-        from lib import front_matter, source_map, source_scan
+        from lhtml_site import front_matter, source_map, source_scan
         page = '---\nlayout: stack\n---\n= Titre\n'
         marked = source_map.add_markers(page, 's', source_scan.value_tags())
         self.assertEqual(front_matter.split(marked)[1], {'layout': 'stack'})

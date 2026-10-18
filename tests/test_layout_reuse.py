@@ -1,6 +1,6 @@
 """A page is measured again only when something it shows changed
-(lib/layout/build.py, _reusable), and a contact sheet is taken again only
-when it shows something else (lib/layout/measure.py)."""
+(lhtml_site/layout/build.py, _reusable), and a contact sheet is taken again only
+when it shows something else (lhtml_site/layout/measure.py)."""
 import json
 import os
 from pathlib import Path
@@ -14,8 +14,8 @@ from unittest import mock
 import pytest
 import yaml
 
-from lib import dependencies
-from lib.layout import build, measure
+from lhtml_site import dependencies
+from lhtml_site.layout import build, measure
 
 REPO = Path(__file__).resolve().parents[1]
 OPTIONS = {'width': 1920, 'height': 1080, 'root': 'body', 'exclude': 'nav, footer', 'images': 'render',

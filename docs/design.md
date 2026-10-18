@@ -5,7 +5,7 @@ structure costs, the rules used to decide where each piece belongs, and the
 target they lead to.
 
 Part of it is now built: the point fixes (step 0), the two guarantees under
-test (step 1), `lib/layout/` (step 3) and the layout analysis out of the
+test (step 1), `lhtml_site/layout/` (step 3) and the layout analysis out of the
 plugin list (step 4) of the order of work in section 10.
 Each section says what it has learned since; section 10 is the current
 state and the next step.
@@ -71,13 +71,13 @@ Facts, each checked against the code (line numbers as of this note).
 `generate.py` (`add_layout_plugin`) inserted `layout_report.py` before
 `generate_pdf.py` by testing `p.endswith(...)`; a second place tested the
 same name again to validate the report output directory; a third was a
-function of `lib/configuration.py` dedicated to that one plugin; a fourth
+function of `lhtml_site/configuration.py` dedicated to that one plugin; a fourth
 imported two private symbols of it for `--render`. All four are gone with
 step 4: the analysis is part of the generator, `--layout` runs it, and the
 configuration names no file.
 
 **A plugin performed the publication step.** `plugins/generate_pdf.py`,
-`shutil.rmtree(site_dir)`, with `lib/build_output.py` having to know about
+`shutil.rmtree(site_dir)`, with `lhtml_site/build_output.py` having to know about
 it ("PDF-only exports may intentionally remove their staging site"). The
 ordering constraint documented in the README ("put `generate_pdf.py` last")
 existed only because of this, and nothing checked it. Step 4 needed the
@@ -93,7 +93,7 @@ browser in quirks mode. No error, no warning. Pinned by
 `tests/test_plugin_order.py`.
 
 **The plugin contract is wide.** The nine plugins touched 16 keys of `meta`
-directly, about 20 counting what `lib.structure` and the layout output
+directly, about 20 counting what `lhtml_site.structure` and the layout output
 validation read on their behalf, and several were internal build state:
 `loaded_design`, `measure`, `published_site_directory`, `plugin_paths`,
 `config_file`. Two of them are gone (`headings` was written by a plugin and
@@ -107,7 +107,7 @@ of `plugins/layout_report.py` used no `meta` at all - and because it had no
 legitimate home, three places reached into it by path: a tool inserted two
 entries in `sys.path` and used 12 symbols of it, 4 of them private; the test
 file loaded it by location; the core imported it as a package and took two
-private names from it. Fixed by step 3: the analysis is `lib/layout/`, and
+private names from it. Fixed by step 3: the analysis is `lhtml_site/layout/`, and
 nothing loads it by path any more; step 4 then removed the plugin itself.
 The cost it illustrates stays in this note because the same trap is set for
 anything else that ends up in `plugins/` without being an extension.
@@ -164,7 +164,7 @@ generator cannot determine those dependencies, it widens the build and says
 why.**
 
 Most of this now exists, and it arrived with the merge of `split-agent`:
-`lib/dependencies.py` fingerprints the inputs of each page (its assets, the
+`lhtml_site/dependencies.py` fingerprints the inputs of each page (its assets, the
 whole theme, the design, the configuration, the plugins) in
 `.verification/builds.json`. `BuildStore.expand()` adds to a partial build
 the pages whose inputs changed, and when the change touches a shared input -
@@ -192,7 +192,7 @@ What is left:
 The site directory is both the deliverable and the build state, and the
 build state is published with it. Today `structure/structure.yaml` and
 `structure.json` are written inside the site with **every** page setting
-(`lib/generator_tool.py:103-110`: `{'title': ..., **page.settings, ...}`),
+(`lhtml_site/generator_tool.py:103-110`: `{'title': ..., **page.settings, ...}`),
 including the `notes:` an author writes for themselves - and with `src`, the
 **absolute path of the source on the author's machine**
 (`/Users/.../example/content/01_introduction/index.html.j2` in the example
@@ -230,7 +230,7 @@ A theme declares:
   (`template/base.html`), and which are **copied verbatim** (everything else);
 - which **page settings** it may receive (the rest never reaches the site);
 - its **content root** and its **reserved areas**, for the measurement. Done
-  (`theme.yaml`, `lib/theme.py`): `root`, `exclude`, `width`, `height`;
+  (`theme.yaml`, `lhtml_site/theme.py`): `root`, `exclude`, `width`, `height`;
 - its **base template** and the block a page fills, for the wrapping stage.
   Done;
 - its **injection points**: where a project may add a script or a style to
@@ -280,7 +280,7 @@ declared position in the pipeline.
 shrinks on its own because the internal keys are read by components that
 become core. That is true of the keys, and it measures the wrong thing. After
 the split the extensions still read `structure` and `built` (through
-`lib.structure`), and the dangerous part would be untouched: **the right to
+`lhtml_site.structure`), and the dangerous part would be untouched: **the right to
 open and rewrite the page files on disk, mid-build**. `pre_include` rewrites
 the template in `pre_process`; `code_include` rewrites the rendered HTML
 between Jinja and LHTML.
@@ -374,7 +374,7 @@ page.site_directory`, so the conversion of the markup depends on the state
 of the half-written output directory at the moment of the call.
 
 What that costs is not style. The generator cannot see what LHTML read, so
-it **replaces two module functions at run time** (`lib/tracking.py`:
+it **replaces two module functions at run time** (`lhtml_site/tracking.py`:
 `process.read_source`, `process.process_include_recursive`) to find out, and
 the correctness of `--only` - which pages to rebuild - rests on that patch.
 The comment admits the cause: "LHTML exposes no source-loader hook yet". If
@@ -401,12 +401,12 @@ how a video is presented, but changing the theme must not change the
 identity of the cache. An earlier draft of this section said the opposite,
 while step 8c had already put them on the right side -
 `cache_video_directory:` is a project key and `ASSET_DIRECTORY` lives in
-`lib/video_cache.py`.
+`lhtml_site/video_cache.py`.
 
 `wrap-auto` stays, for LHTML used alone; the generator must turn it off
 explicitly rather than merely never setting it (small debts).
 
-**And the deeper form of it: a document tree.** `lib/source_scan.py` says
+**And the deeper form of it: a document tree.** `lhtml_site/source_scan.py` says
 in its own docstring that the lint, the source map, the credits and the
 placeholders find LHTML's zones *with LHTML's own regular expressions*, "so
 that they agree with it on what is code and what is text". Six consumers of
@@ -505,18 +505,18 @@ in a browser and stated as data, so an agent can fix a slide on numbers
 instead of guesses. It should be built as a product, not as the output of a
 plugin.
 
-- `lib/layout/analysis.py`: pure functions on measured blocks, with the
-  checks of `lib/design_checks.py`. No build, no configuration, no `meta`.
-- `lib/layout/findings.py`: the registry of checks - the key of the check in
+- `lhtml_site/layout/analysis.py`: pure functions on measured blocks, with the
+  checks of `lhtml_site/design_checks.py`. No build, no configuration, no `meta`.
+- `lhtml_site/layout/findings.py`: the registry of checks - the key of the check in
   the analysis, its code, its severity, and the sentence it prints. Done.
   Not in it: the thresholds, which are configuration and are validated where
-  they are read (`lib/layout_options.py`, `lib/design_checks.validate`), and
+  they are read (`lhtml_site/layout_options.py`, `lhtml_site/design_checks.validate`), and
   a description per check, which would be a second copy of the README under
   a promise that it cannot drift. One copy that is read is better than two
   that are generated.
-- `lib/layout/report.py`: Markdown and contact sheets, rendered **from** the
+- `lhtml_site/layout/report.py`: Markdown and contact sheets, rendered **from** the
   data.
-- `lib/layout/measure.py`: the Node runner and the choice of Chrome - the
+- `lhtml_site/layout/measure.py`: the Node runner and the choice of Chrome - the
   configured one, else `PUPPETEER_EXECUTABLE_PATH`, else the one puppeteer
   downloaded, else an installed Chrome, saying which it took
   (`plugins/assets/chrome.js`). Done. The Node scripts themselves still sit
@@ -584,7 +584,7 @@ could not key on.
 
 ### 5.2 The source location, and what it is worth
 
-`lib/source_map.py` writes `data-lhtml-src="<file>:<line>"` on each block,
+`lhtml_site/source_map.py` writes `data-lhtml-src="<file>:<line>"` on each block,
 and the measurement keeps it whole. What was missing was the use: **the
 findings carried none of it**. A report said `HIDDEN TEXT #2 under #3` and
 the agent had to find #2 in a table of a hundred rows, then grep for its
@@ -829,7 +829,7 @@ dimensions, three full runs in a row with 0 changed pages, and the deck in
 video whose dimensions arrive during the extraction makes it `incomplete`.
 
 *A report kept when nothing it shows changed* (2026-10-17). The manifest
-of each page (lib/dependencies.py: its HTML and every file it loaded,
+of each page (lhtml_site/dependencies.py: its HTML and every file it loaded,
 hashed) tells whether a report still describes the page: a full `--layout`
 measures again only the pages whose manifest, options of the measure,
 Chrome or measuring script changed, and makes the analysis of all of them
@@ -843,17 +843,17 @@ name of the staging directory in the URLs.
 ## 6. Module layout
 
 ```
-lib/            pipeline: pages, deck, design, rendering, headings, assets, index, structure
-lib/theme.py    what a theme declares about the build (theme.yaml)
-lib/layout/     analysis.py, findings.py, report.py, measure.py, build.py
-lib/targets/    html, pdf: theme, source transforms, deliverables
-lib/analyses/   lint, layout: what they need of the build, what they report
+lhtml_site/     pipeline: pages, deck, design, rendering, headings, assets, index, structure
+lhtml_site/theme.py    what a theme declares about the build (theme.yaml)
+lhtml_site/layout/     analysis.py, findings.py, report.py, measure.py, build.py
+lhtml_site/targets/    html, pdf: theme, source transforms, deliverables
+lhtml_site/analyses/   lint, layout: what they need of the build, what they report
 plugins/        extensions: pre_include, code_include
 themes/         each with its manifest (rendered files, page settings, root, reserved, template)
 ```
 
-`lib/layout/` exists, with all of its files, and `lib/theme.py` with the
-manifest of section 4.0 (step 8a). `lib/targets/` and `lib/analyses/` do
+`lhtml_site/layout/` exists, with all of its files, and `lhtml_site/theme.py` with the
+manifest of section 4.0 (step 8a). `lhtml_site/targets/` and `lhtml_site/analyses/` do
 not exist yet: they are N2 and N4. `tools/` is gone: both scripts it
 held were dead code.
 
@@ -958,8 +958,8 @@ special case comes before what adds a concept.**
 **Where this stands, for whoever picks it up.** Steps 0 to 6 and 8 are
 done, and the step 2 that was deferred is settled rather than done. The
 build runs everything a bundled theme needs as a stage of its own
-(`lib/wrap.py`, `lib/headings.py`, `lib/menu.py`, `lib/index_page.py`,
-`lib/video_cache.py`); `plugins/` holds `pre_include`, `code_include` and
+(`lhtml_site/wrap.py`, `lhtml_site/headings.py`, `lhtml_site/menu.py`, `lhtml_site/index_page.py`,
+`lhtml_site/video_cache.py`); `plugins/` holds `pre_include`, `code_include` and
 `generate_pdf`, and the default `plugin:` list is empty. A theme declares
 its contract in `theme.yaml` (4.0), a page says what it is in its front
 matter, and the layout analysis reports findings of one shape recorded in
@@ -987,7 +987,7 @@ worktree - which is how 8a, 8b and 8c were each checked.
    build publishes is pinned by the privacy tests of
    `tests/test_build_safety.py`. Observable from outside, so they hold while
    the components move.
-3. **`lib/layout/` as a pure extraction.** `plugins/layout_report.py` went
+3. **`lhtml_site/layout/` as a pure extraction.** `plugins/layout_report.py` went
    from 1522 lines to 259 (the hook: which pages to measure, what to keep of
    a previous build, where to write); `analysis.py`, `report.py` and
    `measure.py` hold the rest, and `tests/test_layout_report.py` imports
@@ -1007,10 +1007,10 @@ worktree - which is how 8a, 8b and 8c were each checked.
    both with the current theme and with its own. The theme contract has not
    moved in practice, which is worth knowing before the theme manifest of 8a rewrites it.
 4. **The layout analysis is no longer a plugin.** `--layout` runs
-   `lib/layout/build.py` from the core, at the point in the build the plugin
+   `lhtml_site/layout/build.py` from the core, at the point in the build the plugin
    occupied. Four special cases are gone with it: `add_layout_plugin` and
    its insertion before `generate_pdf.py`, a second test on the same file
-   name, the function of `lib/configuration.py` written for that one plugin,
+   name, the function of `lhtml_site/configuration.py` written for that one plugin,
    and the import of two of its private symbols by `--render`. The options
    are the configuration key `layout:`; a configuration of the previous
    version is refused by `--check-config` with the change to make, named.
@@ -1031,8 +1031,8 @@ worktree - which is how 8a, 8b and 8c were each checked.
    a line of the page. That needs the marker to carry the identity of the
    file it came from, which is step 6b below.
 
-6. **The contracts inside `lib/layout/`.** The 18 record shapes of the
-   checks became one: `lib/layout/findings.py` declares, per check, its
+6. **The contracts inside `lhtml_site/layout/`.** The 18 record shapes of the
+   checks became one: `lhtml_site/layout/findings.py` declares, per check, its
    code, its severity and the sentence it prints, and `findings(analysis)`
    returns the records. Severity is in the data, `PROBLEM_KEYS` and
    `WARNING_KEYS` are gone, the four sections of a page report are rendered
@@ -1075,7 +1075,7 @@ worktree - which is how 8a, 8b and 8c were each checked.
    measurement takes as the content of a page. Those answers were written in
    the engine and in an extension: `theme/template/base.html` and `content`
    in `plugins/auto_wrap.py`, `root: 'body'` and `exclude: 'nav, footer'`
-   among the defaults of `lib/layout_options.py` - the answers of the
+   among the defaults of `lhtml_site/layout_options.py` - the answers of the
    `slides` theme, applied to all three themes shipped here.
 
    The order is engine, then theme, then project. The project keeps the last
@@ -1093,8 +1093,8 @@ worktree - which is how 8a, 8b and 8c were each checked.
    which did write it down, is unchanged to the finding.
 
 8b. **The stages that depend on the theme manifest.** First two of them:
-   `plugins/menu.py` is `lib/menu.py` and `plugins/title_submenu.py` is
-   `lib/headings.py`, run by the build itself. The manifest grew the key
+   `plugins/menu.py` is `lhtml_site/menu.py` and `plugins/title_submenu.py` is
+   `lhtml_site/headings.py`, run by the build itself. The manifest grew the key
    that made it possible: a theme declares `toc: {file, keys}`, so a theme
    with no menu gets none - which a project could not say, having no way to
    know. `plugin_arg: menu: keys:` is gone with it; the extra page settings
@@ -1106,8 +1106,8 @@ worktree - which is how 8a, 8b and 8c were each checked.
    copy carries into the site.
 
 8c. **The last three, and the ordering debt settled.** `auto_wrap.py` is
-   `lib/wrap.py`, `redirection_first_page.py` is `lib/index_page.py` and
-   `cache_video.py` is `lib/video_cache.py`. **The default `plugin:` list is
+   `lhtml_site/wrap.py`, `redirection_first_page.py` is `lhtml_site/index_page.py` and
+   `cache_video.py` is `lhtml_site/video_cache.py`. **The default `plugin:` list is
    empty**, and `plugins/` holds `pre_include`, `code_include` and
    `generate_pdf` - the last of which leaves at N2.
 
@@ -1133,7 +1133,7 @@ worktree - which is how 8a, 8b and 8c were each checked.
    Two things the move surfaced. A defect: the wrapping put a multi-line deck
    title into `{% set pageTitle %}`, so the second line was printed in the
    tab of the browser - `deck.scaffold` already kept the first line only, and
-   the two now agree. And a contract nothing tested: `lib/video_cache.py`
+   the two now agree. And a contract nothing tested: `lhtml_site/video_cache.py`
    writes the variants that `lhtml/export_html.py` probes for, through a
    directory name shared by an imported constant and an `assets` convention
    neither side declares (4.4). `tests/test_video_cache.py` pins it from the
@@ -1162,7 +1162,7 @@ the same file, `pre_include` and `auto_wrap`, and their order was pinned by
 `tests/test_plugin_order.py`. The note deferred the registry on the grounds
 that machinery built for a pair whose second member is leaving loses its
 purpose before it serves - and that is what happened: `auto_wrap` became
-`lib/wrap.py` at step 8c, the core wraps after the extensions have written,
+`lhtml_site/wrap.py` at step 8c, the core wraps after the extensions have written,
 and the order that used to break a page is not something a configuration
 can express. **Removing one of the two removed the question the registry
 would have answered.** If a second extension ever needs ordering against a
@@ -1178,10 +1178,10 @@ them runs this generator: each vendors its own copy, of three vintages.
 | a talk (`soiree_mathematique`) | 197 | 2026-10-10, has `deck`, `--layout` | `configure.yaml` + `deck.yaml`, one deck |
 | a course, slides (`epita_ani3d` lecture) | 182 | `ad1490a`, 2026-09-27 | a `generate.py` of the project |
 | a course, lab website (`epita_ani3d` lab) | 13 | `ad1490a`, 2026-09-27 | `configure.yaml`, one site |
-| a course, slides (`csc_43043`) | 893 | 2026-01, with a copy of LHTML in `lib/lhtml` | `justfile` + three scripts |
+| a course, slides (`csc_43043`) | 893 | 2026-01, with a copy of LHTML in `lhtml_site/lhtml` | `justfile` + three scripts |
 | a library documentation (`cgp_documentation`) | 42 | 2026-01, the same | `configure.yaml`, one site, both extensions |
 
-The copy of LHTML in `lib/lhtml` is dead code wherever LHTML is installed:
+The copy of LHTML in `lhtml_site/lhtml` is dead code wherever LHTML is installed:
 the generator of that vintage puts it at the *end* of `sys.path`, so the
 installed package wins. All five build with LHTML 2.5.1.
 
@@ -1295,7 +1295,7 @@ What LHTML reads during a build of the generator, measured before deciding:
 | the video variants of `cache_video_codecs/` | `export_html.py:139-150` | 405 videos |
 | the macro files | `macros.py:238` | never: the generator passes the macros as a mapping |
 
-And `lib/tracking.py` patches two functions, both for `include::`. So:
+And `lhtml_site/tracking.py` patches two functions, both for `include::`. So:
 
 - `include::` is removed, with `find_file`, the include expansion, its cycle
   error and the `directory_include` option. Jinja includes, with a
@@ -1305,7 +1305,7 @@ And `lib/tracking.py` patches two functions, both for `include::`. So:
 - the video variants are a **callback**, `media(src) -> [(url, mime), ...]`,
   that the caller passes; without it LHTML writes the source as given.
   `CACHE_VIDEO_DIR` and the `assets/` convention leave LHTML for
-  `lib/video_cache.py`, because **changing the theme must not change the
+  `lhtml_site/video_cache.py`, because **changing the theme must not change the
   identity of the cache**.
 
 The source loader the review asked for has nothing left to load: the text
@@ -1321,7 +1321,7 @@ must not change but where `include::` is written.
 clone, not released. LHTML loses `include::` (refused by name, with the
 Jinja way in the message), the poster probe and the variant probe, and
 gains `media`; a tag handler receives the context of the run. The generator
-gives `lib/video_cache.media(page_directory)` to LHTML, owns
+gives `lhtml_site/video_cache.media(page_directory)` to LHTML, owns
 `CACHE_VIDEO_DIR`, and `lhtml_includes` is deleted with the
 `include_dependencies` it fed. 320 tests for LHTML, 293 for the generator,
 the 12 browser tests; the example site byte-identical to the previous
@@ -1489,7 +1489,7 @@ they hide, so a place in the prepared text is a place in the source; the
 passes before the tags add lines (a heading, a list) but no `::`, so the
 k-th `::` the tag pass reads is the k-th of the prepared text, whose place
 is computed once. An unknown language of a code block is reported where the
-block starts. Generator: `lib/logger.py` is `info`, `detail` (-v), `debug`
+block starts. Generator: `lhtml_site/logger.py` is `info`, `detail` (-v), `debug`
 (-d), `warning`/`error` with a place; `level_print` is refused. The line
 LHTML or Jinja names is in the page as Jinja wrote it: in a build for
 development its marker names the source; otherwise the lines of the page
@@ -1502,7 +1502,7 @@ the console never wraps.
 
 **M. A page in Markdown.** Possible, and cheaper than it sounds, if the
 generator stops reading LHTML where it only needs the HTML: the headings
-(`lib/headings.py` reads the `=` lines of the source), the assets of a page
+(`lhtml_site/headings.py` reads the `=` lines of the source), the assets of a page
 (`source_scan` reads `img::`), the source map and the lint. Once those read
 the HTML a page produces, its markup is a converter the author names by
 the extension of the file - `index.md.j2` through Markdown, `index.html.j2`
@@ -1516,7 +1516,7 @@ It also settles the boundary of 4.4: what the generator asks of a markup
 (text in, HTML and diagnostics out) is a contract with two implementations,
 which N5 and N6 must keep.
 
-*Done* (2026-10-17). `lib/pages.py` names the markup by the suffix
+*Done* (2026-10-17). `lhtml_site/pages.py` names the markup by the suffix
 (`SUFFIXES`: `.html.j2`, `.md.j2`, both giving `.html`), and `Page.markup`
 travels to the scanners (`source_scan.Scan(text, markup)`: a fenced block
 is the code zone of Markdown), the headings (`# Title {: #id}` - `{#id}` is
@@ -1524,7 +1524,7 @@ a Jinja comment), the title, the credits (`![a](file)`), the deck (scaffold
 writes `# Title` in a `.md.j2`). Less than planned had to move: the stages
 did not need the HTML of the page, they needed to know the markup of the
 source they read. The theme wraps a Markdown page as an LHTML one, its
-content inside the Jinja filter `markdown_page` (lib/markdown_page.py,
+content inside the Jinja filter `markdown_page` (lhtml_site/markdown_page.py,
 markdown-it-py): Jinja converts the content alone, never the HTML of the
 theme, and LHTML does not read the page. The mathematics is kept from
 Markdown (outside code); a fenced block is highlighted by the function of
@@ -1575,15 +1575,15 @@ targets:
   pdf: {theme: slides-pdf}  # its theme.yaml says export: pdf
 ```
 
-- `lib/project.py` plans the builds, deck by deck and target by target, each
+- `lhtml_site/project.py` plans the builds, deck by deck and target by target, each
   the build of a site with its own directories and theme: `<site>/<deck>/
   <target>/`, the videos in `<cache>/<deck>/`. Without `decks`, the project
   is one deck; without `targets`, one target built into the site itself.
 - All the targets are built by default; `--target html` chooses.
   `--only 01_procedural` names a deck, `--only 01_procedural/03_noise`
   pages of it.
-- The PDF is a target: a theme declares `export: pdf` (`lib/theme.py`), and
-  `lib/pdf_export.py` (the former plugin) renders the site to
+- The PDF is a target: a theme declares `export: pdf` (`lhtml_site/theme.py`), and
+  `lhtml_site/pdf_export.py` (the former plugin) renders the site to
   `<site>/<deck>/<deck>.pdf` and `images/`, after the menu is written; the
   site is not published. `generate_pdf.py` in `plugin:` is refused, naming
   the target.
@@ -1648,7 +1648,7 @@ cover, `pre_include` and `code_include`. State what the contract is not: an
 interface over strings is a discipline, not a sandbox - arbitrary Python
 still reaches the file system.
 
-*Done* (2026-10-17). `lib/extensions.py`: `prepare(context)` once per
+*Done* (2026-10-17). `lhtml_site/extensions.py`: `prepare(context)` once per
 build, then `pre_process`, `mid_process`, `post_process(text, context) ->
 text` for each page generated; the build reads and writes the files.
 `context` is `options` (`plugin_arg`), `config_directory`, `page` (a copy of
@@ -1899,7 +1899,7 @@ generator was measured first: its scanners read the templates before
 Jinja, and LHTML keeps Jinja opaque, so `lhtml.parse` reads them as they
 are. On the 1034 pages of the corpus it finds the headings and the media
 files the scanners find, no page refused (0.48 s against 0.16 s for the
-scanners). `lib/headings.py` now takes the headings of an LHTML page from
+scanners). `lhtml_site/headings.py` now takes the headings of an LHTML page from
 its tree (`lhtml_headings`): what LHTML makes a heading is a heading,
 nothing else; the id is still written on the heading's line of the
 template. `TITLE_REGEX`, a copy of LHTML's own, goes. Checked: the
@@ -1919,7 +1919,7 @@ files in the same order on the 1879 pages of the corpus read with each of
 their themes (1848 files, 16 macros). What changes is what the scan got
 wrong: an `img::x.png` written inside an HTML attribute is not an image.
 
-*The styles and spacers of the lint, done* (2026-10-17). `lib/lint.py`
+*The styles and spacers of the lint, done* (2026-10-17). `lhtml_site/lint.py`
 reads the styles, the spacers and the iframes of an LHTML page in its
 tree: the style group of an element (not a link's label), the `style="..."`
 of its raw HTML, its Jinja, the attributes of an element and its text, a
@@ -1944,7 +1944,7 @@ patterns of a project stay on the text, as written: they are about words.
 *The title of a page, done* (2026-10-17). `generator_tool.extract_title`
 takes the first heading of an LHTML page from its tree (after a `tocTitle`
 or `pageTitle`, as before); the reading of the headings moves to
-`source_scan.lhtml_headings`, shared with `lib/headings.py`. Its regular
+`source_scan.lhtml_headings`, shared with `lhtml_site/headings.py`. Its regular
 expression, `^=+ (.*?)$`, skipped a heading with attributes
 (`=(#intro) Introduction`) for the next one; no page of the corpus has
 one: the same title on its 1337 templates.
@@ -2082,7 +2082,7 @@ Open, each one or two lines of work:
 
 - `wrap-auto` is still in `LHTML_OPTIONS` of `generate.py`, so a project
   can turn it on and have its page wrapped twice, by LHTML and by
-  `lib/wrap.py`. Drop it from the list: the option stays for LHTML used
+  `lhtml_site/wrap.py`. Drop it from the list: the option stays for LHTML used
   alone (4.4), and the generator refuses to forward it.
 - `theme.yaml` is copied into the published site, as `design.yaml` already
   is. It is a contract with the build, not content: section 3.2 says build

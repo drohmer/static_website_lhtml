@@ -63,7 +63,7 @@ def test_preview_files_are_not_cached(tmp_path):
     answers of /__feedback/ keep their own no-store."""
     import threading
     from http.server import ThreadingHTTPServer
-    from lib.development import PreviewHandler
+    from lhtml_site.development import PreviewHandler
     (tmp_path / 'menu.js').write_text('const toc = [];')
     server = ThreadingHTTPServer(('127.0.0.1', 0), lambda *a, **k: PreviewHandler(*a, directory=str(tmp_path), **k))
     thread = threading.Thread(target=server.serve_forever, daemon=True)

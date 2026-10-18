@@ -1,12 +1,12 @@
-"""Reading of the sources (lib/source_scan.py), with lhtml.zones."""
+"""Reading of the sources (lhtml_site/source_scan.py), with lhtml.zones."""
 import re
 import unittest
 
-from lib import source_scan
+from lhtml_site import source_scan
 
 
 class ZonesOfLhtmlTests(unittest.TestCase):
-    """lib/source_scan.py reads the sources with lhtml.zones, the public API
+    """lhtml_site/source_scan.py reads the sources with lhtml.zones, the public API
     of LHTML for them."""
 
     def test_each_kind_of_zone(self):

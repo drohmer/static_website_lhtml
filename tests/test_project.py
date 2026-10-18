@@ -1,4 +1,4 @@
-"""A project of several decks, each built to several targets (lib/project.py)."""
+"""A project of several decks, each built to several targets (lhtml_site/project.py)."""
 from pathlib import Path
 import os
 import shutil
@@ -9,8 +9,8 @@ import unittest
 
 import yaml
 
-from lib import project
-from lib.configuration import ConfigError, load_config
+from lhtml_site import project
+from lhtml_site.configuration import ConfigError, load_config
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -124,7 +124,7 @@ class PlanTests(ProjectTests):
         self.assertEqual(self.config(theme='slides').theme, REPO / 'themes/slides')
 
     def test_the_target_themes_are_watched(self):
-        from lib.development import watch_paths
+        from lhtml_site.development import watch_paths
         config = self.config(targets={'html': {'theme': 'slides'}, 'pdf': {'theme': 'slides-pdf'}})
         paths = watch_paths(config, self.file)
         self.assertIn(REPO / 'themes/slides', paths)

@@ -1,4 +1,4 @@
-"""Source map of the pages (lib/source_map.py): markers of the source lines
+"""Source map of the pages (lhtml_site/source_map.py): markers of the source lines
 through LHTML, then data-lhtml-src="file:line" on the blocks."""
 import os
 import re
@@ -7,7 +7,7 @@ import unittest
 import jinja2
 import lhtml
 
-from lib import source_map, source_scan
+from lhtml_site import source_map, source_scan
 
 MACROS = {'gap': {'class': 'gap', 'empty': True, 'variant': ['s', 'm', 'l'], 'default': 'm'},
           'credit': {'tag': 'span', 'class': 'credit'},

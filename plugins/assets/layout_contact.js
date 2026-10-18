@@ -1,7 +1,7 @@
 'use strict';
 
 // Screenshot contact sheets (HTML pages of slide thumbnails written by
-// lib/layout/) in headless Chrome (puppeteer).
+// lhtml_site/layout/) in headless Chrome (puppeteer).
 //
 // Usage:
 //   node layout_contact.js --input=sheets.json [--width=1920]

@@ -4,7 +4,7 @@
 //
 // The executable is chosen in this order:
 //   1. --chrome=<path>, written by the generator from the configuration key
-//      'chrome' (already resolved and checked by lib/configuration.py);
+//      'chrome' (already resolved and checked by lhtml_site/configuration.py);
 //   2. PUPPETEER_EXECUTABLE_PATH, the variable puppeteer itself reads;
 //   3. the Chrome puppeteer downloaded;
 //   4. if, and only if, that launch fails for want of a browser, a Chrome

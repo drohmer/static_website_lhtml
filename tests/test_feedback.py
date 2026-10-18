@@ -1,4 +1,4 @@
-"""Comments on the render (lib/feedback.py, the server of lib/development.py)."""
+"""Comments on the render (lhtml_site/feedback.py, the server of lhtml_site/development.py)."""
 from http.server import ThreadingHTTPServer
 import http.client
 import json
@@ -9,8 +9,8 @@ import urllib.request
 import tempfile
 from pathlib import Path
 
-from lib import feedback
-from lib.development import PreviewHandler
+from lhtml_site import feedback
+from lhtml_site.development import PreviewHandler
 
 
 class FeedbackServerTests(unittest.TestCase):

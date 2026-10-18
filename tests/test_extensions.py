@@ -1,4 +1,4 @@
-"""The contract of an extension: content in, content out (lib/extensions.py)."""
+"""The contract of an extension: content in, content out (lhtml_site/extensions.py)."""
 from pathlib import Path
 import subprocess
 import sys

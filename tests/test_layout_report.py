@@ -1,10 +1,10 @@
-"""Tests of the layout analysis (lib/layout/), on synthetic measurements:
+"""Tests of the layout analysis (lhtml_site/layout/), on synthetic measurements:
 no browser needed."""
 
 import pytest
 
-from lib.layout import analysis as checks, findings as records, measure, report as markdown_report
-from lib.layout_options import jobs
+from lhtml_site.layout import analysis as checks, findings as records, measure, report as markdown_report
+from lhtml_site.layout_options import jobs
 
 AREA = {'x': 0, 'y': 0, 'w': 1000, 'h': 500}
 

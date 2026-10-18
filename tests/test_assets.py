@@ -1,5 +1,5 @@
-"""Credits, origin, planned figures (lib/credits.py) and figures made from
-code (lib/figures.py), end to end."""
+"""Credits, origin, planned figures (lhtml_site/credits.py) and figures made from
+code (lhtml_site/figures.py), end to end."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,8 +10,8 @@ import unittest
 import lhtml
 import yaml
 
-from lib import credits, figures
-from lib.pages import Page, Source
+from lhtml_site import credits, figures
+from lhtml_site.pages import Page, Source
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -41,7 +41,7 @@ class CreditsTests(unittest.TestCase):
 
     def test_placeholders_are_read_in_the_document_tree(self):
         from types import SimpleNamespace
-        from lib import source_scan
+        from lhtml_site import source_scan
         text = ('placeholder:: a walk cycle ::\ncode::[text]\nplaceholder:: not one ::\ncode::[-]\n'
                 '<p title="placeholder:: nor this">x</p>\n')
         page = SimpleNamespace(src='p', scan=source_scan.Scan(text))
@@ -136,7 +136,7 @@ if __name__ == '__main__':
 
 
 def test_figure_cache_invalidated_by_adjacent_data(tmp_path):
-    from lib import figures
+    from lhtml_site import figures
     folder = tmp_path / 'assets'
     folder.mkdir()
     (folder / 'data.txt').write_text('first')

@@ -1,7 +1,7 @@
 """The transcoded variants of the videos, and the contract with LHTML.
 
 LHTML writes a `<source>` per entry that the generator's resolver lists
-(lib/video_cache.media); it probes no file itself. These tests pin that
+(lhtml_site/video_cache.media); it probes no file itself. These tests pin that
 contract, with the variants already in place, so they need no transcoder
 installed.
 """
@@ -15,7 +15,7 @@ import yaml
 
 import lhtml
 
-from lib.video_cache import CACHE_VIDEO_DIR, media
+from lhtml_site.video_cache import CACHE_VIDEO_DIR, media
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -115,7 +115,7 @@ class ConverterTests(unittest.TestCase):
         """The site directory is a Path: the command printed and run takes it."""
         from unittest.mock import patch
         from pathlib import Path
-        from lib.video_convert import video_convert
+        from lhtml_site.video_convert import video_convert
         with patch.object(video_convert.subprocess, 'run') as run:
             video_convert.run(['ffmpeg', '-i', Path('/site/a b.mp4'), 'out.webm'])
         run.assert_called_once()

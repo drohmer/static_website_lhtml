@@ -18,36 +18,36 @@ import time
 import traceback
 from pathlib import Path
 
-from lib import deck
-from lib import credits
-from lib import design
-from lib import feedback
-from lib import figures
-from lib import filesystem
-from lib import front_matter
-from lib import generator_tool
-from lib import lint
-from lib import markdown_page
-from lib import dependencies
-from lib import source_map
-from lib.tracking import TrackingLoader
-from lib import source_scan
-from lib import theme
-from lib import menu
-from lib import headings
-from lib import wrap
-from lib import index_page
-from lib import video_cache
-from lib.layout import build as layout_build
-from lib.extensions import Extensions, ExtensionError
-from lib import logger
-from lib import pages
-from lib import pdf_export
-from lib import project
-from lib.configuration import BuildContext, ConfigError, load_config, validate_paths
-from lib import layout_options
-from lib.build_output import links_out_of, staged_site
-from lib.structure import documents_directory
+from lhtml_site import deck
+from lhtml_site import credits
+from lhtml_site import design
+from lhtml_site import feedback
+from lhtml_site import figures
+from lhtml_site import filesystem
+from lhtml_site import front_matter
+from lhtml_site import generator_tool
+from lhtml_site import lint
+from lhtml_site import markdown_page
+from lhtml_site import dependencies
+from lhtml_site import source_map
+from lhtml_site.tracking import TrackingLoader
+from lhtml_site import source_scan
+from lhtml_site import theme
+from lhtml_site import menu
+from lhtml_site import headings
+from lhtml_site import wrap
+from lhtml_site import index_page
+from lhtml_site import video_cache
+from lhtml_site.layout import build as layout_build
+from lhtml_site.extensions import Extensions, ExtensionError
+from lhtml_site import logger
+from lhtml_site import pages
+from lhtml_site import pdf_export
+from lhtml_site import project
+from lhtml_site.configuration import BuildContext, ConfigError, load_config, validate_paths
+from lhtml_site import layout_options
+from lhtml_site.build_output import links_out_of, staged_site
+from lhtml_site.structure import documents_directory
 
 import lhtml
 
@@ -89,7 +89,7 @@ def parse_arguments():
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
-                             'of each page in .layout/ (lib/layout/, requires npm install).')
+                             'of each page in .layout/ (lhtml_site/layout/, requires npm install).')
     parser.add_argument('--render', metavar='FILE', action='append',
                         help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
                              'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
@@ -266,7 +266,7 @@ def prepare_data(meta, selected, built, log):
 def write_credits_and_todo(meta, selected, log):
     """.structure/credits.md (origin of the pages, credits of the images)
     and .structure/todo.md (planned figures and slides), next to the
-    configuration. Returns the credits of each page (lib/credits.py) and the
+    configuration. Returns the credits of each page (lhtml_site/credits.py) and the
     errors of the pages whose credits are invalid ({page: message}: these
     pages fail)."""
     credits_of, errors = {}, {}
@@ -347,7 +347,7 @@ def sitemap_keywords_used(env, templates):
 def marker_transform(meta):
     """`(text, path) -> text` writing the source-map markers of a template of
     the project, or None when the build does not want them. The same function
-    marks the pages (lib/pages.py) and the templates they include, so a block
+    marks the pages (lhtml_site/pages.py) and the templates they include, so a block
     names the file it is written in."""
     if not meta.get('source_map'):
         return None
@@ -472,7 +472,7 @@ def jinja_place(error, page, meta, pages):
 def render_lhtml(meta, selected, log, failed_before=()):
     """Run LHTML conversion on all rendered templates, with optional HTML tidy
     (not on the pages that failed before: `failed_before`). A Markdown page
-    was converted by Jinja (lib/markdown_page.py): LHTML does not read it.
+    was converted by Jinja (lhtml_site/markdown_page.py): LHTML does not read it.
     Returns the list of pages that failed."""
     tidy_options = {'doctype': 'html5', 'show-warnings': 'no', 'warn-proprietary-attributes': 'no'}
 
@@ -491,7 +491,7 @@ def render_lhtml(meta, selected, log, failed_before=()):
             input_html = front_matter.split(fid.read())[0]   # LHTML 3 reads none
 
         # The macros of the design, the video variants, the line breaks; not
-        # `wrap-auto`: the theme wraps the page (lib/wrap.py)
+        # `wrap-auto`: the theme wraps the page (lhtml_site/wrap.py)
         media = video_cache.media(meta['site_directory'] / page.site_directory)
 
         try:
@@ -573,7 +573,7 @@ def render_files(meta, files, log):
     (under its path relative to the configuration directory, or, for a file
     outside it, under _outside/<its directory>/), at the size of the slides
     of the layout report."""
-    from lib.layout.measure import run_node
+    from lhtml_site.layout.measure import run_node
     try:
         output = layout_options.output_directory(meta) / 'render'
     except ConfigError as exc:
@@ -616,7 +616,7 @@ def render_files(meta, files, log):
 
 def build_once(args):
     """Build the project: each of its decks for each of its targets
-    (lib/project.py), one after the other. A build that fails does not stop
+    (lhtml_site/project.py), one after the other. A build that fails does not stop
     the next ones; the command fails if one did."""
     try:
         config, config_file, warnings = load_config(
@@ -668,11 +668,11 @@ def build_site(args, build, config_file, log):
     context = BuildContext(config, config_file, args, log)
     meta = context.meta
     meta['deck'] = deck.deck_source(args.deck, config.deck, config_file.parent)
-    # data-lhtml-src="file:line" on the blocks (lib/source_map.py) in the builds for development
+    # data-lhtml-src="file:line" on the blocks (lhtml_site/source_map.py) in the builds for development
     meta['source_map'] = bool(args.layout or args.serve or args.watch)
-    meta['feedback'] = bool(args.serve)         # comments on the render (lib/feedback.py)
-    meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lib/layout/build.py)
-    meta['export_name'] = build.export_name     # the PDF of a deck (lib/pdf_export.py)
+    meta['feedback'] = bool(args.serve)         # comments on the render (lhtml_site/feedback.py)
+    meta['analyse_layout'] = bool(args.layout)  # the layout analysis runs in the build (lhtml_site/layout/build.py)
+    meta['export_name'] = build.export_name     # the PDF of a deck (lhtml_site/pdf_export.py)
     meta['build_scope'] = build.scope           # its state, apart from the other builds
     start, warnings_before = time.time(), log.counts['warning']
 
@@ -684,7 +684,7 @@ def build_site(args, build, config_file, log):
             return False
     if (meta['analyse_layout'] or (args.check_config and meta.get('layout'))) and not args.clean:
         # What the analysis will refuse, refused here: before the build, and
-        # with --check-config, which builds nothing (lib/layout_options.py).
+        # with --check-config, which builds nothing (lhtml_site/layout_options.py).
         # A project that neither asks for the analysis nor configures it is
         # not held to a configuration it does not have, and --clean, which
         # does not touch the reports, is not held to it either.
@@ -794,7 +794,7 @@ def build_site(args, build, config_file, log):
 
 
 def lint_pages(selected, loaded_design, log, details=False):
-    """Design lint of the pages (lib/lint.py): the summary, and with `details`
+    """Design lint of the pages (lhtml_site/lint.py): the summary, and with `details`
     each finding (path:line). Returns the findings {source path: [Finding]}."""
     linter = lint.Linter(loaded_design)
     found = {}
@@ -822,7 +822,7 @@ def generate_site(meta, selected, built):
     of them, except with --only)."""
     log = meta['log']
     try:
-        extensions = Extensions(meta['plugin_paths'])        # the plugins (lib/extensions.py)
+        extensions = Extensions(meta['plugin_paths'])        # the plugins (lhtml_site/extensions.py)
     except Exception as exc:
         raise BuildFailed(f'plugin: {type(exc).__name__}: {exc}' if not isinstance(exc, ExtensionError)
                           else str(exc)) from exc
@@ -855,8 +855,8 @@ def generate_site(meta, selected, built):
         count, pages = run_extensions('pre_process')
         plugin_failures, failed = plugin_failures + count, failed + pages
         # Core stages on the sources, after the extensions have written them:
-        # the theme wraps what the content ends up being (lib/wrap.py), and the
-        # headings of that content get their ids (lib/headings.py).
+        # the theme wraps what the content ends up being (lhtml_site/wrap.py), and the
+        # headings of that content get their ids (lhtml_site/headings.py).
         headings.run(meta)
         wrap.run(meta)
         # Transcoded videos next to the assets, before LHTML writes the <video>
@@ -892,7 +892,7 @@ def generate_site(meta, selected, built):
             count, pages = run_extensions('post_process')
             plugin_failures, failed = plugin_failures + count, failed + pages
             # Core stages on the built site: the menu of the theme, and the
-            # index of a site that has none (lib/menu.py, lib/index_page.py)
+            # index of a site that has none (lhtml_site/menu.py, lhtml_site/index_page.py)
             menu.run(meta)
             index_page.run(meta)
             if export == 'pdf':          # once the site is complete, menu included
@@ -929,7 +929,7 @@ def main():
         sys.exit('static_website_lhtml requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')
     args = parse_arguments()
     if args.serve or args.watch:
-        from lib.development import develop
+        from lhtml_site.development import develop
         develop(args, build_once)
     else:
         build_once(args)

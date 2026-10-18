@@ -1,9 +1,9 @@
 """The headings of an LHTML page are those of its document tree
-(lib/headings.py, lhtml.parse)."""
+(lhtml_site/headings.py, lhtml.parse)."""
 import unittest
 
-from lib.generator_tool import extract_title
-from lib.headings import lhtml_headings
+from lhtml_site.generator_tool import extract_title
+from lhtml_site.headings import lhtml_headings
 
 
 class LhtmlHeadings(unittest.TestCase):
@@ -46,7 +46,7 @@ class PageTitle(unittest.TestCase):
     def test_the_scanners_of_a_page_share_one_tree(self):
         from unittest.mock import patch
         import lhtml
-        from lib import credits, source_scan
+        from lhtml_site import credits, source_scan
         page = source_scan.Scan('= T\nimg::a.png\n')
         macros = {'box': {'class': 'box'}}
         with patch('lhtml.parse', wraps=lhtml.parse) as parse:

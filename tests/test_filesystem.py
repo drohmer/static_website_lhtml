@@ -1,10 +1,10 @@
-"""Copies of the sources into the site (lib/filesystem.py): links."""
+"""Copies of the sources into the site (lhtml_site/filesystem.py): links."""
 from pathlib import Path
 import os
 import tempfile
 import unittest
 
-from lib import filesystem
+from lhtml_site import filesystem
 
 
 class CopyTreeTests(unittest.TestCase):

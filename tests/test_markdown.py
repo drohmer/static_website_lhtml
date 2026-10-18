@@ -1,4 +1,4 @@
-"""Pages written in Markdown (index.md.j2, lib/markdown_page.py)."""
+"""Pages written in Markdown (index.md.j2, lhtml_site/markdown_page.py)."""
 from pathlib import Path
 import subprocess
 import sys
@@ -7,7 +7,7 @@ import unittest
 
 import yaml
 
-from lib import credits, deck, markdown_page, pages, source_scan
+from lhtml_site import credits, deck, markdown_page, pages, source_scan
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -131,7 +131,7 @@ class BuildTests(unittest.TestCase):
         self.write('src/parts/table.md', 'Sub\n---\n')
         self.write('src/parts/block.html', '= Block\n')
         from jinja2 import FileSystemLoader
-        from lib.tracking import TrackingLoader
+        from lhtml_site.tracking import TrackingLoader
         loader = TrackingLoader(FileSystemLoader(self.root / 'src'), [self.root / 'src'],
                                 mark=lambda text, path: 'MARKED')
         self.assertEqual(loader.get_source(None, 'parts/table.md')[0], 'Sub\n---\n')    # Markdown: as written

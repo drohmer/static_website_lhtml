@@ -10,11 +10,11 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 
-from lib.build_output import staged_site
-from lib.configuration import ConfigError
-from lib.development import snapshot
-from lib.layout import build as layout_build, measure
-from lib.layout_options import output_directory
+from lhtml_site.build_output import staged_site
+from lhtml_site.configuration import ConfigError
+from lhtml_site.development import snapshot
+from lhtml_site.layout import build as layout_build, measure
+from lhtml_site.layout_options import output_directory
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -210,7 +210,7 @@ def test_nothing_private_of_the_project_reaches_the_site(tmp_path):
 def test_an_option_the_analysis_cannot_read_stops_the_build(tmp_path):
     """A measurement that cannot run is reported and the build goes on; an
     option of the wrong shape is a configuration error and stops it, before
-    the build starts (lib/layout_options.py, also used by --check-config)."""
+    the build starts (lhtml_site/layout_options.py, also used by --check-config)."""
     for bad in ({'design_rules': 42}, {'jobs': 'four'}, {'jobs': 0},
                 {'width': 'wide'}, {'root': ''}, {'images': 'yes'}, {'contact_rows': -1}):
         config, _ = project(tmp_path, layout=bad)
@@ -262,7 +262,7 @@ def test_a_partial_build_gives_the_same_site_as_a_full_one(tmp_path):
     """The guarantee of --only: for everything it touches and everything that
     depends on it, a partial build publishes what a full build publishes.
     When the generator cannot tell what depends on what, it widens the build
-    and says so (lib/dependencies.py)."""
+    and says so (lhtml_site/dependencies.py)."""
     source = tmp_path / 'src'
     for name in ('a', 'b', 'c'):
         (source / name).mkdir(parents=True)
