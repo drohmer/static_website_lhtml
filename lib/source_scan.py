@@ -164,7 +164,7 @@ def lhtml_headings(source, macros=None):
         if node.kind == 'Heading':
             start, end = node.span
             title = node.children[0].span[0] if node.children else end
-            found.append((start, end, node.level, node.written, text[title:end]))
+            found.append((start, end, node.level, node.parentheses, text[title:end]))
     return found
 
 
