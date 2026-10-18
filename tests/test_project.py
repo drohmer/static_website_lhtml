@@ -221,8 +221,8 @@ class BuildTests(ProjectTests):
         self.write(decks='directories', targets={'html': {'theme': 'slides'}})
         result = self.build()
         lines = result.stdout.splitlines()
-        self.assertIn("src/01_a/01_x/index.html.j2:6:1: warning: gap::zz: unknown variant (expected one of "
-                      "s, m, l, xl) near 'gap::zz'", lines)
+        self.assertIn("src/01_a/01_x/index.html.j2:6:1: warning: gap::zz: unknown variant, expected one of "
+                      "s, m, l, xl", lines)
         self.assertRegex(result.stdout, r'deck 01_a target html: 2 page\(s\) built in \d+\.\ds, '
                                         r'1 warning\(s\) -> _site/01_a/html\n')
         self.assertIn("src/02_b/01_x/index.html.j2:3: error: Jinja: 'missing' is undefined", lines)
