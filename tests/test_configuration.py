@@ -169,6 +169,21 @@ class ConfigurationTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, new):
                 load_config(self.file)
 
+    def test_the_example_project_is_written_then_built(self):
+        project = self.root / 'project'
+        project.mkdir()
+        run = lambda *args: subprocess.run([sys.executable, str(REPO / 'generate.py'), *args],
+                                           cwd=project, capture_output=True, text=True)
+        missing = run()
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn('--example', missing.stdout + missing.stderr)
+        self.assertEqual(run('--example').returncode, 0)
+        self.assertTrue((project / 'configure.yaml').is_file())
+        self.assertNotEqual(run('--example').returncode, 0)         # never over a project
+        result = run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((project / '.site/content/01_introduction/index.html').is_file())
+
     def test_paths_into_a_checkout_find_the_files_of_its_package(self):
         """A project with the generator as a submodule names its themes,
         plugins and example as they were at the root of the repository."""

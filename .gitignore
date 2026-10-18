@@ -17,3 +17,5 @@ _layout/
 .verification/
 .structure/
 .layout.lock
+build/
+*.egg-info/

@@ -1,2 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lhtml-site"
+version = "3.0.0"
+description = "Static website and slide generator built on LHTML and Jinja2"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE.md"]
+authors = [{ name = "Damien Rohmer" }]
+requires-python = ">=3.11"
+# The same as requirements.txt (whose versions requirements-lock.txt pins)
+dependencies = [
+    "lhtml-markup>=3.0",
+    "Jinja2",
+    "markdown-it-py",
+    "jinja-markdown",
+    "pytidylib",
+    "pyyaml",
+    "rich",
+]
+
+[project.urls]
+Repository = "https://github.com/drohmer/lhtml-site"
+
+[project.scripts]
+lhtml-site = "lhtml_site.generate:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The files the package reads next to its code (Path(__file__).parent):
+# themes/, plugins/, example/, docs/agents.md, feedback.js, configure_example.yaml
+[tool.setuptools.package-data]
+lhtml_site = ["**/*"]
+
+[tool.setuptools.exclude-package-data]
+lhtml_site = ["**/__pycache__/*", "**/*.pyc"]
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]

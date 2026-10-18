@@ -223,6 +223,9 @@ def load_config(filename, debug_override=None):
     if not path.exists() and path.name == 'configure_default.yaml':
         raise ConfigError("'configure_default.yaml' was renamed 'configure_example.yaml' (3.0): "
                           "update your command")
+    if not path.exists():
+        raise ConfigError(f"Configuration not found: '{path}' (--example writes an example "
+                          f"project in the current directory)")
     try:
         data = read_yaml(path)
     except ValueError as exc:                       # the message names the file

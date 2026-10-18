@@ -44,7 +44,8 @@ from lhtml_site import logger
 from lhtml_site import pages
 from lhtml_site import pdf_export
 from lhtml_site import project
-from lhtml_site.configuration import BuildContext, ConfigError, in_package, load_config, validate_paths
+from lhtml_site.configuration import (BuildContext, ConfigError, GENERATOR_DIRECTORY, in_package,
+                                      load_config, validate_paths)
 from lhtml_site import layout_options
 from lhtml_site.build_output import links_out_of, staged_site
 from lhtml_site.structure import documents_directory
@@ -100,10 +101,16 @@ def parse_arguments():
     parser.add_argument('--serve', action='store_true', help='Serve the generated site on localhost.')
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
+    parser.add_argument('--example', action='store_true',
+                        help='Write the example project (example/ and configure.yaml) in the current '
+                             'directory, to build it with the command alone; no build.')
     args = parser.parse_args()
     args.target = [t for value in args.target or [] for t in value.split(',') if t] or None
     if not 0 <= args.port <= 65535:
         parser.error('--port must be between 0 and 65535')
+    if args.example and (args.clean or args.check_config or args.serve or args.watch or args.lint or args.only
+                         or args.layout or args.render or args.deck or args.scaffold or args.input_config):
+        parser.error('--example is used alone (no build)')
     if (args.serve or args.watch) and (args.clean or args.check_config):
         parser.error('--serve/--watch cannot be combined with --clean or --check-config')
     if args.only and (args.clean or args.check_config):
@@ -925,12 +932,27 @@ def generate_site(meta, selected, built):
     return len(built)
 
 
+def write_example(directory):
+    """--example: the example project of the generator in `directory`, the
+    sources and their configuration, which the command then builds alone."""
+    sources, config = directory / 'example', directory / 'configure.yaml'
+    for path in (sources, config):
+        if path.exists():
+            sys.exit(f"--example: '{path}' exists already; run it in an empty directory")
+    shutil.copytree(GENERATOR_DIRECTORY / 'example', sources)
+    shutil.copy2(GENERATOR_DIRECTORY / 'configure_example.yaml', config)
+    print(f'Example project written in {directory}: build it with the same command without '
+          f'--example, and preview it with --serve.')
+
+
 def main():
     if int(lhtml.__version__.split('.')[0]) < 3:
         # LHTML 2 ignores the `media` resolver and expands include:: on its own
         sys.exit('lhtml-site requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')
     args = parse_arguments()
-    if args.serve or args.watch:
+    if args.example:
+        write_example(Path.cwd())
+    elif args.serve or args.watch:
         from lhtml_site.development import develop
         develop(args, build_once)
     else:

@@ -23,6 +23,13 @@ jobs:
       - run: npm ci
       - name: Unit and regression tests
         run: python -m pytest tests -q
+      - name: Installed command (pip install .) builds the example outside the repository
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q .
+          mkdir "$RUNNER_TEMP/example" && cd "$RUNNER_TEMP/example"
+          "$RUNNER_TEMP/venv/bin/lhtml-site" --example
+          "$RUNNER_TEMP/venv/bin/lhtml-site" --strict
       - name: Chrome layout smoke test
         env:
           LHTML_BROWSER_TEST: '1'
