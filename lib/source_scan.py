@@ -5,8 +5,8 @@ LHTML leaves some zones of a page as they are: code blocks
 <style>, inline code, the URLs of img::/video::/link::, math and HTML tags.
 The scanners of the generator (the
 lint, the source map, the credits and the placeholders) find these zones with
-the regular expressions of LHTML itself, so that they agree with it on what
-is code and what is text. A Markdown page (lib/markdown_page.py) has its
+lhtml.zones, the patterns LHTML parses with, so that they agree with it on
+what is code and what is text. A Markdown page (lib/markdown_page.py) has its
 own code blocks, fenced by ``` or ~~~; its other zones are those of LHTML.
 
 The scanners of an LHTML page read its document tree (`document`,
@@ -18,28 +18,24 @@ the {% set %} of a page (Jinja), the markers of the source map.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import cached_property
 import re
 
 import lhtml
-from lhtml import patterns
 
 from lib import front_matter
 
-# kinds of zones, in the order of the groups of patterns.PROTECTED_BLOCKS
-KINDS = ('code', 'jinja', 'comment', 'raw', 'icode', 'urltag', 'math', 'tag')
+# kinds of zones (lhtml.Zone)
+KINDS = ('code', 'jinja', 'comment', 'raw', 'inline_code', 'url', 'math', 'tag')
 # zones whose text is not read as LHTML (what the lint and the credits skip)
-NOT_TEXT = frozenset(('code', 'comment', 'raw', 'icode', 'math'))
+NOT_TEXT = frozenset(('code', 'comment', 'raw', 'inline_code', 'math'))
 
-URL_TAGS = frozenset(patterns.URL_TAGS)
-# the value of a tag: a URL, a file (img::a.png(.wide): the class group is not part of it)
-VALUE = patterns.URL_TOKEN
+URL_TAGS = frozenset(lhtml.URL_TAGS)
 # A Markdown page: a fenced code block is its `code` zone
-MARKDOWN_BLOCKS = re.compile(r'(?P<code>(?m:^[ \t]{0,3}(?P<mark>(?P<fc>[`~])(?P=fc){2,})[^\n]*\n.*?'
-                             r'(?:^[ \t]{0,3}(?P=mark)(?P=fc)*[ \t]*$|\Z)))|' + patterns.PROTECTED.pattern,
-                             re.DOTALL)
-BLOCKS = {'lhtml': patterns.PROTECTED_BLOCKS, 'markdown': MARKDOWN_BLOCKS}
+MARKDOWN_CODE = re.compile(r'(?m:^[ \t]{0,3}(?P<mark>(?P<fc>[`~])(?P=fc){2,})[^\n]*\n.*?'
+                           r'(?:^[ \t]{0,3}(?P=mark)(?P=fc)*[ \t]*$|\Z))', re.DOTALL)
+CODE = {'lhtml': None, 'markdown': MARKDOWN_CODE}
+Zone = lhtml.Zone
 LAYOUT_SET = re.compile(r'''\{%-?\s*set\s+layout\s*=\s*['"]([^'"]*)['"]\s*-?%\}''')
 # Lines kept before {% extends %} by auto_wrap: blank lines, Jinja comments,
 # {% set name = value %}, {% import %} / {% from ... import %};
@@ -48,25 +44,11 @@ LEADING_LINE = re.compile(r'[ \t]*(?:\{%-?\s*(?:set\s+[^%\n]*=|import\s|from\s)(
                           r'|\{#(?:[^#\n]|#(?!\}))*#\})?[ \t]*(?:\n|\Z)')
 
 
-@dataclass(frozen=True)
-class Zone:
-    start: int
-    end: int
-    kind: str
-
-
 def zones(text, markup='lhtml'):
     """Zones of a source that its markup does not read as text, in order: [Zone]."""
-    found = []
     header = front_matter.FRONT_MATTER.match(text)      # the settings of the page, not its text
-    if header:
-        found.append(Zone(0, header.end(), 'comment'))
-    for m in BLOCKS[markup or 'lhtml'].finditer(text, header.end() if header else 0):
-        kind = next(k for k in KINDS if m.group(k) is not None)
-        if kind == 'jinja' and m.group(0).startswith('{#'):
-            kind = 'comment'            # a Jinja comment writes nothing, as an HTML one
-        found.append(Zone(m.start(), m.end(), kind))
-    return found
+    found = [Zone(0, header.end(), 'comment')] if header else []
+    return found + lhtml.zones(text, code=CODE[markup or 'lhtml'], start=header.end() if header else 0)
 
 
 def _blank(text, selected, fill=' '):
@@ -197,10 +179,10 @@ def tag_values(source, tags):
     read as LHTML (img::a.png, figure::b.jpg(.wide) -> 'b.jpg')."""
     if not tags:
         return []
-    pattern = re.compile(r'(?<![\w-])(' + '|'.join(sorted(map(re.escape, tags), key=len, reverse=True))
-                         + r')::(' + VALUE + r')')
-    masked = scan(source).masked
-    return [(m.group(1), m.group(2), masked.count('\n', 0, m.start()) + 1) for m in pattern.finditer(masked)]
+    text = scan(source).text
+    header = front_matter.FRONT_MATTER.match(text)
+    found = lhtml.zones(text, url_tags=tags, code=CODE[scan(source).markup], start=header.end() if header else 0)
+    return [(z.tag, z.value, text.count('\n', 0, z.start) + 1) for z in found if z.kind == 'url']
 
 
 def layout_setting(source):

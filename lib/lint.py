@@ -110,7 +110,7 @@ class Linter:
         the document tree of an LHTML page), and the patterns (on its text only:
         not code, math, comments, Jinja, HTML tags nor URLs)."""
         found = []
-        text = source_scan.mask(source.text, source_scan.NOT_TEXT | {'jinja', 'urltag', 'tag'}, source.zones)
+        text = source_scan.mask(source.text, source_scan.NOT_TEXT | {'jinja', 'url', 'tag'}, source.zones)
         for number, line in enumerate(text.split('\n'), 1):
             for name, pattern, advice in self.rules:
                 if (m := pattern.search(line)):

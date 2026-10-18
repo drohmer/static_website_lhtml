@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 
-from lhtml.tag_parser import extract_bracket_elements
+import lhtml
 
 
 # Directory where the code repositories are cloned, next to the
@@ -48,9 +48,9 @@ def extract_first_matching_line(text_content, expression):
 
 
 def analyse_includeadv_match(file_content, it):
-    element = extract_bracket_elements(file_content, it.span()[0] + len("includeadv::"))
+    written = lhtml.read_tag(file_content, it.span()[0])
     arg_includeadv = {}
-    tokens = split_group_with_quote(element.braces, ",")
+    tokens = split_group_with_quote(written.braces, ",")
     for token in tokens:
         k, v = token.split(':')
         k = k.strip()

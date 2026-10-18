@@ -1,20 +1,13 @@
-"""Reading of the sources (lib/source_scan.py), with the patterns of LHTML."""
+"""Reading of the sources (lib/source_scan.py), with lhtml.zones."""
 import re
 import unittest
-
-from lhtml import patterns
 
 from lib import source_scan
 
 
-class PatternsOfLhtmlTests(unittest.TestCase):
-    """lib/source_scan.py reads the sources with lhtml.patterns: a new version
-    of LHTML that changes them must fail here, not give wrong source lines."""
-
-    def test_the_patterns_used_exist(self):
-        for name in ('PROTECTED_BLOCKS', 'URL_TAGS', 'URL_TOKEN'):
-            self.assertTrue(hasattr(patterns, name), name)
-        self.assertLessEqual(set(source_scan.KINDS), set(patterns.PROTECTED_BLOCKS.groupindex))
+class ZonesOfLhtmlTests(unittest.TestCase):
+    """lib/source_scan.py reads the sources with lhtml.zones, the public API
+    of LHTML for them."""
 
     def test_each_kind_of_zone(self):
         text = ('code::[python]\nc\ncode::[-]\n{{ j }}\n<!-- h -->\n'
