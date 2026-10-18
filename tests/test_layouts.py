@@ -12,7 +12,7 @@ from lhtml_site import design, lint
 from lhtml_site.configuration import ConfigError, load_config
 
 REPO = Path(__file__).resolve().parents[1]
-SLIDES = design.load_design(REPO / 'themes/slides')
+SLIDES = design.load_design(REPO / 'src/lhtml_site/themes/slides')
 
 
 class LayoutDesignTests(unittest.TestCase):
@@ -31,8 +31,8 @@ class LayoutDesignTests(unittest.TestCase):
     def test_invalid_layouts(self):
         for layouts in ({'side': 'x'}, {'side': {'css': '', 'width': 1}}, {'a b': {}}):
             with self.assertRaises(design.DesignError):
-                design.load_design(REPO / 'themes/slides', {'layouts': layouts})
-        self.assertNotIn('side', design.load_design(REPO / 'themes/slides', {'layouts': {'side': None}})['layouts'])
+                design.load_design(REPO / 'src/lhtml_site/themes/slides', {'layouts': layouts})
+        self.assertNotIn('side', design.load_design(REPO / 'src/lhtml_site/themes/slides', {'layouts': {'side': None}})['layouts'])
 
 
 class LayoutBuildTests(unittest.TestCase):
@@ -48,7 +48,7 @@ class LayoutBuildTests(unittest.TestCase):
         path.write_text(text)
 
     def build(self, deck=None, *args):
-        config = {'source_directory': 'src', 'site_directory': 'site', 'theme': str(REPO / 'themes/slides'),
+        config = {'source_directory': 'src', 'site_directory': 'site', 'theme': str(REPO / 'src/lhtml_site/themes/slides'),
                   'plugin': []}
         if deck is not None:
             config['deck'] = deck
@@ -75,7 +75,7 @@ class LayoutBuildTests(unittest.TestCase):
         self.assertEqual(self.body('c'), '<body class="layout-side layout-side-s">')
         self.assertIn('C hello', (self.site / 'c/index.html').read_text())
         self.assertEqual((self.root / '.structure/agents.md').read_text(),
-                         (REPO / 'docs/agents.md').read_text())          # the guide for agents
+                         (REPO / 'src/lhtml_site/docs/agents.md').read_text())          # the guide for agents
         self.assertFalse((self.site / 'structure/agents.md').exists())   # the site is published
         from lhtml_site.layout import report
         self.assertIn('`../.structure/agents.md`',

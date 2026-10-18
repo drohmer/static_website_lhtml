@@ -63,7 +63,7 @@ class DesignTests(unittest.TestCase):
     @unittest.skipUnless(HAS_MACROS, 'requires lhtml-markup >= 2.5')
     def test_bundled_designs_are_valid(self):
         for theme in ('slides', 'slides-pdf'):
-            d = design.load_design(REPO / 'themes' / theme)
+            d = design.load_design(REPO / 'src/lhtml_site/themes' / theme)
             self.assertIn('gap', d['macros'])
             design.flatten_tokens(d['tokens'])
             lhtml.registry_with_macros(design.lhtml_macros(d))
@@ -97,7 +97,7 @@ class DesignTests(unittest.TestCase):
         config = self.root / 'config.yaml'
         config.write_text(yaml.safe_dump({
             'source_directory': str(source), 'site_directory': str(site),
-            'theme': str(REPO / 'themes/slides'), 'plugin': [],
+            'theme': str(REPO / 'src/lhtml_site/themes/slides'), 'plugin': [],
             'design': {'tokens': {'space': {'l': '60px'}},
                        'macros': {'note': {'class': 'note', 'css': '.note { color: red; }'}}},
         }))
@@ -121,11 +121,11 @@ if __name__ == '__main__':
 class DesignRegressionTests(unittest.TestCase):
     def test_macro_spec_must_be_a_mapping(self):
         with self.assertRaisesRegex(design.DesignError, "macro 'foo' must be a mapping"):
-            design.load_design(REPO / 'themes/slides', {'macros': {'foo': 'bar'}})
+            design.load_design(REPO / 'src/lhtml_site/themes/slides', {'macros': {'foo': 'bar'}})
 
     def test_empty_design_still_writes_css(self):
         with tempfile.TemporaryDirectory() as root:
-            d = design.load_design(REPO / 'themes/slides', {'tokens': None, 'macros': None, 'layouts': None})
+            d = design.load_design(REPO / 'src/lhtml_site/themes/slides', {'tokens': None, 'macros': None, 'layouts': None})
             self.assertEqual(d, {'tokens': {}, 'macros': {}, 'layouts': {}, 'lint': {}})
             path = design.write_design({'site_directory': root}, d)
             self.assertIn(':root {', path.read_text())
@@ -133,7 +133,7 @@ class DesignRegressionTests(unittest.TestCase):
 
 class DesignExtendsTests(unittest.TestCase):
     def test_pdf_theme_extends_slides(self):
-        self.assertEqual(design.load_design(REPO / 'themes/slides-pdf'), design.load_design(REPO / 'themes/slides'))
+        self.assertEqual(design.load_design(REPO / 'src/lhtml_site/themes/slides-pdf'), design.load_design(REPO / 'src/lhtml_site/themes/slides'))
 
     def test_extends_and_loop(self):
         with tempfile.TemporaryDirectory() as root:
@@ -150,6 +150,6 @@ class DesignExtendsTests(unittest.TestCase):
     def test_reference_written_by_generator(self):
         with tempfile.TemporaryDirectory() as root:
             design.write_design({'site_directory': root + '/site', 'config_directory': root},
-                                design.load_design(REPO / 'themes/slides'))
+                                design.load_design(REPO / 'src/lhtml_site/themes/slides'))
             self.assertIn('### `gap::`', (Path(root) / '.structure/design.md').read_text())
             self.assertTrue((Path(root) / 'site/theme/css/design.css').is_file())

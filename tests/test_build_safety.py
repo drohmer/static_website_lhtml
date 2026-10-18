@@ -116,7 +116,7 @@ def test_a_project_without_the_analysis_is_not_held_to_its_configuration(tmp_pat
 def test_layout_rejects_unsafe_outputs_before_deleting(tmp_path):
     config, source = project(tmp_path)
     (tmp_path / 'alias').symlink_to(source, target_is_directory=True)
-    for output in ('.', 'src', 'src/report', 'alias', '.site', '.site/report', str(REPO), str(REPO / 'themes')):
+    for output in ('.', 'src', 'src/report', 'alias', '.site', '.site/report', str(REPO), str(REPO / 'src/lhtml_site/themes')):
         config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
             'layout': {'output': output}}))
         for flag in ('--check-config', '--layout'):
@@ -129,7 +129,7 @@ def test_layout_rejects_unsafe_outputs_before_deleting(tmp_path):
 def test_the_layout_analysis_validates_even_when_called_directly(tmp_path):
     config, source = project(tmp_path)
     meta = {'config_file': str(config), 'config_directory': str(tmp_path),
-            'source_directory': str(source), 'theme': str(REPO / 'themes'),
+            'source_directory': str(source), 'theme': str(REPO / 'src/lhtml_site/themes'),
             'site_directory': str(tmp_path / '.site'), 'log': Mock(),
             'layout': {'output': 'src'}}
     with pytest.raises(ConfigError):
@@ -235,7 +235,7 @@ def test_a_page_that_places_itself_is_not_wrapped_again(tmp_path):
     (source / 'raw/index.html.j2').write_text('<!DOCTYPE html>\n<html><body><h1>Raw</h1></body></html>\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     result = build(config)
     assert result.returncode == 0, result.stdout + result.stderr
     for name in ('own', 'raw'):
@@ -268,7 +268,7 @@ def test_a_partial_build_gives_the_same_site_as_a_full_one(tmp_path):
         (source / name).mkdir(parents=True)
         (source / name / 'index.html.j2').write_text(f'= Page {name}\n* first\n')
     theme = tmp_path / 'theme'
-    shutil.copytree(REPO / 'themes/slides', theme)
+    shutil.copytree(REPO / 'src/lhtml_site/themes/slides', theme)
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
                                       'theme': str(theme)}))
@@ -357,7 +357,7 @@ def test_a_partial_build_publishes_what_a_full_one_does(tmp_path, case):
     (source / 'b/lib').symlink_to(tmp_path / 'shared', target_is_directory=True)
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     site = tmp_path / 'site'
     assert build(config).returncode == 0
     PARTIAL_CASES[case](source)
@@ -378,7 +378,7 @@ def test_a_refused_partial_build_publishes_nothing(tmp_path):
         (source / name / 'index.html.j2').write_text(f'= Page {name}\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     site = tmp_path / 'site'
     assert build(config).returncode == 0
     before = site_fingerprint(site)
@@ -400,7 +400,7 @@ def test_only_refuses_a_link_out_of_the_site(tmp_path):
     (source / 'b/index.html.j2').write_text('= Page b\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     assert build(config).returncode == 0
     link = tmp_path / 'site/b/title_id.json'
     link.unlink()
@@ -424,7 +424,7 @@ def test_a_store_without_its_source_files_widens_once(tmp_path, recorded):
     (source / 'b/s.js').write_text('s\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     assert build(config).returncode == 0
     store = tmp_path / '.verification/builds.json'
     value = json.loads(store.read_text())
@@ -449,7 +449,7 @@ def _project(tmp_path, **files):
         (source / name).write_text(text)
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     return config, source, tmp_path / 'site'
 
 

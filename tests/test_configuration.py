@@ -169,6 +169,19 @@ class ConfigurationTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigError, new):
                 load_config(self.file)
 
+    def test_paths_into_a_checkout_find_the_files_of_its_package(self):
+        """A project with the generator as a submodule names its themes,
+        plugins and example as they were at the root of the repository."""
+        (self.root / 'generator').symlink_to(REPO, target_is_directory=True)
+        self.write(source_directory='generator/example/', theme='generator/themes/slides/',
+                   plugin=['generator/plugins/pre_include.py'])
+        config = load_config(self.file)[0]
+        self.assertEqual(config.theme, REPO / 'src/lhtml_site/themes/slides')
+        self.assertEqual(config.source_directory, REPO / 'src/lhtml_site/example')
+        result = self.cli('--check-config')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('not found', result.stdout)
+
 
     def test_chrome_executable_is_resolved_and_checked(self):
         executable = self.root / 'chrome'
@@ -208,8 +221,7 @@ class ReservedKeysAndWatchTests(unittest.TestCase):
         from lhtml_site.configuration import Config, RUNTIME_KEYS
         known = set(Config().to_meta()) | {'cache_video_directory', 'chrome', 'design', 'deck'} | RUNTIME_KEYS
         written = {}
-        for file in [*sorted((REPO / 'src/lhtml_site').rglob('*.py')),
-                     *sorted((REPO / 'plugins').glob('*.py'))]:
+        for file in sorted((REPO / 'src/lhtml_site').rglob('*.py')):     # its code and its plugins
             for match in re.finditer(r"meta\[\s*'([a-z_]+)'\s*\]\s*=(?!=)", file.read_text(encoding='utf-8')):
                 written.setdefault(match.group(1), file.name)
         unreserved = {key: name for key, name in written.items() if key not in known}
@@ -233,10 +245,10 @@ class ReservedKeysAndWatchTests(unittest.TestCase):
             self.assertEqual(paths, [root / 'ext/e1', root / 'ext/e1'])
 
     def test_design_files_follow_extends(self):
-        files = design.design_files(REPO / 'themes/slides-pdf')
+        files = design.design_files(REPO / 'src/lhtml_site/themes/slides-pdf')
         self.assertEqual([f.resolve() for f in files],
-                         [(REPO / 'themes/slides-pdf/design.yaml').resolve(),
-                          (REPO / 'themes/slides/design.yaml').resolve()])
+                         [(REPO / 'src/lhtml_site/themes/slides-pdf/design.yaml').resolve(),
+                          (REPO / 'src/lhtml_site/themes/slides/design.yaml').resolve()])
 
 
 class ReservedConfigTests(unittest.TestCase):

@@ -44,7 +44,7 @@ def test_nested_fixed_element_lines_and_changes(tmp_path):
                     "background-color:rgb(200,0,0);] ::\n::\n")
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     run = lambda: subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
                                  capture_output=True, text=True, timeout=90)
     assert run().returncode == 0
@@ -71,7 +71,7 @@ def test_a_block_of_an_included_file_names_that_file(tmp_path):
     (source / 'parts/bloc.j2').write_text('* premier item\n* second item\n')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
                             capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -95,7 +95,7 @@ def test_the_design_rules_do_not_judge_the_typography_of_an_overlay(tmp_path):
         "{data-lhtml-role=body}\nsmall text asked to be judged\n::\n")
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
                             capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -148,7 +148,7 @@ def test_formulas_svg_figures_auto_rows_and_render(tmp_path):
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
                                       'plugin': [],
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     run = lambda *extra: subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), *extra],
                                         capture_output=True, text=True, timeout=120)
     result = run('--layout')
@@ -211,7 +211,7 @@ def test_svg_checks_edge_cases(tmp_path):
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src',
                                       'plugin': [],
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     start = time.monotonic()
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
                             capture_output=True, text=True, timeout=170)
@@ -285,7 +285,7 @@ def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path)
         'el.textContent = "Legacy delayed setup"; document.body.append(el); }, 300);</script>')
     config = tmp_path / 'configure.yaml'
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'plugin': [],
-                                      'theme': str(REPO / 'themes/slides')}))
+                                      'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
                             cwd=REPO, capture_output=True, text=True, timeout=90)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -300,7 +300,7 @@ def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path)
 @pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
 def test_the_chrome_asked_for_wins_and_an_installed_one_is_the_last_resort():
     """plugins/assets/chrome.js decides which Chrome the scripts run."""
-    script = ("const c = require('" + str(REPO / 'plugins/assets/chrome.js') + "');"
+    script = ("const c = require('" + str(REPO / 'src/lhtml_site/plugins/assets/chrome.js') + "');"
               "console.log(JSON.stringify({asked: c.executablePath({chrome: '/bin/given'}),"
               " env: c.executablePath({}), installed: c.installedChrome(),"
               " options: c.launchOptions({chrome: '/bin/given'}, {headless: true})}));")

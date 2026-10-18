@@ -77,7 +77,7 @@ class AssetsBuildTests(unittest.TestCase):
 
     def build(self):
         self.write('configure.yaml', yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                                     'theme': str(REPO / 'themes/slides'),
+                                                     'theme': str(REPO / 'src/lhtml_site/themes/slides'),
                                                      'plugin': []}))
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-v', '-i', str(self.root / 'configure.yaml')],
                                 capture_output=True, text=True)

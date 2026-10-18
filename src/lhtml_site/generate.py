@@ -44,7 +44,7 @@ from lhtml_site import logger
 from lhtml_site import pages
 from lhtml_site import pdf_export
 from lhtml_site import project
-from lhtml_site.configuration import BuildContext, ConfigError, load_config, validate_paths
+from lhtml_site.configuration import BuildContext, ConfigError, in_package, load_config, validate_paths
 from lhtml_site import layout_options
 from lhtml_site.build_output import links_out_of, staged_site
 from lhtml_site.structure import documents_directory
@@ -123,12 +123,14 @@ def parse_arguments():
 
 def resolve_plugin_path(meta, plugin_path):
     """Find a plugin file: an absolute path, or a path relative to the
-    configuration directory, then to the generator (its own plugins/)."""
+    configuration directory, then to the generator (its own plugins/). A path
+    into a checkout of the generator finds its plugins in the package."""
     if os.path.isabs(plugin_path):
         return plugin_path if os.path.isfile(plugin_path) else None
     for base in (meta['config_directory'], meta['lib_directory']):
-        if (base / plugin_path).is_file():
-            return (base / plugin_path).as_posix()
+        candidate = in_package(base / plugin_path)
+        if candidate.is_file():
+            return candidate.as_posix()
     return None
 
 
@@ -208,7 +210,7 @@ def other_sources(selected):
 
 
 # Guide of the procedure for AI agents, copied into each project (.structure/agents.md)
-AGENTS_GUIDE = Path(__file__).resolve().parents[2] / 'docs' / 'agents.md'
+AGENTS_GUIDE = Path(__file__).resolve().parent / 'docs' / 'agents.md'
 
 
 def prepare_data(meta, selected, built, log):
@@ -926,7 +928,7 @@ def generate_site(meta, selected, built):
 def main():
     if int(lhtml.__version__.split('.')[0]) < 3:
         # LHTML 2 ignores the `media` resolver and expands include:: on its own
-        sys.exit('static_website_lhtml requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')
+        sys.exit('lhtml-site requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')
     args = parse_arguments()
     if args.serve or args.watch:
         from lhtml_site.development import develop

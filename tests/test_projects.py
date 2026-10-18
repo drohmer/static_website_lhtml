@@ -88,7 +88,7 @@ class SiteDiscoveryTests(DeckProjectsTests):
     def test_file_links_of_the_theme_are_not_written_through(self):
         shared = self.root / 'shared/menu.js'
         theme = self.root / 'theme'
-        shutil.copytree(REPO / 'themes/slides', theme)
+        shutil.copytree(REPO / 'src/lhtml_site/themes/slides', theme)
         shared.parent.mkdir()
         shutil.move(theme / 'js/menu.js', shared)
         os.symlink(str(Path('../../shared/menu.js')), theme / 'js/menu.js')
@@ -126,7 +126,7 @@ class WithoutDeckTests(unittest.TestCase):
         self.root = Path(temp.name).resolve()
         self.config = self.root / 'config.yaml'
         self.config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
-                                               'theme': str(REPO / 'themes/slides')}))
+                                               'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
 
     def write(self, name, text):
         path = self.root / 'src' / name

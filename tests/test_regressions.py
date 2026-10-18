@@ -29,7 +29,7 @@ class GeneratorRegressions(unittest.TestCase):
         self.config.write_text(yaml.safe_dump({
             'source_directory': str(self.source),
             'site_directory': str(self.site),
-            'theme': str(REPO / 'themes/webpage-frame'),
+            'theme': str(REPO / 'src/lhtml_site/themes/webpage-frame'),
         }))
 
     def page(self, name, title):

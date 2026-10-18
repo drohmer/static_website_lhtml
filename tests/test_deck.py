@@ -136,7 +136,7 @@ class DeckGenerationTests(unittest.TestCase):
 
     def build(self, deck_value=None, *args):
         config = {'source_directory': 'src', 'site_directory': 'site',
-                  'theme': str(REPO / 'themes/slides'), 'plugin': []}
+                  'theme': str(REPO / 'src/lhtml_site/themes/slides'), 'plugin': []}
         if deck_value is not None:
             config['deck'] = deck_value
         self.config.write_text(yaml.safe_dump(config))
@@ -206,7 +206,7 @@ class DeckProjectsTests(unittest.TestCase):
         self.config = self.root / 'talk/config.yaml'
         self.config.write_text(yaml.safe_dump({
             'source_directory': 'src', 'site_directory': 'site', 'deck': 'deck.yaml',
-            'theme': str(REPO / 'themes/slides'), 'plugin': []}))
+            'theme': str(REPO / 'src/lhtml_site/themes/slides'), 'plugin': []}))
 
     def write(self, name, text):
         path = self.root / name

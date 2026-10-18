@@ -133,11 +133,11 @@ def input_snapshot(meta, entry, extra=()):
     engine = meta.get('_dependency_engine')
     if engine is None:
         engine = {}
-        for directory in ('src/lhtml_site', 'plugins'):
-            for path in scope_files(Path(meta['lib_directory']) / directory, 'engine'):
-                if path.suffix in ('.py', '.js'):
-                    path = canonical_input(path, meta)
-                    engine[str(path)] = {'sha256': file_hash(path, cache), 'kind': 'engine'}
+        package = Path(meta['lib_directory'])          # its code and its plugins, not its themes
+        for path in scope_files(package, 'engine'):
+            if path.suffix in ('.py', '.js') and path.relative_to(package).parts[0] not in ('themes', 'example'):
+                path = canonical_input(path, meta)
+                engine[str(path)] = {'sha256': file_hash(path, cache), 'kind': 'engine'}
         meta['_dependency_engine'] = engine
     files.update(engine)
     for path in extra:

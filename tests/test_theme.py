@@ -29,10 +29,10 @@ def test_a_theme_with_no_manifest_builds_as_before(tmp_path):
 def test_the_themes_shipped_declare_what_the_engine_used_to_assume():
     """The slides answers were the defaults of the engine for all three
     themes; each theme now says its own."""
-    assert theme.read(REPO / 'themes/slides')['layout']['root'] == 'body'
-    assert theme.read(REPO / 'themes/webpage-frame')['layout']['root'] == '#main-content-centered'
+    assert theme.read(REPO / 'src/lhtml_site/themes/slides')['layout']['root'] == 'body'
+    assert theme.read(REPO / 'src/lhtml_site/themes/webpage-frame')['layout']['root'] == '#main-content-centered'
     for name in ('slides', 'slides-pdf', 'webpage-frame'):
-        assert theme.path(REPO / 'themes' / name).is_file()
+        assert theme.path(REPO / 'src/lhtml_site/themes' / name).is_file()
 
 
 def test_engine_then_theme_then_project(tmp_path):

@@ -10,7 +10,7 @@ import time
 from lhtml_site import deck
 from lhtml_site import design
 from lhtml_site import feedback
-from lhtml_site.configuration import ConfigError, GENERATOR_DIRECTORY, load_config
+from lhtml_site.configuration import ConfigError, GENERATOR_DIRECTORY, in_package, load_config
 
 
 def watch_paths(config, filename, deck_arg=None):
@@ -18,7 +18,7 @@ def watch_paths(config, filename, deck_arg=None):
     themes = [spec['theme'] for spec in (config.targets or {}).values()] or [config.theme]
     paths = [filename, Path(config.source_directory)] + [Path(t) for t in themes]
     for plugin in config.plugin:
-        candidate = filename.parent / plugin
+        candidate = in_package(filename.parent / plugin)
         paths.append(candidate if candidate.is_file() else GENERATOR_DIRECTORY / plugin)
     for include in config.plugin_arg.get('pre_include', []):
         paths.append(filename.parent / include)

@@ -38,7 +38,7 @@ class FrontMatterTests(unittest.TestCase):
 
     def build(self, deck=None, ok=True, **options):
         settings = {'source_directory': 'src', 'site_directory': 'out',
-                    'theme': str(REPO / 'themes/slides'), **options}
+                    'theme': str(REPO / 'src/lhtml_site/themes/slides'), **options}
         if deck is not None:
             (self.root / 'deck.yaml').write_text(yaml.safe_dump(deck))
             settings['deck'] = 'deck.yaml'

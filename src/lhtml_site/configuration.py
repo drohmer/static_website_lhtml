@@ -11,7 +11,7 @@ import re
 from lhtml_site.filesystem import read_yaml
 from lhtml_site.structure import PRIVATE_KEYS
 
-GENERATOR_DIRECTORY = Path(__file__).resolve().parents[2]
+GENERATOR_DIRECTORY = Path(__file__).resolve().parent     # the package: its code, themes/, plugins/, example/
 RENAMED_DIRECTORIES = {'theme_templates': 'themes', 'src_site_example': 'example'}   # in 3.0
 
 
@@ -164,6 +164,22 @@ def _chrome_executable(values, config_directory):
 TARGET_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_-]*$')
 
 
+def in_package(path):
+    """A path into a checkout of the generator as the projects write it
+    (a submodule): its themes/, plugins/ and example/ were at the root of the
+    repository, and are in its package now (src/lhtml_site/). The same path
+    in the package when it exists there, else the path unchanged."""
+    path = Path(path)
+    if path.exists():
+        return path
+    for i, part in enumerate(path.parts):
+        if part in ('themes', 'plugins', 'example'):
+            moved = Path(*path.parts[:i], 'src', 'lhtml_site', *path.parts[i:])
+            if moved.exists():
+                return moved
+    return path
+
+
 def theme_directory(value, config_directory):
     """A theme given as a directory (relative to the configuration) or as the
     name of a theme of the generator ('slides')."""
@@ -172,7 +188,7 @@ def theme_directory(value, config_directory):
         directory = config_directory / directory
     if not directory.is_dir() and (GENERATOR_DIRECTORY / 'themes' / value).is_dir():
         directory = GENERATOR_DIRECTORY / 'themes' / value
-    return directory.resolve()
+    return in_package(directory).resolve()
 
 
 def _decks_and_targets(values, data, config_directory):
@@ -299,8 +315,10 @@ def load_config(filename, debug_override=None):
             directory = path.parent / directory
         if key == 'theme':          # a directory, or the name of a theme of the generator
             directory = theme_directory(value, path.parent)
+        elif key == 'source_directory':
+            directory = in_package(directory)
         if key in ('source_directory', 'theme') and not directory.is_dir():
-            renamed = Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts])
+            renamed = in_package(Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts]))
             if renamed.is_dir():
                 raise ConfigError(f"'{key}': '{directory.as_posix()}' was renamed "
                                   f"'{renamed.as_posix()}' (3.0): update '{key}'")

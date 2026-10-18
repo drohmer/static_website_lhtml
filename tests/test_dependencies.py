@@ -23,7 +23,7 @@ def setup(tmp_path):
     config.write_text('source_directory: src')
     meta = {'config_directory': str(tmp_path), 'source_directory': str(source),
             'theme': str(theme), 'site_directory': str(site), 'config_file': str(config),
-            'lib_directory': str(Path(__file__).resolve().parents[1]), 'plugin_paths': [],
+            'lib_directory': str(Path(__file__).resolve().parents[1] / 'src/lhtml_site'), 'plugin_paths': [],
             'dependency_contexts': {}, 'log': Log()}
     page = Page(Source(None, str(source) + '/'), '', 'a.html.j2')
     page.name = page.template

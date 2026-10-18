@@ -34,7 +34,7 @@ class VideoCacheTests(unittest.TestCase):
         config = self.root / 'configure.yaml'
         config.write_text(yaml.safe_dump({
             'source_directory': 'src', 'site_directory': 'out',
-            'theme': str(REPO / 'themes/webpage-frame'), **options}))
+            'theme': str(REPO / 'src/lhtml_site/themes/webpage-frame'), **options}))
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config)],
                                 cwd=self.root, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

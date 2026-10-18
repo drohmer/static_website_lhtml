@@ -33,7 +33,7 @@ class MenuPublicationTests(unittest.TestCase):
 
     def build(self, **options):
         config = self.root / 'configure.yaml'
-        options.setdefault('theme', str(REPO / 'themes/webpage-frame'))
+        options.setdefault('theme', str(REPO / 'src/lhtml_site/themes/webpage-frame'))
         config.write_text(yaml.safe_dump({
             'source_directory': 'src', 'site_directory': 'out', **options}))
         result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config)],
@@ -52,7 +52,7 @@ class MenuPublicationTests(unittest.TestCase):
         """The extra keys are the theme's business: a project cannot know
         what its theme's menu displays (theme.yaml, `toc: keys:`)."""
         theme = self.root / 'theme'
-        shutil.copytree(REPO / 'themes/webpage-frame', theme)
+        shutil.copytree(REPO / 'src/lhtml_site/themes/webpage-frame', theme)
         (theme / 'theme.yaml').write_text(yaml.safe_dump(
             {'toc': {'file': 'js/menu.js', 'keys': ['duration']}}))
         text, toc = self.build(theme=str(theme))
@@ -64,7 +64,7 @@ class MenuPublicationTests(unittest.TestCase):
         """A theme that declares no `toc:` has no menu, and the build does
         not invent one."""
         theme = self.root / 'bare'
-        shutil.copytree(REPO / 'themes/webpage-frame', theme)
+        shutil.copytree(REPO / 'src/lhtml_site/themes/webpage-frame', theme)
         (theme / 'theme.yaml').write_text('template: \'theme/template/base.html\'\n')
         config = self.root / 'configure.yaml'
         config.write_text(yaml.safe_dump({

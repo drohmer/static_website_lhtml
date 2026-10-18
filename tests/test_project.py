@@ -62,7 +62,7 @@ class PlanTests(ProjectTests):
         self.assertEqual(first.source_directory, self.root / 'src/01_a')
         self.assertEqual(first.site_directory, self.root / '_site/01_a/html')
         self.assertEqual(first.cache_video_directory, self.root / 'cache/01_a')
-        self.assertEqual(first.theme, REPO / 'themes/slides')
+        self.assertEqual(first.theme, REPO / 'src/lhtml_site/themes/slides')
         self.assertEqual(builds[1].export_name, '01_a')
 
     def test_only_names_decks_or_pages_of_a_deck(self):
@@ -121,14 +121,14 @@ class PlanTests(ProjectTests):
             project.plan(self.config(decks='directories'))
 
     def test_a_theme_of_the_generator_by_its_name(self):
-        self.assertEqual(self.config(theme='slides').theme, REPO / 'themes/slides')
+        self.assertEqual(self.config(theme='slides').theme, REPO / 'src/lhtml_site/themes/slides')
 
     def test_the_target_themes_are_watched(self):
         from lhtml_site.development import watch_paths
         config = self.config(targets={'html': {'theme': 'slides'}, 'pdf': {'theme': 'slides-pdf'}})
         paths = watch_paths(config, self.file)
-        self.assertIn(REPO / 'themes/slides', paths)
-        self.assertIn(REPO / 'themes/slides-pdf', paths)
+        self.assertIn(REPO / 'src/lhtml_site/themes/slides', paths)
+        self.assertIn(REPO / 'src/lhtml_site/themes/slides-pdf', paths)
 
     def test_a_missing_theme_of_a_target_stops_a_build_not_a_clean(self):
         self.write(decks='directories', targets={'html': {'theme': 'slides'}})
@@ -277,7 +277,7 @@ class BuildTests(ProjectTests):
         self.page('src/02_b/01_x/index.html.j2', '= X\n{{ "abc" | nofilter }}\n')
         theme = self.root / 'mytheme'
         import shutil
-        shutil.copytree(REPO / 'themes/slides', theme)
+        shutil.copytree(REPO / 'src/lhtml_site/themes/slides', theme)
         base = theme / 'template/base.html'
         lines = base.read_text().split('\n')
         lines[6] = '{{ nothere.x }}'
