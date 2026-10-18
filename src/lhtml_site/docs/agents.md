@@ -1,7 +1,7 @@
-# Writing slides with static_website_lhtml: guide for AI agents
+# Writing slides with lhtml-site: guide for AI agents
 
 This guide is for an agent (LLM) that writes or edits the slides of a
-project built with static_website_lhtml. It is copied into every built site
+project built with lhtml-site. It is copied into every built site
 as `.structure/agents.md`, next to the configuration. The README of the
 generator is the full reference;
 this page is the procedure.
@@ -22,8 +22,10 @@ this page is the procedure.
 
 ## Commands
 
-Run them from the directory of `configure.yaml`, with
-`python <generator>/generate.py`:
+Run them from the directory of `configure.yaml`, with the command
+`lhtml-site`, or `python <generator>/generate.py` when the generator is a
+checkout in the project (a submodule); the table writes `generate.py` for
+either:
 
 | Command | Use |
 |---|---|

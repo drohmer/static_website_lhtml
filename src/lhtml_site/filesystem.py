@@ -1,4 +1,4 @@
-"""File system utilities for static_website_lhtml."""
+"""File system utilities for lhtml-site."""
 
 import heapq
 import os

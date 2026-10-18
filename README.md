@@ -1,20 +1,37 @@
-# Static Website LHTML
+# lhtml-site
 
-A static site generator built on [LHTML](https://github.com/drohmer/lhtml) and Jinja2. Transforms template sources (`.html.j2` with LHTML markup) into a complete static website.
+A static site generator built on [LHTML](https://github.com/drohmer/lhtml) and Jinja2. Transforms template sources (`.html.j2` with LHTML markup) into a complete static website. It was named `static_website_lhtml`.
 
 ## Installation
+
+```bash
+pipx install git+https://github.com/drohmer/lhtml-site
+```
+
+This installs the command `lhtml-site` (`pip install git+https://github.com/drohmer/lhtml-site`
+in a virtual environment does the same). The package is not on PyPI yet.
+
+**From a checkout** - a clone, or a submodule of a project:
 
 ```bash
 git clone https://github.com/drohmer/lhtml-site.git
 cd lhtml-site
 pip install -r requirements.txt
+python generate.py ...            # the same as lhtml-site ...
 ```
+
+`generate.py` at the root of the repository runs the generator of the
+checkout (its code is in `src/lhtml_site/`), so the projects that include it
+as a submodule call `python <submodule>/generate.py` as before, and keep
+naming its files as `<submodule>/themes/slides/` or
+`<submodule>/plugins/pre_include.py` (they are found in `src/lhtml_site/`).
+`pip install -e .` in a checkout installs the command from it.
 
 **Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
 
 **Required**, and that is all a site of HTML pages or slides needs:
 `lhtml-markup` (3.0 or later), `Jinja2`, `jinja-markdown`, `pytidylib`,
-`pyyaml`, `rich` - installed by the `pip install` above. No Node, no browser,
+`pyyaml`, `rich` - installed by either `pip install` above. No Node, no browser,
 no other program.
 
 **Systems**: Linux, macOS and Windows. The tests run on Linux in CI and on
@@ -25,12 +42,24 @@ reliable launcher: another program may put its own `python` first in the
 `PATH`.
 
 **Optional**, each unlocking one feature and needed only for it:
-- **PDF export** (a target whose theme says `export: pdf`, such as `slides-pdf`, see [Decks and targets](#decks-and-targets)): Node.js, then `npm install` in this directory (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `<deck>.pdf` (`slides.pdf` for a project of one deck) and `images/` next to the site directory of the target, and that site directory is not published (kept with `-d`; a later build without `-d` removes it). `--only` on such a target rebuilds it whole.
+- **PDF export** (a target whose theme says `export: pdf`, such as `slides-pdf`, see [Decks and targets](#decks-and-targets)): Node.js, then `npm install` in the checkout (installs `puppeteer`, which downloads a headless Chrome, and `minimist`, see `package.json`), plus `pdfunite`/`pdftoppm` (poppler) and ImageMagick (`magick`) for the slide images. Recent npm versions do not run the install script of `puppeteer`, so Chrome is not downloaded: run `npx puppeteer browsers install chrome`, or point the configuration key `chrome` (or `PUPPETEER_EXECUTABLE_PATH`) at a Chrome already installed. The HTML it renders is an intermediate: the export publishes `<deck>.pdf` (`slides.pdf` for a project of one deck) and `images/` next to the site directory of the target, and that site directory is not published (kept with `-d`; a later build without `-d` removes it). `--only` on such a target rebuilds it whole.
 - **Layout report** (`--layout`, `--render`): Node.js and `npm install` in
-  this directory. If `npm install` leaves no Chrome behind (recent npm
+  the checkout. If `npm install` leaves no Chrome behind (recent npm
   versions skip that step), run `npx puppeteer browsers install chrome`; a
   Chrome already installed on the machine is used as a last resort, and the
   configuration key `chrome` names one explicitly.
+
+  *Node with an installation by pip (or pipx)*, for both: the Node scripts are in the
+  package (`lhtml_site/plugins/assets/`), and Node looks for `puppeteer`
+  and `minimist` from there upwards: in a checkout, that is the
+  `node_modules/` of `npm install`; in an installation, nothing is found, and
+  the build says `puppeteer not found`. Install them anywhere and name that
+  directory with `NODE_PATH`:
+
+  ```bash
+  npm install --prefix ~/.lhtml-site puppeteer minimist
+  export NODE_PATH=~/.lhtml-site/node_modules
+  ```
 - **Videos in several codecs** (`cache_video_directory:`): `ffmpeg`, and `ffpb` for
   the progress bar (`pip install ffpb`).
 - **Code snippets from other repositories** (`code_include.py`): `git`.
@@ -39,24 +68,22 @@ reliable launcher: another program may put its own `python` first in the
 
 ## Quick Start
 
-```bash
-python generate.py -i configure_example.yaml
-```
-
-This generates a site from `example/` into `.site/` using the default theme.
-
-For your own project, copy and edit the config:
+In an empty directory:
 
 ```bash
-cp configure_example.yaml configure.yaml
-# Edit configure.yaml with your source/theme paths
-python generate.py
+lhtml-site --example     # writes example/ and configure.yaml here
+lhtml-site               # builds the site from example/ into .site/, with the default theme
+lhtml-site --serve       # previews it on http://127.0.0.1:8000/
 ```
+
+For your own project, edit `configure.yaml` (commented: source directory,
+theme, plugins) and replace `example/` with your sources. From a checkout,
+`python <checkout>/generate.py` takes the place of `lhtml-site`.
 
 ## CLI Options
 
 ```
-python generate.py [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT] [--example]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -v, --verbose        Display the stages of the build, their time, and what they did
@@ -78,12 +105,13 @@ python generate.py [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--on
   --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
                        (relative to the current directory, else to the configuration file)
   --scaffold           Create the source of the deck slides that do not exist yet
+  --example            Write the example project (example/, configure.yaml) in the current directory
 ```
 
 ## Local preview
 
 ```bash
-python generate.py --serve --watch
+lhtml-site --serve --watch
 ```
 
 The server binds only to localhost. Open the printed URL, and refresh the browser after a rebuild (the server asks the browser to check every file again, `Cache-Control: no-cache`: a page rebuilt after an edit of the deck never runs with the previous menu, which gives the previous and next pages). `--serve` can be used alone; `--watch` can rebuild without an HTTP server. Stop with Ctrl+C. The watcher polls inputs and waits for saves to settle. It watches the source, theme, YAML configuration, deck and design files (with the files they `extends`), configured plugin files and `pre_include` files. It does not follow directory symlinks or watch remote repositories. With `--only`, each edit regenerates only those pages. Changes to assets and configuration are included. Invalid edits leave the previous site available, and a later edit retries the build.
@@ -106,8 +134,8 @@ Builds run in a hidden temporary sibling directory. Only a successful build repl
 ### Generating some pages (`--only`)
 
 ```bash
-python generate.py --only 03_squelette/04_ik --layout   # one slide, and its layout report
-python generate.py --only 02_rotations --only inf585:04_interpolation_position/content/07_hermite
+lhtml-site --only 03_squelette/04_ik --layout   # one slide, and its layout report
+lhtml-site --only 02_rotations --only inf585:04_interpolation_position/content/07_hermite
 ```
 
 `--only` takes pointers written as in a deck (directory, file, glob,
@@ -146,7 +174,7 @@ their agent goes to `.structure/`, next to the configuration: `agents.md`
 `todo.md` (the planned figures and slides). A custom theme that needs another
 page setting in the site declares it with `public_page_keys:`.
 
-Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lib/configuration.py`.
+Configuration precedence is **built-in defaults → the selected YAML file → explicit CLI options**. Only one YAML file is loaded: `configure_example.yaml` is a commented example, not a second layer of defaults. The authoritative defaults are in `Config` in `lhtml_site/configuration.py`.
 
 Relative paths are resolved from the YAML file's directory, independent of the shell's working directory. Absolute paths and `~` are supported. If omitted, `site_directory` defaults to `.site/`, `source_directory` to `src_site/`, and `theme` to the generator's bundled `webpage-frame` theme. The default `plugin` list is empty: everything a bundled theme needs is a stage of the build - the page placed in the template of its theme, the heading ids, the menu, the index of a site that has none. A project lists only its own extensions, and the theme declares whether it has a menu (see [Theme](#theme-what-it-declares-about-the-build)). An explicitly configured relative theme path is relative to the YAML file.
 
@@ -157,7 +185,7 @@ The output directory must not overlap the source or theme directory, even via sy
 Check a project without running plugins, generating the site, or deleting outputs:
 
 ```bash
-python generate.py -i configure.yaml --check-config
+lhtml-site -i configure.yaml --check-config
 ```
 
 This reports the resolved paths, selected plugin files and logging settings. Missing plugins fail validation before the previous site is touched. The check validates plugin file presence, not plugin execution or optional external dependencies. `--check-config` takes precedence if combined with `--clean`.
@@ -174,7 +202,7 @@ Optional keys:
 | `plugin_arg` | Arguments passed to specific plugins |
 | `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
 | `chrome` | Chrome executable run by the Node scripts (layout report, PDF export, `--render`), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
-| `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lib/headings.py`; default: true) |
+| `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lhtml_site/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
 | `decks` | `directories`: each directory of the sources is a deck, built as a site of its own (see [Decks and targets](#decks-and-targets)) |
@@ -299,12 +327,15 @@ deck, then of the site (`theme/template/base.html`).
 ## Project Structure
 
 ```
-static_website_lhtml/
-  generate.py              # Main generator
-  configure_example.yaml   # Commented example configuration
+lhtml-site/
+  generate.py              # Runs the generator of the checkout (python generate.py = lhtml-site)
+  pyproject.toml           # The package lhtml-site and its command
   requirements.txt         # Python dependencies (requirements-lock.txt: versions, requirements-dev.txt: tests)
   package.json             # Node dependencies (puppeteer: PDF export, layout report)
-  lib/
+  tests/                   # pytest suite
+  src/lhtml_site/          # The package: its code, and the files it reads next to it
+    generate.py            # The pipeline, and the command (main)
+    configure_example.yaml # Commented example configuration (--example)
     build_output.py        # Build in a staging directory, published only on success
     configuration.py       # Validated Config and BuildContext plugin adapter
     development.py         # --serve / --watch, server of the comments
@@ -342,17 +373,16 @@ static_website_lhtml/
       build.py             # The analysis of a build (--layout): which pages, what to keep, where
     structure.py           # Pages of the site for plugins (structure, built_pages),
                            #   what may be published, and .structure/ of a project
-  plugins/
-    pre_include.py         # Pre-include content into templates
-    code_include.py        # Include code from external repos
-    assets/                # Node scripts of the PDF export and of the layout report
-  tests/                   # pytest suite
-  themes/                  # each with theme.yaml (contract with the build)
-    webpage-frame/         #   and, for the slides, design.yaml (tokens, macros)
-    slides/                # Presentation slides theme
-    slides-pdf/            # PDF export slides theme
-  docs/agents.md           # Procedure for AI agents writing slides (copied into .structure/)
-  example/                 # Example source content
+    plugins/
+      pre_include.py       # Pre-include content into templates
+      code_include.py      # Include code from external repos
+      assets/              # Node scripts of the PDF export and of the layout report
+    themes/                # each with theme.yaml (contract with the build)
+      webpage-frame/       #   and, for the slides, design.yaml (tokens, macros)
+      slides/              # Presentation slides theme
+      slides-pdf/          # PDF export slides theme
+    docs/agents.md         # Procedure for AI agents writing slides (copied into .structure/)
+    example/               # Example source content
 ```
 
 ## Themes
@@ -371,7 +401,7 @@ as the content of a page - see
 
 ## Writing slides with an AI agent
 
-[`docs/agents.md`](docs/agents.md) is the procedure for an agent (LLM) that
+[`src/lhtml_site/docs/agents.md`](src/lhtml_site/docs/agents.md) is the procedure for an agent (LLM) that
 writes or edits slides: plan in the deck, layouts and macros, `--only
 --layout`, `--lint`, how to read the report and when to stop. It does not
 depend on the agent used. Each build copies it into `.structure/agents.md` of
@@ -496,7 +526,7 @@ the PDF export and the layout report follow the deck. The sitemap ids
 (`pathTo_<id>`, `linkTo_<id>`) are given to the pages of the project first,
 so adding pages of other projects or repeated slides does not change them.
 `--check-config` also reads the deck and the design (sources, macros). Several decks can share
-the same sources (`python generate.py --deck deck_short.yaml`).
+the same sources (`lhtml-site --deck deck_short.yaml`).
 
 ## Theme: what it declares about the build
 
@@ -611,7 +641,7 @@ variant) styled by its `css` in `design.yaml` (`layouts:` with `css` and
 `doc`, documented in `.structure/design.md`); the `design` key adds or
 removes layouts like macros.
 
-**Lint.** `python generate.py --lint` lists the values written by hand in the
+**Lint.** `lhtml-site --lint` lists the values written by hand in the
 pages, including those not in the deck, with what replaces them in the
 design: positions (`position:fixed`, `top`, `left`), spacers
 (`div::[height:25px;]::` → `gap::`), font sizes in percent (→ `small::`,
@@ -650,7 +680,7 @@ Each build gives their number (the style debt of the deck), and the layout
 report lists them per page (column `lint` of `summary.md`). What LHTML does
 not read as text is not linted: code and verbatim blocks, inline code, math,
 comments (the lint, the source map and the credits read the sources with the
-patterns of LHTML itself, `lib/source_scan.py`). A value that nothing in the
+patterns of LHTML itself, `lhtml_site/source_scan.py`). A value that nothing in the
 design covers (an annotation drawn over a figure) can stay.
 
 The generator:
@@ -755,7 +785,7 @@ warning with the error.
 A plugin (an extension of the project, `plugin:` of the configuration) is a
 Python file that transforms the pages: it receives content and returns
 content, and the build reads and writes the files - in the site, never in
-the sources (`lib/extensions.py`).
+the sources (`lhtml_site/extensions.py`).
 
 ```python
 def prepare(context):                  # once per build, before the pages
@@ -799,8 +829,8 @@ A plugin is called for the pages generated by this build (all of them, or those 
 
 The page placed in the template of its theme, the heading ids, the menu,
 the index of a site that has none and the transcoded videos used to be
-plugins; they are stages of the build (`lib/wrap.py`, `lib/headings.py`,
-`lib/menu.py`, `lib/index_page.py`, `lib/video_cache.py`). A configuration
+plugins; they are stages of the build (`lhtml_site/wrap.py`, `lhtml_site/headings.py`,
+`lhtml_site/menu.py`, `lhtml_site/index_page.py`, `lhtml_site/video_cache.py`). A configuration
 that still lists one of them is refused by name.
 
 ## Layout Report (LLM-assisted slide layout)
@@ -820,8 +850,8 @@ theme or the site, and an option of the wrong shape (`jobs`,
 written.
 
 ```bash
-python generate.py --layout          # full generation + layout report
-python generate.py --only 03_squelette/04_ik --layout   # after editing a slide
+lhtml-site --layout          # full generation + layout report
+lhtml-site --only 03_squelette/04_ik --layout   # after editing a slide
 ```
 
 The measure shows its progress (pages measured, time left). With `--only`,
@@ -1010,7 +1040,7 @@ the line of the template where they start. The blocks are the children of
 the content root the theme declares (`layout: root:` of its `theme.yaml`),
 or of the wrapper of the theme that holds all the content. The generator marks the
 lines of the templates with invisible characters before Jinja and LHTML, then
-moves them to the attribute (`lib/source_map.py`); the lines inside a zone
+moves them to the attribute (`lhtml_site/source_map.py`); the lines inside a zone
 that LHTML keeps as it is (code block, multi-line Jinja or HTML tag, math)
 and inside the Jinja blocks whose content is a value (`{% set x %}`,
 `{% markdown %}`, `{% filter %}`) are not marked. A block written on one line
@@ -1044,7 +1074,7 @@ window.__lhtmlReady.waitUntil(loadAndPrepareTheDemo());   // a promise
 
 Typical loop with an LLM (e.g. Claude Code): "read `.layout/summary.md` and
 the contact sheets, fix the collisions and overflows by editing the sources
-(positions, widths, font sizes), run `python generate.py --only <slide> --layout` and
+(positions, widths, font sizes), run `lhtml-site --only <slide> --layout` and
 check the new report".
 
 Options (`configure.yaml`):
@@ -1107,6 +1137,8 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 Version 3 is a major version: an old form is refused by name, with the
 change to make, rather than accepted with a warning.
 
+- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/`, `example/` and `configure_example.yaml`. `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...`, `<checkout>/plugins/...` and `<checkout>/example/` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site --example` writes the example project in the current directory.
+
 - `configure_default.yaml` is now `configure_example.yaml`.
 - Replace `plugin_post` with `plugin` (all the hooks of a plugin run). `include_head` is gone (it was read nowhere).
 - `.site/` is the output default; an explicit `site_directory` still takes precedence.
@@ -1122,7 +1154,7 @@ change to make, rather than accepted with a warning.
 - The layout report is no longer a plugin: remove `plugins/layout_report.py` from `plugin:` and run the build with `--layout`. Its options move from `plugin_arg: layout_report:` to the configuration key `layout:`. Both old spellings are refused by name, with the change to make; `--check-config` reports them without building anything.
 - `generate_pdf.py` is no longer a plugin: the PDF is a target, `targets: pdf: {theme: slides-pdf}` (the theme declares `export: pdf`), named after its deck. A script that looped over the chapters with a temporary configuration per chapter and per theme is replaced by `decks: directories` and `targets:` (see [Decks and targets](#decks-and-targets)).
 - LHTML 3.0 reads no file: `include::` is refused, with the file it named. Include with Jinja instead, `{% include "part.html" %}` (the path is relative to the sources). A poster is no longer looked for next to a video: write it, `video::clip.mp4{poster="clip.jpg"}`. `wrap-auto` and `directory_include` are no longer passed to LHTML: the theme wraps the page. LHTML 3 also refuses `::name[-]` and `::[-]` (close with `::`), `::#` comments (write `{# ... #}`) and `verbatim::` (write `code::[text]`); `$...$` is text (write `\(...\)`), and a tag inside inline code is literal. The YAML front matter of a page is read by the generator, which removes it before LHTML.
-- For plugins: the directories of `meta` (`source_directory`, `site_directory`, `theme`, `config_directory`, `lib_directory`, `cache_video_directory`) are `pathlib.Path`: join with `/` (`meta['site_directory'] / page_path(entry)`), not `+`. The place of a page in the site stays a string with `/` (`entry['dir']`, `page_path(entry)` of `lib.structure`).
+- For plugins: the directories of `meta` (`source_directory`, `site_directory`, `theme`, `config_directory`, `lib_directory`, `cache_video_directory`) are `pathlib.Path`: join with `/` (`meta['site_directory'] / page_path(entry)`), not `+`. The place of a page in the site stays a string with `/` (`entry['dir']`, `page_path(entry)` of `lhtml_site.structure`).
 - Heading anchors keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
 
 ## Tests
@@ -1145,7 +1177,7 @@ LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_int
 Checking a change against a real deck: a full `--layout` measures every page, which is the slow way. `--only` rebuilds and re-measures the pages named and keeps the reports of the others, so the summary still counts the whole deck:
 
 ```bash
-python generate.py -i <deck>/configure.yaml --layout --only <page> --only <other page>
+lhtml-site -i <deck>/configure.yaml --layout --only <page> --only <other page>
 ```
 
 On a deck of 78 slides, four pages measured this way take 11 s against 45 s, and report the same totals. Measuring a *subset deck* instead would not: the table of contents and the deck norms are computed over the slides present, so a shorter deck has a different navigation, and findings that involve it disappear.

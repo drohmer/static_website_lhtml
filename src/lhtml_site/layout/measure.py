@@ -35,8 +35,8 @@ def run_node(script, arguments, label=None, chrome=None, log=None):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 encoding='utf-8', errors='replace')
     except FileNotFoundError:
-        raise RuntimeError('node not found: install Node.js, then run `npm install` '
-                           'in the static_website_lhtml directory')
+        raise RuntimeError('node not found: install Node.js, then puppeteer (`npm install` in a '
+                           'checkout of the generator; installed with pip: see NODE_PATH in its README)')
     errors = []
     reader = threading.Thread(target=lambda: errors.extend(proc.stderr))   # no deadlock on a full pipe
     reader.start()
@@ -59,7 +59,8 @@ def run_node(script, arguments, label=None, chrome=None, log=None):
         if line.startswith('chrome:') and log is not None:
             log.warning(line)
     if 'Cannot find module' in stderr:
-        raise RuntimeError('puppeteer not found: run `npm install` in the static_website_lhtml directory')
+        raise RuntimeError('puppeteer not found: run `npm install` in the checkout of the generator; '
+                           'installed with pip, the generator finds it through NODE_PATH (see its README)')
     if 'Could not find Chrome' in stderr or 'Browser was not found' in stderr:
         raise RuntimeError('Chrome not found: run `npx puppeteer browsers install chrome` '
                            '(npm may skip the download of puppeteer), or give the Chrome to run '
