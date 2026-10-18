@@ -13,7 +13,7 @@ pip install -r requirements.txt
 **Python**: 3.11 or newer. Runtime and transitive dependencies are pinned in `requirements-lock.txt`; `requirements.txt` applies these constraints. Use `npm ci` to install the locked Node dependencies.
 
 **Required**, and that is all a site of HTML pages or slides needs:
-`lhtml-markup` (3.0, not on PyPI yet: `requirements.txt` installs it from GitHub at a fixed commit), `Jinja2`, `jinja-markdown`, `pytidylib`,
+`lhtml-markup` (3.0 or later), `Jinja2`, `jinja-markdown`, `pytidylib`,
 `pyyaml`, `rich` - installed by the `pip install` above. No Node, no browser,
 no other program.
 
