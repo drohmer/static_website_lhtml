@@ -20,7 +20,7 @@ macros of Jinja.
 import html
 import re
 
-from lhtml.code import export_html_code
+import lhtml
 from markdown_it import MarkdownIt
 
 # A fence: ``` or ~~~, closed by a run of the same character at least as long
@@ -87,7 +87,7 @@ def _heading_ids(state):
 def _fence(self, tokens, k, options, env):
     token = tokens[k]
     language = token.info.split(maxsplit=1)[0] if token.info.strip() else ''
-    return export_html_code(token.content, language, warn=False)
+    return lhtml.highlight(token.content, language)
 
 
 _parser = MarkdownIt('commonmark', {'html': True}).enable(['table', 'strikethrough'])

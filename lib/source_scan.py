@@ -21,7 +21,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import cached_property
 import re
-import warnings
 
 import lhtml
 from lhtml import patterns
@@ -130,17 +129,15 @@ class Scan:
         """The LHTML document tree of the text (lhtml.parse, with the macros
         of the design), read once for the scanners that give the same macros;
         None when LHTML refuses the text (`refusal`: the build reports it when
-        it renders the page). Its warnings are silenced: the run of the page
-        warns."""
+        it renders the page). Its problems are not warned: the run of the
+        page warns."""
         documents = self.__dict__.setdefault('_documents', {})
         key = repr(sorted((macros or {}).items()))
         if key not in documents:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                try:
-                    documents[key] = lhtml.parse(self.text, macros=macros or None)
-                except lhtml.LHTMLError as error:
-                    documents[key] = error
+            try:
+                documents[key] = lhtml.parse(self.text, macros=macros or None, warn=False)
+            except lhtml.LHTMLError as error:
+                documents[key] = error
         found = documents[key]
         return None if isinstance(found, lhtml.LHTMLError) else found
 

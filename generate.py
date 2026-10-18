@@ -17,7 +17,6 @@ import sys
 import time
 import traceback
 from pathlib import Path
-import warnings as python_warnings
 
 from lib import deck
 from lib import credits
@@ -493,22 +492,22 @@ def render_lhtml(meta, selected, log, failed_before=()):
 
         # The macros of the design, the video variants, the line breaks; not
         # `wrap-auto`: the theme wraps the page (lib/wrap.py)
-        options = {'macros': meta.get('macros'), 'line_breaks': meta.get('line_breaks', False),
-                   'media': video_cache.media(meta['site_directory'] / page.site_directory)}
+        media = video_cache.media(meta['site_directory'] / page.site_directory)
 
         try:
-            with python_warnings.catch_warnings(record=True) as caught:
-                python_warnings.simplefilter('always')
-                output_html = lhtml.run(input_html, **options) if page.markup == 'lhtml' else input_html
-            for warning in sorted(caught, key=lambda w: (getattr(w.message, 'line', None) or 0,
-                                                         getattr(w.message, 'column', None) or 0)):
-                # where they are in the source, in the order of the page
-                log.warning(warning.message, lhtml_place(input_html, warning.message, page, meta['config_directory']))
+            output_html = input_html
+            if page.markup == 'lhtml':
+                document = lhtml.parse(input_html, macros=meta.get('macros'), warn=False)
+                output_html = lhtml.render(document, line_breaks=meta.get('line_breaks', False), media=media)
+                for problem in document.problems:   # in the order of the page, where they are in the source
+                    log.warning(problem, lhtml_place(input_html, problem, page, meta['config_directory']))
             if meta.get('source_map'):
                 output_html = source_map.apply(output_html)
             if meta.get('feedback'):
                 output_html = feedback.add_script(output_html)
         except Exception as e:
+            for problem in getattr(e, 'problems', ()):     # those LHTML found before its error
+                log.warning(problem, lhtml_place(input_html, problem, page, meta['config_directory']))
             log.error(e, lhtml_place(input_html, e, page, meta['config_directory']))
             failed.append(page)
             discard_page(meta, page)
