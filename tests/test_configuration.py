@@ -180,6 +180,10 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(run('init', 'mon-site').returncode, 0)
         self.assertTrue((project / 'mon-site/configure.yaml').is_file())
         self.assertNotEqual(run('init', 'mon-site').returncode, 0)  # never over a project
+        (project / 'a-file').write_text('')
+        over_a_file = run('init', 'a-file')
+        self.assertIn('is a file', over_a_file.stderr)
+        self.assertNotIn('Traceback', over_a_file.stderr)
         project = project / 'mon-site'                              # the command alone, in the project
         result = run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -194,6 +198,11 @@ class ConfigurationTests(unittest.TestCase):
         config = load_config(self.file)[0]
         self.assertEqual(config.theme, REPO / 'src/lhtml_site/themes/slides')
         self.assertEqual(config.source_directory, REPO / 'src/lhtml_site/example')
+        self.write(source_directory='generator/src_site_example/')    # the new name, as the project writes it
+        with self.assertRaisesRegex(ConfigError, "renamed '[^']*/generator/example' "):
+            load_config(self.file)
+        self.write(source_directory='generator/example/', theme='generator/themes/slides/',
+                   plugin=['generator/plugins/pre_include.py'])
         result = self.cli('--check-config')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertNotIn('not found', result.stdout)

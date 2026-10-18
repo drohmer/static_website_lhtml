@@ -17,7 +17,6 @@ theme: 'webpage-frame'  # The name of a theme of the generator, or a directory.
 # use_tidy: false
 # title_id: true
 # keywords: {}           # Variables exposed to Jinja2 templates.
-# include_head: []
 # chrome: '/Applications/Google Chrome.app'  # Chrome run by the Node scripts (layout
                                              # report, PDF export, --render); without it,
                                              # PUPPETEER_EXECUTABLE_PATH, else the Chrome

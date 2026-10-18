@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from lhtml_site.layout.measure import PUPPETEER_MISSING
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
 SCRIPT = Path(__file__).resolve().parent / 'plugins/assets/template_html_to_pdf.js'
@@ -62,6 +63,8 @@ def export(meta):
                 if result.returncode == 0:
                     break
             else:
+                if 'Cannot find module' in result.stderr:
+                    raise RuntimeError(PUPPETEER_MISSING)
                 lines = result.stderr.strip().splitlines()
                 said = next((line for line in lines if 'Error' in line), lines[0] if lines else result.returncode)
                 raise RuntimeError(f"PDF of {page_path(entry)} not made after {ATTEMPTS} attempts: {said}")

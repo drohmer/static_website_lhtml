@@ -519,8 +519,8 @@ plugin.
 - `lhtml_site/layout/measure.py`: the Node runner and the choice of Chrome - the
   configured one, else `PUPPETEER_EXECUTABLE_PATH`, else the one puppeteer
   downloaded, else an installed Chrome, saying which it took
-  (`plugins/assets/chrome.js`). Done. The Node scripts themselves still sit
-  in `plugins/assets/`, with those of the PDF export; they move when the
+  (`lhtml_site/plugins/assets/chrome.js`). Done. The Node scripts themselves still sit
+  in `lhtml_site/plugins/assets/`, with those of the PDF export; they move when the
   targets do.
 
 ### 5.1 Findings as first-class objects

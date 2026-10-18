@@ -19,6 +19,8 @@ from lhtml_site.layout.report import contact_sheets_html
 # The Node scripts stay next to those of the PDF export for now; they move
 # when the targets do (step 7 of docs/design.md).
 SCRIPTS = Path(__file__).resolve().parents[1] / 'plugins' / 'assets'
+PUPPETEER_MISSING = ('puppeteer not found: run `npm install` in the checkout of the generator; '
+                     'installed with pip, the generator finds it through NODE_PATH (see its README)')
 
 
 def run_node(script, arguments, label=None, chrome=None, log=None):
@@ -59,8 +61,7 @@ def run_node(script, arguments, label=None, chrome=None, log=None):
         if line.startswith('chrome:') and log is not None:
             log.warning(line)
     if 'Cannot find module' in stderr:
-        raise RuntimeError('puppeteer not found: run `npm install` in the checkout of the generator; '
-                           'installed with pip, the generator finds it through NODE_PATH (see its README)')
+        raise RuntimeError(PUPPETEER_MISSING)
     if 'Could not find Chrome' in stderr or 'Browser was not found' in stderr:
         raise RuntimeError('Chrome not found: run `npx puppeteer browsers install chrome` '
                            '(npm may skip the download of puppeteer), or give the Chrome to run '

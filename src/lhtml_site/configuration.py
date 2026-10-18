@@ -321,8 +321,9 @@ def load_config(filename, debug_override=None):
         elif key == 'source_directory':
             directory = in_package(directory)
         if key in ('source_directory', 'theme') and not directory.is_dir():
-            renamed = in_package(Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts]))
-            if renamed.is_dir():
+            # the new name as the configuration writes it (a checkout: found in its package)
+            renamed = Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts])
+            if in_package(renamed).is_dir():
                 raise ConfigError(f"'{key}': '{directory.as_posix()}' was renamed "
                                   f"'{renamed.as_posix()}' (3.0): update '{key}'")
         values[key] = directory.resolve()

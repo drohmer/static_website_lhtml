@@ -1,4 +1,4 @@
-# What the webpage-frame theme declares about the build (lib/theme.py).
+# What the webpage-frame theme declares about the build (lhtml_site/theme.py).
 # The content of a page is inside the frame of the theme, not the page: a
 # project using this theme used to have to write that selector itself, and
 # a project that did not had its whole page measured as a single block.

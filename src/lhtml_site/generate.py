@@ -213,7 +213,7 @@ def other_sources(selected):
 
 
 # Guide of the procedure for AI agents, copied into each project (.structure/agents.md)
-AGENTS_GUIDE = Path(__file__).resolve().parent / 'docs' / 'agents.md'
+AGENTS_GUIDE = GENERATOR_DIRECTORY / 'docs' / 'agents.md'
 
 
 def prepare_data(meta, selected, built, log):
@@ -937,6 +937,8 @@ def init_project(arguments):
     parser.add_argument('directory', nargs='?', default='.',
                         help='Directory of the project (created if needed; default: the current directory).')
     directory = Path(parser.parse_args(arguments).directory)
+    if directory.exists() and not directory.is_dir():
+        sys.exit(f"lhtml-site init: '{directory}' is a file; give an empty or new directory")
     sources, config = directory / 'example', directory / 'configure.yaml'
     for path in (sources, config):
         if path.exists():

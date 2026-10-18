@@ -1,4 +1,4 @@
-# What the slides theme declares about the build (lib/theme.py).
+# What the slides theme declares about the build (lhtml_site/theme.py).
 # The design of the slides - tokens, macros, layouts - is in design.yaml.
 template: 'theme/template/base.html'
 content_block: 'content'
