@@ -50,7 +50,7 @@ def extract_first_matching_line(text_content, expression):
 def analyse_includeadv_match(file_content, it):
     element = extract_bracket_elements(file_content, it.span()[0] + len("includeadv::"))
     arg_includeadv = {}
-    tokens = split_group_with_quote(element['{}'], ",")
+    tokens = split_group_with_quote(element.braces, ",")
     for token in tokens:
         k, v = token.split(':')
         k = k.strip()
