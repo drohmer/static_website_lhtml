@@ -3,6 +3,22 @@
 All notable changes to lhtml-site (`lhtml-site` on PyPI) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- The PDF export runs Chromium through Playwright for Python, with the extra
+  `lhtml-site[pdf]` (playwright, pypdf) and
+  `python -m playwright install --only-shell chromium`: no Node.js, poppler
+  nor ImageMagick. One browser for the deck, a few slides at a time, each
+  printed once ready (fonts, math, images, a frame of each video) instead of
+  after a fixed 4 s; the images are screenshots at 3840 px, the merge is
+  pypdf. The outputs keep their names and layout. `lhtml-site doctor`
+  reports it.
+
+### Changed
+- The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
+  when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
+
 ## [3.0.0] - unreleased
 
 The first release on PyPI. The generator was named `static_website_lhtml`,
