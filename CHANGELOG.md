@@ -3,28 +3,6 @@
 All notable changes to lhtml-site (`lhtml-site` on PyPI) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
-
-### Changed
-- The "Page content" column of the theme webpage-frame is read in the page
-  (its level-2 headings with an id), not fetched from a JSON file: it is
-  shown when the site is opened from disk (`file://`), where it was empty,
-  and lists the headings as the page shows them (`== One **bold**` is
-  "One bold", it was "One \*\*bold\*\*").
-- A heading whose text comes from Jinja gets its id from its text as
-  rendered, unique in its page: each occurrence of a page reused with
-  `params` has the id of its own title (`interpolation_de_key_l1`; it was
-  `_parties[current__1]_id2_l1`, the same source for all of them), and
-  each heading of a `{% for %}` loop has its own. The ids of the headings
-  written as text do not change: links into published sites keep working.
-
-### Removed
-- The site no longer holds `<page>.title_id.json`, `title_id.json` nor
-  `structure/title_id.json` (144 files, 592 KB on a deck of 78 slides).
-  The record of the headings that `--only` needs is build state, in
-  `.verification/headings.json`; the `structure/title_id.json` of a site
-  built by 1.0 is read once in its place.
-
 ## [1.0.0] - 2026-10-19
 
 The first release on PyPI. The generator was named `static_website_lhtml`,
@@ -68,16 +46,19 @@ command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
   s), so a promise that never settles fails the slide instead of blocking
   the export. After pipx, the commands to install are the same in the
   README, in `lhtml-site doctor` and in the errors:
-  `pipx inject --include-apps lhtml-site playwright pypdf`, then
-  `playwright install --only-shell chromium`.
+  `pipx inject lhtml-site pypdf`, `pipx inject --include-apps lhtml-site
+  playwright`, then `playwright install --only-shell chromium`.
 
 ### Changed
 - Requires LHTML 3 (`lhtml-markup>=3.0`), which reads no file: the
   generator reads the sources, and `include::` is written with Jinja
   (`{% include %}`). Coming from LHTML 2: the
   [migration of LHTML](https://github.com/drohmer/lhtml/blob/main/docs/migration.md).
-- The README leads to a first talk in a few commands; the reference moves
-  to [docs/reference.md](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md).
+- The README leads to a first talk in a few commands, opened from the disk
+  (`lhtml-site`, then `.site/index.html`; `--watch` to rebuild on save, and
+  `init` says the same); the reference moves to
+  [docs/reference.md](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md),
+  with the details of the PDF export.
 - The package holds the themes, plugins and starters but not the demo
   course, and the themes ship their fonts as WOFF2 only: the wheel is about
   8 MB.
@@ -89,5 +70,26 @@ command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
   ids (`_id2`, `_id3`...) and characters unsafe in a URL are removed.
 - The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
   when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
+- The "Page content" column of the theme webpage-frame is read in the page
+  (its level-2 headings with an id), not fetched from a JSON file: it is
+  shown when the site is opened from disk (`file://`), where it was empty,
+  and lists the headings as the page shows them (`== One **bold**` is
+  "One bold", it was "One \*\*bold\*\*").
+- A heading whose text comes from Jinja gets its id from its text as
+  rendered, unique in its page: each occurrence of a page reused with
+  `params` has the id of its own title (`interpolation_de_key_l1`; it was
+  `_parties[current__1]_id2_l1`, the same source for all of them), and
+  each heading of a `{% for %}` loop has its own. The ids of the headings
+  written as text do not change: links into published sites keep working.
+
+### Removed
+- The site no longer holds `<page>.title_id.json`, `title_id.json` nor
+  `structure/title_id.json` (144 files, 592 KB on a deck of 78 slides).
+  The record of the headings that `--only` needs is build state, in
+  `.verification/headings.json`; the `structure/title_id.json` of a site
+  built by an older copy is read once in its place.
+
+### Fixed
+- The slides no longer write their menu in the console of the browser.
 
 [1.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v1.0.0

@@ -1,9 +1,36 @@
 # lhtml-site
 
-Slides and static websites written in [LHTML](https://github.com/drohmer/lhtml),
-a light markup, with Jinja2 templates. Each page is a short text file; the
-generator builds the HTML site (slides shown in the browser, or a website with
-a menu), and optionally a PDF of the slides. It was named `static_website_lhtml`.
+Write your talks and course websites as short text files: lhtml-site turns
+them into slides shown in the browser, a PDF of the slides, or a website
+with a menu. It is made for teachers and researchers; no web development is
+needed.
+
+A slide is a text file in [LHTML](https://github.com/drohmer/lhtml), a light
+markup over HTML:
+
+```
+{% set layout = 'side' %}
+
+= A slide with an image
+
+The layout side puts the text on the left, and the figures of the media block
+on the right, fitted to the column.
+
+* Put the image next to the slide, in assets/
+* Name it in the media block below
+
+media::
+img::assets/diagram.svg
+credit:: An image of the slide (assets/diagram.svg) ::
+::
+```
+
+and lhtml-site shows it as:
+
+![The slide above, shown in the browser](https://raw.githubusercontent.com/drohmer/lhtml-site/main/docs/slide.png)
+
+Pages can also use Jinja2 templates and be written in Markdown. The output
+is a static site: open it from the disk, or copy it to any web host.
 
 ## Getting started: your first slides
 
@@ -20,11 +47,11 @@ pipx` on Debian or Ubuntu, `py -m pip install --user pipx` on Windows; then
 pipx install lhtml-site
 lhtml-site init my-talk --theme slides
 cd my-talk
-lhtml-site --serve --watch
+lhtml-site
 ```
 
 `init` creates a directory `my-talk/` with a configuration and four slides
-to start from:
+to start from; `lhtml-site` builds them:
 
 ```
 my-talk/
@@ -36,18 +63,27 @@ my-talk/
     04_image/index.html.j2           text, and an image on the right
 ```
 
-**2. Show it.** `lhtml-site --serve --watch` builds the slides and shows them
-at <http://127.0.0.1:8000/>: open that address in your browser, and go from
-slide to slide with the arrow keys. **Keep this terminal open while you
-work**: each time you save a file, the slides are rebuilt; refresh the
-browser to see the change. To stop, press Ctrl+C in the terminal.
+**2. Show it.** `lhtml-site` has built the slides into `.site/`: open
+`.site/index.html` in your browser, no server needed (in the terminal,
+`open .site/index.html` on macOS, `start .site\index.html` on Windows,
+`xdg-open .site/index.html` on Linux). Go from slide to slide with the
+arrow keys, or with the arrows at the bottom right; the icon next to them
+opens the list of the slides.
+
+After a change, run `lhtml-site` again and refresh the browser. To rebuild
+without retyping it, run `lhtml-site --watch` instead: it rebuilds the
+slides each time you save a file. **Keep that terminal open while you
+work**, refresh the browser to see the change, and press Ctrl+C in the
+terminal to stop. `lhtml-site --serve --watch` does the same and also shows
+the slides at <http://127.0.0.1:8000/>, which only a few features need, such
+as the [comments on the render](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#local-preview).
 
 **3. Add a slide.** A slide is a directory of `src/` with a file
 `index.html.j2` in it. Duplicate `src/02_text` (in your file explorer, or
-`cp -r src/02_text src/05_my_slide` in a second terminal) and name the copy
-`05_my_slide`. The slides follow the order of their directories, hence the
-numbers: `05_my_slide` comes last; name it `02b_my_slide` to put it after
-`02_text`.
+`cp -r src/02_text src/05_my_slide` in the terminal, from `my-talk/`) and
+name the copy `05_my_slide`. The slides follow the order of their
+directories, hence the numbers: `05_my_slide` comes last; name it
+`02b_my_slide` to put it after `02_text`.
 
 **4. Write it.** Open `src/05_my_slide/index.html.j2` in a text editor, and
 replace its content with:
@@ -60,66 +96,90 @@ replace its content with:
 * A conclusion
 ```
 
-Save, and refresh the browser. The line starting with `=` is the title of
-the slide (and its name in the menu); each `*` starts an item of a list
-(`**` at the start of a line, an item under the one before; the theme
-`slides` shows no bullet before them); `**...**` around words is bold,
-`__...__` italic.
+Save, rebuild (`lhtml-site`, unless `lhtml-site --watch` is running), and
+refresh the browser.
 
-**5. Put an image in it.** Copy your image, say `photo.png`, into
-`src/04_image/assets/`; then, in `src/04_image/index.html.j2`, replace
-`img::assets/diagram.svg` with `img::assets/photo.png`, and the caption on
-the line `credit::` with yours. Save: the image is on the right of the
-slide, fitted to its column. An image belongs to the
-directory of its slide, in `assets/`.
+- A line starting with `=` is the title of the slide, and its name in the
+  list of the slides.
+- A line starting with `*` is an item of a list; `**` at the start of a
+  line, a sub-item. The `slides` theme shows no bullet before them.
+- `**word**` is bold, `__word__` italic.
 
-The four slides of the start show the rest, each in a few lines: the title
-slide, then math (`\(e^{i\pi} + 1 = 0\)`), a link, a space (`gap::`) and
-small text in `02_text`, two columns (`cols::` and `col::`) in
-`03_two_columns`, an image beside the text in `04_image`. All the macros
-and layouts of the slides are in
+**5. Put an image in it.** Copy your image (PNG, JPEG or SVG), say
+`photo.png`, into `src/04_image/assets/` (the directory is already there);
+then, in `src/04_image/index.html.j2`, replace `img::assets/diagram.svg`
+with `img::assets/photo.png`, and the caption on the line `credit::` with
+yours. Save and rebuild: the image is on the right of the slide, fitted to
+its column. An image belongs to the directory of its slide, in `assets/`.
+
+The four starter slides also show, each in a few lines: math
+(`\(e^{i\pi} + 1 = 0\)`), a link, a space (`gap::`) and small text in
+`02_text`, two columns (`cols::` and `col::`) in `03_two_columns`. All the
+macros and layouts of the slides are in
 [Design](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#design-tokens-macros-and-layouts),
 and the markup in [LHTML](https://github.com/drohmer/lhtml).
 
-**6. Come back to it later.** Open a terminal, go into the directory of the
-talk, and start the preview again:
+**6. Come back to it later.** Open a terminal, go into the talk's
+directory, and rebuild (or let it rebuild as you save):
 
 ```bash
 cd my-talk
-lhtml-site --serve --watch
+lhtml-site --watch
 ```
 
 **7. Share it.** Your talk is `configure.yaml` and `src/`: keep them (a
-backup, or a git repository). The slides themselves are built into `.site/`,
-which `lhtml-site` (without `--serve`) rebuilds from them at any time. To
-show the slides on another computer, copy the directory `.site/`: opening
-`.site/index.html` in a browser shows them, no server needed; to put them
-online, copy `.site/` to any web host (GitHub Pages, the server of your
-university). The file explorer hides `.site/`, as any name starting with a
-dot: Cmd+Shift+. shows it in the Finder, and *Hidden items* in the *View*
-menu of the Windows explorer. For a PDF of the slides, see
-[Your talk as a PDF](#your-talk-as-a-pdf).
+backup, or a git repository). The slides are built into `.site/`, which
+`lhtml-site` rebuilds from them at any time. To show the slides on another
+computer, copy `.site/` and open its `index.html`; to put them online, copy
+`.site/` to any web host (GitHub Pages, the server of your university).
+`.site/` is hidden, as any name starting with a dot: Cmd+Shift+. shows it in
+the macOS Finder, *View > Hidden items* in the Windows explorer. Next to it,
+`.structure/` and `.verification/` are working files of the build: leave
+them.
 
 To order the slides without renaming them, or to reuse a slide, list them in
 a [deck](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#deck-order-of-the-slides).
 
-**Other starts**:
+## Your talk as a PDF
+
+Install the PDF export once (see [PDF export](#pdf-export)): when
+`lhtml-site doctor` says *ready* on its line *PDF export with Playwright*,
+replace the line `theme: 'slides'` of the talk's `configure.yaml` with:
+
+```yaml
+theme: 'slides-pdf'
+```
+
+and build, in the talk's directory:
+
+```bash
+lhtml-site
+```
+
+It writes `slides.pdf`, and `images/` with an image of each slide, next to
+`configure.yaml` (a few seconds for a few slides). With this theme the HTML
+of the slides is only a step towards the PDF, and is not kept; put
+`theme: 'slides'` back to work on the slides in the browser. To get both at
+each build, the slides in the browser and the PDF, declare two targets:
+[Decks and targets](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#decks-and-targets).
+
+## Websites and themes
 
 - A website (documentation, a course) rather than slides:
-  `lhtml-site init my-site` (theme `webpage-frame`, two pages to start from).
+  `lhtml-site init my-site` (the `webpage-frame` theme, two pages to start
+  from).
 - *You already have your pages* in a directory `src/`: in the directory that
   contains `src/`, run `lhtml-site init --theme slides`. It writes only
   `configure.yaml` there; nothing else is created or changed.
-- From a checkout of the generator (a submodule of the project),
-  `python <checkout>/generate.py` takes the place of `lhtml-site`.
 
-**The themes** (`--theme` of `init`, or the key `theme:` of `configure.yaml`):
+The theme is the `--theme` of `init`, or the key `theme:` of
+`configure.yaml`:
 
 | Theme | For | Needs |
 |---|---|---|
 | `webpage-frame` (default) | Web pages: documentation, a course website, with a navigation menu | nothing more |
 | `slides` | Slides shown in the browser, 1920x1080, one page per slide | nothing more |
-| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Playwright and its Chromium (`lhtml-site[pdf]`), or Node.js: see [PDF export](#pdf-export) |
+| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Playwright and its Chromium: see [PDF export](#pdf-export) |
 
 Change the theme at any time by editing `theme:`; it also takes the
 directory of a theme of your own. To publish the same slides both in the
@@ -152,22 +212,24 @@ python -m pip install lhtml-site
 
 The command `lhtml-site` is then there while that environment is active
 (the `source` or `Activate.ps1` line again, in a new terminal).
-`lhtml-site --version` says the version installed, and the LHTML it runs.
-The version of `main`, before its release:
+`lhtml-site --version` prints the installed version and the version of
+LHTML it runs. Development version:
 `pipx install git+https://github.com/drohmer/lhtml-site`.
 
-**Python**: 3.11 or newer. **Required**, and installed with it: `lhtml-markup`
-(3.0 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`.
-That is all a site of HTML pages or slides needs: no Node, no browser, no
-other program.
+**Requirements**: Python 3.11 or newer, on Linux, macOS or Windows.
+Installed with it: `lhtml-markup` (LHTML 3), `Jinja2`, `jinja-markdown`,
+`markdown-it-py`, `pytidylib`, `pyyaml`, `rich`. That is all a site of HTML
+pages or slides needs: no Node, no browser, no other program.
 
-**Optional features** each need their own tools. `lhtml-site doctor` says,
-for each feature, what it finds and the command that installs what is
-missing, for the way lhtml-site is installed:
+### Optional features
+
+Each optional feature needs its own tools. `lhtml-site doctor` says, for
+each feature, what it finds and the command that installs what is missing,
+for the way lhtml-site is installed:
 
 | Feature | Needs |
 |---|---|
-| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and the Chromium of Playwright; or, as before, Node.js, puppeteer and minimist, Chrome, poppler (`pdfunite`, `pdftoppm`), ImageMagick (`magick`) |
+| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and Playwright's Chromium; or the Node export (see the [reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#pdf-export)) |
 | Layout report (`--layout`, `--render`) | Node.js, puppeteer and minimist, Chrome |
 | Videos in several codecs (`cache_video_directory:`) | `ffmpeg`, and `ffpb` (Python) |
 | SASS (`.sass` files) | `libsass` (Python) |
@@ -177,8 +239,8 @@ missing, for the way lhtml-site is installed:
 
 **Python packages after pipx.** pipx installs lhtml-site in an environment
 of its own: `pip install matplotlib` puts the package into another Python,
-and the generator still does not find it. Inject the packages into its
-environment instead:
+where lhtml-site does not find it. Inject the packages into its environment
+instead:
 
 ```bash
 pipx inject lhtml-site matplotlib numpy          # figures in code
@@ -187,87 +249,35 @@ pipx inject --include-apps lhtml-site ffpb       # videos (a command: --include-
 ```
 
 In a virtual environment or a checkout, `pip install matplotlib numpy` (and
-`libsass`, `ffpb`) in the Python that runs the generator does the same.
+`libsass`, `ffpb`) in the Python that runs lhtml-site does the same.
 
 ### PDF export
 
-The export writes `<deck>.pdf` (`slides.pdf` for a project of one deck) and
-`images/` (an image of each slide, 3840 px wide) next to the site directory
-of the target. It runs Chromium through Playwright for Python: two Python
-packages and a browser, nothing else. After `pipx install lhtml-site`, in
-any shell:
+The PDF export runs Chromium through Playwright for Python: two Python
+packages and a browser, nothing else. After `pipx install lhtml-site`:
 
 ```bash
-pipx inject --include-apps lhtml-site playwright pypdf
-playwright install --only-shell chromium         # the Chromium of Playwright, about 200 MB, once
-lhtml-site doctor                                # PDF export with Playwright: ready
+pipx inject lhtml-site pypdf
+pipx inject --include-apps lhtml-site playwright
+playwright install --only-shell chromium         # Playwright's Chromium, about 200 MB, once
+lhtml-site doctor                                # PDF export with Playwright ...: ready
 ```
 
-`--include-apps` makes `playwright` a command, the one of the environment
-of lhtml-site, so the browser downloaded is the one it expects. In a virtual
-environment or a checkout instead: `pip install "lhtml-site[pdf]"`, then
+`--include-apps` puts the `playwright` command of lhtml-site's environment
+on your PATH, so that the browser downloaded is the one its Playwright
+expects. If pipx warns that another `playwright` is already on your PATH,
+run the command that `lhtml-site doctor` gives instead. In a virtual
+environment or a checkout: `pip install "lhtml-site[pdf]"`, then
 `python -m playwright install --only-shell chromium`. On Linux, Playwright
 may also ask for the system libraries of Chromium:
-`playwright install-deps chromium`.
+`playwright install-deps chromium`. The configuration key `chrome` names a
+Chromium or Chrome already installed, to use instead of the download.
 
-The export opens one browser for the deck, prints a few slides at a time,
-and prints a slide once it is ready (fonts loaded, math rendered, images
-decoded, a frame of each video, the promises of a demo registered with
-`window.__lhtmlReady`) rather than after a fixed delay; a slide that is not
-ready within a minute fails the build. A bar shows the progress on a
-terminal. The configuration
-key `chrome` names another Chromium or Chrome to run instead.
+How the export waits for each slide, and the Node export of
+`static_website_lhtml` (Node.js, puppeteer, poppler, ImageMagick), are in
+the [reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#pdf-export).
 
-**The Node export** (the one of the earlier versions) is used when
-Playwright is not installed, or with `LHTML_PDF_ENGINE=node`. It runs a
-Chrome per slide through Node.js and puppeteer, then poppler and
-ImageMagick. With pipx (or pip), on macOS:
-
-```bash
-brew install node poppler imagemagick
-npm install --prefix ~/.lhtml-site puppeteer minimist
-~/.lhtml-site/node_modules/.bin/puppeteer browsers install chrome
-lhtml-site doctor                                # PDF export with Node: ready
-```
-
-On Debian or Ubuntu, the first line is
-`sudo apt install nodejs npm poppler-utils`, with ImageMagick 7 (the command
-`magick`) from <https://imagemagick.org>. The generator finds the Node
-modules of `~/.lhtml-site/node_modules` by itself: no `NODE_PATH` is needed
-(a `NODE_PATH` of yours is still read, first). The third line downloads the
-Chrome of this version of puppeteer (over 100 MB): recent npm versions do not
-run the install script of puppeteer, hence the explicit download. The Node
-export needs it. The layout report still runs through Node and puppeteer,
-and can do without that Chrome (the configuration key `chrome`, or
-`PUPPETEER_EXECUTABLE_PATH`, names a Chrome already installed, and a Chrome
-installed in the usual place is its last resort).
-
-In a checkout of the generator, `npm ci` in the checkout installs puppeteer
-and minimist (`package.json`), then `npx puppeteer browsers install chrome`.
-
-### Your talk as a PDF
-
-Once `lhtml-site doctor` says *PDF export: ready*, in the `configure.yaml`
-of the talk, replace the line `theme: 'slides'` with:
-
-```yaml
-theme: 'slides-pdf'
-```
-
-and build, in the directory of the talk:
-
-```bash
-lhtml-site
-```
-
-It writes `slides.pdf`, and `images/` with an image of each slide, next to
-`configure.yaml` (a few seconds for a few slides). With this theme the HTML
-of the slides is only a step towards the PDF, and is not kept; put
-`theme: 'slides'` back to work on the slides in the browser. To get both at
-each build, the slides in the browser and the PDF, declare two targets:
-[Decks and targets](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#decks-and-targets).
-
-### From a checkout
+## From a checkout
 
 A clone, or a submodule of a project:
 
@@ -278,15 +288,12 @@ pip install -r requirements.txt
 python generate.py ...            # the same as lhtml-site ...
 ```
 
-`generate.py` at the root of the repository runs the generator of the
+`generate.py` at the root of the repository runs the lhtml-site of the
 checkout (its code is in `src/lhtml_site/`), so the projects that include it
-as a submodule call `python <submodule>/generate.py` as before, and keep
-naming its files as `<submodule>/themes/slides/` or
-`<submodule>/plugins/pre_include.py` (they are found in `src/lhtml_site/`).
-`pip install -e .` in a checkout installs the command from it. Runtime and
-transitive dependencies are pinned in `requirements-lock.txt`;
-`requirements.txt` applies these constraints. `npm ci` installs the locked
-Node dependencies.
+as a submodule call `python <submodule>/generate.py`, and keep naming its
+files as `<submodule>/themes/slides/` or `<submodule>/plugins/pre_include.py`
+(they are found in `src/lhtml_site/`). `pip install -e .` in a checkout
+installs the command from it.
 
 The checkout also holds a complete demo, a course website with its videos,
 in `src/lhtml_site/example/` (not installed by pip: too heavy). To build it:
@@ -299,18 +306,13 @@ cd demo
 python ../generate.py --serve --watch
 ```
 
-**Systems**: Linux, macOS and Windows. The tests run on Linux in CI and on
-macOS in development; `tests/windows.sh <ssh host>` runs them on a Windows
-machine (Windows 11, Python 3.14: they pass, and the example site built
-there is identical to the one built on macOS). On Windows, `py -3` is the
-reliable launcher: another program may put its own `python` first in the
-`PATH`.
+The tests, the locked dependencies and the layout of the repository are in
+[Development](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/development.md).
 
 ## Documentation
 
-- [Reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md)
-  (`src/lhtml_site/docs/reference.md`): the
-  [command line](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#cli-options),
+- [Reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md):
+  the [command line](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#cli-options),
   the [preview server](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#local-preview)
   and the comments on the render,
   the [configuration](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#configuration),
@@ -319,17 +321,23 @@ reliable launcher: another program may put its own `python` first in the
   [template variables](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#template-variables),
   the [order of the slides](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#deck-order-of-the-slides),
   [themes](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#theme-what-it-declares-about-the-build),
+  the [PDF export](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#pdf-export),
   the [design](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#design-tokens-macros-and-layouts)
   (tokens, macros, layouts), [credits and figures in code](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#credits-origin-of-the-slides-figures-in-code),
   [plugins](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#plugins),
   the [layout report](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#layout-report-llm-assisted-slide-layout),
   [error reporting](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#error-reporting),
-  and [migrating from version 2](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#migrating-from-the-previous-layout).
+  and [migrating from static_website_lhtml](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#migrating-from-the-previous-layout).
 - [Writing slides with an AI agent](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/agents.md):
   the procedure an agent follows (each build copies it into `.structure/agents.md`).
-- [Development](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/development.md):
-  the layout of the repository, and the tests.
+- [LHTML](https://github.com/drohmer/lhtml): the markup of the pages.
+
+## Help and changes
+
+- Questions and bugs: [GitHub issues](https://github.com/drohmer/lhtml-site/issues).
+- What changed in each version: [CHANGELOG](https://github.com/drohmer/lhtml-site/blob/main/CHANGELOG.md).
 
 ## License
 
-MIT
+MIT, see [LICENSE.md](https://github.com/drohmer/lhtml-site/blob/main/LICENSE.md).
+By Damien Rohmer.

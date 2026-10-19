@@ -24,7 +24,7 @@ keeps that extension away from the pages of the build.
 What this contract is not: a sandbox. An extension is Python and may still
 reach the file system; it no longer has to, the ones of the generator do
 not, and a write outside the contract is a deviation one can point at. The
-hooks of version 2, `pre_process(meta)` and the like, are refused by name.
+hooks of static_website_lhtml, `pre_process(meta)` and the like, are refused by name.
 """
 from __future__ import annotations
 
@@ -54,13 +54,13 @@ class Context:
 
 
 class ExtensionError(Exception):
-    """An extension written for another contract (the hooks of version 2)."""
+    """An extension written for another contract (the hooks of static_website_lhtml)."""
 
 
 def _refusal(name, stage, reason):
     form = 'prepare(context)' if stage == 'prepare' else f'{stage}(text, context) -> text'
     return ExtensionError(f'{name}: {stage} {reason}; an extension defines {form}, and the build '
-                          f'writes the files (the hooks {stage}(meta) of version 2 are gone, see '
+                          f'writes the files (the hooks {stage}(meta) of static_website_lhtml are gone, see '
                           f'lhtml_site/extensions.py)')
 
 

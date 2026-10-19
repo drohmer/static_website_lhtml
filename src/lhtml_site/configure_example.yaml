@@ -1,8 +1,9 @@
 # configure.yaml: the configuration of a site built by lhtml-site.
 #
 # Run from this directory:
-#   lhtml-site --serve --watch   build, preview on http://127.0.0.1:8000/, rebuild on save
-#   lhtml-site                   build only
+#   lhtml-site                   build into .site/ (open .site/index.html in a browser)
+#   lhtml-site --watch           build, and rebuild on each save
+#   lhtml-site --serve --watch   the same, and a preview on http://127.0.0.1:8000/
 #   lhtml-site --check-config    check this file, without building
 #
 # Relative paths are read from this directory. A line starting with # is a

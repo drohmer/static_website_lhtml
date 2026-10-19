@@ -51,6 +51,15 @@ def install_hint(name, command=False):
     return f'{sys.executable} -m pip install {name}'
 
 
+def playwright_install_command():
+    """The command that installs playwright and pypdf (the extra
+    lhtml-site[pdf]). After pipx, two injections: pypdf has no command, and
+    `--include-apps` fails on a package without one."""
+    if installation() == 'pipx':
+        return 'pipx inject lhtml-site pypdf, then pipx inject --include-apps lhtml-site playwright'
+    return f'{shlex.quote(sys.executable)} -m pip install "lhtml-site[pdf]"'
+
+
 def playwright_browser_command():
     """The command that downloads the Chromium of the Playwright of the
     generator: after pipx, the command `playwright` that `pipx inject
@@ -172,9 +181,11 @@ def chromium_check():
 
 def playwright_checks():
     """playwright, pypdf (the extra lhtml-site[pdf]) and its Chromium."""
-    extra = ('pipx inject lhtml-site playwright pypdf' if installation() == 'pipx'
-             else f'{sys.executable} -m pip install "lhtml-site[pdf]"')
-    return [(name, found, extra) for name, found, _ in (module_check('playwright'), module_check('pypdf'))] \
+    pipx = installation() == 'pipx'
+    extra = f'{sys.executable} -m pip install "lhtml-site[pdf]"'
+    hints = {'playwright': install_hint('playwright', command=True) if pipx else extra,
+             'pypdf': install_hint('pypdf') if pipx else extra}
+    return [(name, found, hints[name]) for name, found, _ in (module_check('playwright'), module_check('pypdf'))] \
         + [chromium_check()]
 
 

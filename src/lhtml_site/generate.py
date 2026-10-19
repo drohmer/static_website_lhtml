@@ -991,7 +991,8 @@ def init_project(arguments):
         first = min(p for p in sources.rglob('index.html.j2')).relative_to(directory).as_posix()
         print(f"Project set up in {directory}: {config.name}, and pages to start from in src/ "
               f"(theme {args.theme}).\nEdit {first}; copy one of the directories of src/ to add a page.")
-    print(f"Next: {go}lhtml-site --serve --watch (build, preview on http://127.0.0.1:8000/, rebuild on save).")
+    print(f"Next: {go}lhtml-site (build into .site/, then open .site/index.html in a browser); "
+          f"lhtml-site --watch rebuilds on each save.")
 
 
 def main():

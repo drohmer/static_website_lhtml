@@ -222,7 +222,7 @@ def load_config(filename, debug_override=None):
     path = Path(filename).expanduser().resolve()
     warnings = []
     if not path.exists() and path.name == 'configure_default.yaml':
-        raise ConfigError("'configure_default.yaml' was renamed 'configure_example.yaml' (3.0): "
+        raise ConfigError("'configure_default.yaml' was renamed 'configure_example.yaml' (lhtml-site 1.0): "
                           "update your command")
     if not path.exists():
         raise ConfigError(f"Configuration not found: '{path}' (run lhtml-site in the "
@@ -239,13 +239,13 @@ def load_config(filename, debug_override=None):
     if 'line-breaks' in data:                       # the spelling of LHTML
         data['line_breaks'] = data.pop('line-breaks')
     if 'plugin_post' in data:
-        raise ConfigError("'plugin_post' was removed (3.0): list its plugins under 'plugin' "
+        raise ConfigError("'plugin_post' was removed (lhtml-site 1.0): list its plugins under 'plugin' "
                           "(all their hooks are run)")
     if 'level_print' in data:
-        raise ConfigError("'level_print' was removed (3.0): the build prints no indented log "
+        raise ConfigError("'level_print' was removed (lhtml-site 1.0): the build prints no indented log "
                           "(-v shows its stages)")
     if 'include_head' in data:
-        raise ConfigError("'include_head' was removed (3.0): it was read nowhere; a theme "
+        raise ConfigError("'include_head' was removed (lhtml-site 1.0): it was read nowhere; a theme "
                           "places what goes in <head>")
 
     defaults = Config().to_meta()
@@ -326,7 +326,7 @@ def load_config(filename, debug_override=None):
             renamed = Path(*[RENAMED_DIRECTORIES.get(part, part) for part in directory.parts])
             if in_package(renamed).is_dir():
                 raise ConfigError(f"'{key}': '{directory.as_posix()}' was renamed "
-                                  f"'{renamed.as_posix()}' (3.0): update '{key}'")
+                                  f"'{renamed.as_posix()}' (lhtml-site 1.0): update '{key}'")
         values[key] = directory.resolve()
     if debug_override is not None:
         values['debug'] = debug_override

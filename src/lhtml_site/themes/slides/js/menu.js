@@ -57,8 +57,6 @@ if(page_index-1>=0) {
 else {
     linkPrevElement.innerHTML = `<div class="prev-inactive"></div>`;
 }
-console.log(toc);
-console.log(linkPrevElement.innerHTML, page_index, counter);
 // URL of a site path: each segment escaped (also #, ? and quotes)
 function pathURL(path) {
     return path.split("/").map(encodeURIComponent).join("/");

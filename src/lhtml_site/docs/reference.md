@@ -7,7 +7,7 @@ in the README.
 ## CLI Options
 
 ```
-lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
+lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--target NAME] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT] [-V]
 lhtml-site init [DIR] [--theme NAME]
 lhtml-site doctor
 
@@ -19,11 +19,14 @@ lhtml-site doctor
       --check-config   Validate paths and plugin files; display resolved settings
   -c, --clean          Remove only the configured output directory and exit
   --only POINTER       Generate only these pages in the existing site (see below; repeatable)
+  --target NAME        Build only these targets of the configuration (repeatable, or html,pdf;
+                       all of them by default; see Decks and targets)
   --lint               List the values written by hand in the pages, with the layout or macro
                        replacing them (see Design); no generation (with --only: some pages)
   --serve              Serve the generated site on http://127.0.0.1:8000/
   --watch              Rebuild after source, theme, plugin or configuration edits
   --port PORT          HTTP port (default: 8000; 0 selects an available port)
+  -V, --version        Display the version of lhtml-site and of the LHTML it runs
   --layout             Write a layout report of each page in .layout/ (see below)
   --render FILE        Render a file as PNG as the slides draw it (an SVG or image at its size,
                        at most the slide; an HTML page at the size of the slide) in
@@ -278,6 +281,51 @@ that content pages can override; which template and which block is what the
 theme declares in its `theme.yaml`, with what the layout analysis must take
 as the content of a page - see
 [Theme: what it declares about the build](#theme-what-it-declares-about-the-build).
+
+## PDF export
+
+The theme `slides-pdf` (a theme that declares `export: pdf`) writes
+`<deck>.pdf` (`slides.pdf` for a project of one deck) and `images/` (an
+image of each slide, 3840 px wide) next to the site directory of its
+target; the HTML of the slides is only a step towards them, and is not
+kept. To install it, see
+[PDF export](https://github.com/drohmer/lhtml-site#pdf-export) in the README;
+`lhtml-site doctor` says what is found.
+
+**With Playwright** (the extra `lhtml-site[pdf]`: playwright, pypdf, and the
+Chromium of Playwright). The export opens one browser for the deck, prints
+a few slides at a time, and prints a slide once it is ready (fonts loaded,
+math rendered, images decoded, a frame of each video, the promises a page
+or a demo, in an iframe too, registered with `window.__lhtmlReady`) rather
+than after a fixed delay; a slide that is not ready within a minute fails
+the build. A bar shows the progress on a terminal. The configuration key
+`chrome` names another Chromium or Chrome to run instead.
+
+**With Node** (the export of `static_website_lhtml`), used when Playwright
+is not installed, or with `LHTML_PDF_ENGINE=node`. It runs a Chrome per
+slide through Node.js and puppeteer, then poppler and ImageMagick. With pipx
+(or pip), on macOS:
+
+```bash
+brew install node poppler imagemagick
+npm install --prefix ~/.lhtml-site puppeteer minimist
+~/.lhtml-site/node_modules/.bin/puppeteer browsers install chrome
+lhtml-site doctor                                # PDF export with Node: ready
+```
+
+On Debian or Ubuntu, the first line is
+`sudo apt install nodejs npm poppler-utils`, with ImageMagick 7 (the command
+`magick`) from <https://imagemagick.org>. The generator finds the Node
+modules of `~/.lhtml-site/node_modules` by itself: no `NODE_PATH` is needed
+(a `NODE_PATH` of yours is still read, first). The third line downloads the
+Chrome of this version of puppeteer (over 100 MB): recent npm versions do not
+run the install script of puppeteer, hence the explicit download. The Node
+export needs it. The layout report still runs through Node and puppeteer,
+and can do without that Chrome (the configuration key `chrome`, or
+`PUPPETEER_EXECUTABLE_PATH`, names a Chrome already installed, and a Chrome
+installed in the usual place is its last resort). In a checkout of the
+generator, `npm ci` in the checkout installs puppeteer and minimist
+(`package.json`), then `npx puppeteer browsers install chrome`.
 
 ## Writing slides with an AI agent
 
@@ -691,7 +739,7 @@ from `prepare` to the pages, but not from a build to the next (`--watch`).
 
 This is a discipline, not a sandbox: a plugin is Python and can still reach
 the file system. It no longer has to, and the plugins of the generator do
-not. The hooks of version 2, `pre_process(meta)` and the like, are refused
+not. The hooks of static_website_lhtml, `pre_process(meta)` and the like, are refused
 with the form to write.
 
 A heading without an id written by hand (`==(#mine) Title`, `## Title {: #mine}`) gets one from its text, followed by its level: lower case, each of ` -,.:()` becomes `_`, then `__` becomes `_`, characters unsafe in a URL (`<>"&{}%`, a backquote, a tab) are removed, and the result is cut at 20 characters (`= Simulation - Mass-springs Cloth` gives `simulation__mass_spr_l1`). This is the scheme of the generator copied into projects since April 2026, so links into the sites it built keep working; a repeated id gets `_id2`, `_id3`... An id written by hand is kept as written: it is the way to keep an anchor that a link already uses.
@@ -1030,7 +1078,7 @@ make, rather than accepted with a warning.
   and the Chrome of the PDF export read: a theme of your own that copied `css/font.css` and named
   the OTF, TTF or WOFF files of the generator names the WOFF2 ones.
 
-- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/`, `example/` and `configure_example.yaml`. `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...`, `<checkout>/plugins/...` and `<checkout>/example/` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site init` sets up a project (see [Getting started](../../../README.md#getting-started-your-first-slides)).
+- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/` and `configure_example.yaml` (the course example stays in the checkout, `src/lhtml_site/example/`, and is not installed). `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...` and `<checkout>/plugins/...` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site init` sets up a project (see [Getting started](../../../README.md#getting-started-your-first-slides)).
 
 - `configure_default.yaml` is now `configure_example.yaml`.
 - Replace `plugin_post` with `plugin` (all the hooks of a plugin run). `include_head` is gone (it was read nowhere).
@@ -1048,4 +1096,4 @@ make, rather than accepted with a warning.
 - `generate_pdf.py` is no longer a plugin: the PDF is a target, `targets: pdf: {theme: slides-pdf}` (the theme declares `export: pdf`), named after its deck. A script that looped over the chapters with a temporary configuration per chapter and per theme is replaced by `decks: directories` and `targets:` (see [Decks and targets](#decks-and-targets)).
 - LHTML 3.0 reads no file: `include::` is refused, with the file it named. Include with Jinja instead, `{% include "part.html" %}` (the path is relative to the sources). A poster is no longer looked for next to a video: write it, `video::clip.mp4{poster="clip.jpg"}`. `wrap-auto` and `directory_include` are no longer passed to LHTML: the theme wraps the page. LHTML 3 also refuses `::name[-]` and `::[-]` (close with `::`), `::#` comments (write `{# ... #}`) and `verbatim::` (write `code::[text]`); `$...$` is text (write `\(...\)`), and a tag inside inline code is literal. The YAML front matter of a page is read by the generator, which removes it before LHTML.
 - For plugins: the directories of `meta` (`source_directory`, `site_directory`, `theme`, `config_directory`, `lib_directory`, `cache_video_directory`) are `pathlib.Path`: join with `/` (`meta['site_directory'] / page_path(entry)`), not `+`. The place of a page in the site stays a string with `/` (`entry['dir']`, `page_path(entry)` of `lhtml_site.structure`).
-- Heading anchors keep the same scheme as before. Two bugs are fixed: identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), now get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.
+- Heading anchors keep the scheme of the generator copied into projects since April 2026 (` -,.:()` become `_`, then `__` becomes `_`): a site built by an older copy changes the id of its headings with these characters (`Part - One`: `part___one` before, `part__one` now). Identical headings, or a heading that starts like another one (`= Installation` / `== Installation sous Windows`), get distinct ids, and characters such as `<`, `>`, `"` are removed from ids.

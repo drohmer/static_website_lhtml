@@ -24,7 +24,6 @@ import asyncio
 import importlib.util
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -32,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from lhtml_site.doctor import installation, node_environment, playwright_browser_command
+from lhtml_site.doctor import installation, node_environment, playwright_browser_command, playwright_install_command
 from lhtml_site.layout.measure import PUPPETEER_MISSING
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
@@ -229,10 +228,7 @@ def export_node(inputs, stems, chrome_path=None, done=lambda: None):
 
 def playwright_missing():
     """What to install for the Playwright export, for the way lhtml-site is installed."""
-    python = shlex.quote(sys.executable)        # pipx puts it under "Application Support" on macOS
-    install = ('pipx inject --include-apps lhtml-site playwright pypdf' if installation() == 'pipx'
-               else f'{python} -m pip install "lhtml-site[pdf]"')
-    return PLAYWRIGHT_MISSING.format(install=install, browser=playwright_browser_command())
+    return PLAYWRIGHT_MISSING.format(install=playwright_install_command(), browser=playwright_browser_command())
 
 
 def export_playwright(inputs, stems, chrome_path=None, done=lambda: None):

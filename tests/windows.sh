@@ -5,7 +5,7 @@
 # goes to %USERPROFILE%\lhtml_windows, with its own virtual environment.
 set -eu
 HOST=$1
-LHTML=${2:-../../lhtml/repo}
+LHTML=${2:-../../lhtml/lhtml}
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT

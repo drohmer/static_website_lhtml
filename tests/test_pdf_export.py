@@ -178,7 +178,7 @@ class NoEngineTest(unittest.TestCase):
         with patch.object(pdf_export, 'installation', return_value='pipx'), \
                 patch('lhtml_site.doctor.installation', return_value='pipx'):
             said = pdf_export.playwright_missing()
-        self.assertIn('pipx inject --include-apps lhtml-site playwright pypdf', said)
+        self.assertIn('pipx inject lhtml-site pypdf, then pipx inject --include-apps lhtml-site playwright', said)
         self.assertIn('then playwright install --only-shell chromium', said)
 
     def test_the_node_export_asked_says_what_it_needs(self):
