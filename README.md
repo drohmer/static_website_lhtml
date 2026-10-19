@@ -7,6 +7,15 @@ a menu), and optionally a PDF of the slides. It was named `static_website_lhtml`
 
 ## Getting started: your first slides
 
+**What you need**: Python 3.11 or newer ([python.org](https://www.python.org/downloads/)),
+and [pipx](https://pipx.pypa.io/stable/installation/), which installs
+commands written in Python: `brew install pipx` on macOS, `sudo apt install
+pipx` on Debian or Ubuntu, `py -m pip install --user pipx` on Windows; then
+`pipx ensurepath`, and open a new terminal. (Without pipx, see
+[Installation](#installation).)
+
+**1. Install lhtml-site and create a talk.** In a terminal:
+
 ```bash
 pipx install lhtml-site
 lhtml-site init my-talk --theme slides
@@ -14,63 +23,82 @@ cd my-talk
 lhtml-site --serve --watch
 ```
 
-(Python 3.11 or newer; without pipx, `pip install lhtml-site` in a virtual
-environment does the same, see [Installation](#installation).)
-
-`init` creates `my-talk/` with a configuration (`configure.yaml`) and four
-slides to start from, in `src/`:
+`init` creates a directory `my-talk/` with a configuration and four slides
+to start from:
 
 ```
 my-talk/
-  configure.yaml
+  configure.yaml                     the configuration
   src/
-    01_title/index.html.j2           the title slide
-    02_text/index.html.j2            a slide of text: list, formula
+    01_title/index.html.j2           a title slide
+    02_text/index.html.j2            a slide of text: lists, math, a link
     03_two_columns/index.html.j2     two columns
-    04_image/index.html.j2           text and an image (assets/diagram.svg)
+    04_image/index.html.j2           text, and an image on the right
 ```
 
-`lhtml-site --serve --watch` builds the slides into `.site/`, serves them on
-<http://127.0.0.1:8000/>, and rebuilds them when a file is saved: open that
-address, and go from slide to slide with the arrow keys.
+**2. Show it.** `lhtml-site --serve --watch` builds the slides and shows them
+at <http://127.0.0.1:8000/>: open that address in your browser, and go from
+slide to slide with the arrow keys. **Keep this terminal open while you
+work**: each time you save a file, the slides are rebuilt; refresh the
+browser to see the change. To stop, press Ctrl+C in the terminal.
 
-**Write a slide.** Open `src/01_title/index.html.j2` in your editor, change
-the title, save, and refresh the browser. A slide is one file
-`index.html.j2`; the slide of text, `src/02_text/index.html.j2`, reads:
+**3. Add a slide.** A slide is a directory of `src/` with a file
+`index.html.j2` in it. Duplicate `src/02_text` (in your file explorer, or
+`cp -r src/02_text src/05_my_slide` in a second terminal) and name the copy
+`05_my_slide`. The slides follow the order of their directories, hence the
+numbers: `05_my_slide` comes last; name it `02b_my_slide` to put it after
+`02_text`.
+
+**4. Write it.** Open `src/05_my_slide/index.html.j2` in a text editor, and
+replace its content with:
 
 ```
-= A slide of text
+= My first slide
 
-The line starting with an equal sign is the title of the slide (and its name in the menu).
-
-* A bullet point, with **bold** and __italic__ text
-* Inline math, \(e^{i\pi} + 1 = 0\), and a link::https://github.com/drohmer/lhtml[link]
-** A sub-point
-** Another one
-
-gap::
-
-\[ f(x) = \sum_{k=0}^{n} a_k \, x^k \]
-
-small:: Smaller text, for the details. ::
+* A first idea
+* An **important** point
+* A conclusion
 ```
 
-The other slides show two columns (`cols::` with a `col::` for each) and an
-image (`img::assets/diagram.svg`, the file being next to the slide). The
-markup is [LHTML](https://github.com/drohmer/lhtml); the macros of the
-slides (`gap::`, `small::`, `cols::`, `media::`, `box::`, ...) and the
-layouts (`{% set layout = 'side' %}`: text on the left, figures on the
-right) are listed in `.structure/design.md` after a build, and in
-[Design](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#design-tokens-macros-and-layouts).
+Save, and refresh the browser. The line starting with `=` is the title of
+the slide (and its name in the menu); each `*` starts an item of a list
+(the theme `slides` shows the items without a marker); `**...**` is bold,
+`__...__` italic.
 
-**Add a slide.** Copy the directory of a slide and edit the copy:
+**5. Put an image in it.** Copy your image, say `photo.png`, into
+`src/04_image/assets/`; then, in `src/04_image/index.html.j2`, replace
+`img::assets/diagram.svg` with `img::assets/photo.png`, and the caption on
+the line `credit::` with yours. Save: the image is on the right of the
+slide, fitted to its column. An image belongs to the
+directory of its slide, in `assets/`.
+
+The four slides of the start show the rest, each in a few lines: the title
+slide, then math (`\(e^{i\pi} + 1 = 0\)`), a link, a space (`gap::`) and
+small text in `02_text`, two columns (`cols::` and `col::`) in
+`03_two_columns`, an image beside the text in `04_image`. All the macros
+and layouts of the slides are in
+[Design](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#design-tokens-macros-and-layouts),
+and the markup in [LHTML](https://github.com/drohmer/lhtml).
+
+**6. Come back to it later.** Open a terminal, go into the directory of the
+talk, and start the preview again:
 
 ```bash
-cp -r src/02_text src/05_conclusion
+cd my-talk
+lhtml-site --serve --watch
 ```
 
-The slides follow the order of their directories, hence the numbers:
-`05_conclusion` comes last; name it `02b_detail` to put it after `02_text`.
+**7. Share it.** Your talk is `configure.yaml` and `src/`: keep them (a
+backup, or a git repository). The slides themselves are built into `.site/`,
+which `lhtml-site` (without `--serve`) rebuilds from them at any time. To
+show the slides on another computer, copy the directory `.site/`: opening
+`.site/index.html` in a browser shows them, no server needed; to put them
+online, copy `.site/` to any web host (GitHub Pages, the server of your
+university). The file explorer hides `.site/`, as any name starting with a
+dot: Cmd+Shift+. shows it in the Finder, and *Hidden items* in the *View*
+menu of the Windows explorer. For a PDF of the slides, see
+[Your talk as a PDF](#your-talk-as-a-pdf).
+
 To order the slides without renaming them, or to reuse a slide, list them in
 a [deck](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#deck-order-of-the-slides).
 
@@ -101,11 +129,31 @@ browser and as a PDF, see
 
 ```bash
 pipx install lhtml-site                  # the command lhtml-site, in an environment of its own
+pipx upgrade lhtml-site                  # later, to update it
 ```
 
-or, in a virtual environment, `pip install lhtml-site`. `lhtml-site --version`
-says the version installed, and the LHTML it runs. The version of `main`,
-before its release: `pipx install git+https://github.com/drohmer/lhtml-site`.
+Without pipx, in a virtual environment (Homebrew and recent system Pythons
+refuse a `pip install` outside one). On macOS and Linux:
+
+```bash
+python3 -m venv ~/.venvs/lhtml-site
+source ~/.venvs/lhtml-site/bin/activate     # fish: activate.fish
+python -m pip install lhtml-site
+```
+
+On Windows, in PowerShell:
+
+```powershell
+py -m venv $HOME\.venvs\lhtml-site
+& $HOME\.venvs\lhtml-site\Scripts\Activate.ps1
+python -m pip install lhtml-site
+```
+
+The command `lhtml-site` is then there while that environment is active
+(the `source` or `Activate.ps1` line again, in a new terminal).
+`lhtml-site --version` says the version installed, and the LHTML it runs.
+The version of `main`, before its release:
+`pipx install git+https://github.com/drohmer/lhtml-site`.
 
 **Python**: 3.11 or newer. **Required**, and installed with it: `lhtml-markup`
 (3.0 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`.
@@ -167,6 +215,28 @@ and a Chrome installed in the usual place is its last resort).
 
 In a checkout of the generator, `npm ci` in the checkout installs puppeteer
 and minimist (`package.json`), then `npx puppeteer browsers install chrome`.
+
+### Your talk as a PDF
+
+Once `lhtml-site doctor` says *PDF export: ready*, in the `configure.yaml`
+of the talk, replace the line `theme: 'slides'` with:
+
+```yaml
+theme: 'slides-pdf'
+```
+
+and build, in the directory of the talk:
+
+```bash
+lhtml-site
+```
+
+It writes `slides.pdf`, and `images/` with an image of each slide, next to
+`configure.yaml` (a few seconds for a few slides). With this theme the HTML
+of the slides is only a step towards the PDF, and is not kept; put
+`theme: 'slides'` back to work on the slides in the browser. To get both at
+each build, the slides in the browser and the PDF, declare two targets:
+[Decks and targets](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#decks-and-targets).
 
 ### From a checkout
 
