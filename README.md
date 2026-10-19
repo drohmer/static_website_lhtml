@@ -1,5 +1,8 @@
 # lhtml-site
 
+[![Tests](https://github.com/drohmer/lhtml-site/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/drohmer/lhtml-site/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/lhtml-site)](https://pypi.org/project/lhtml-site/)
+
 Write your talks and course websites as short text files: lhtml-site turns
 them into slides shown in the browser, a PDF of the slides, or a website
 with a menu. It is made for teachers and researchers; no web development is
