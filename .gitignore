@@ -19,3 +19,6 @@ _layout/
 .layout.lock
 build/
 *.egg-info/
+
+# The distributions built by python -m build
+dist/

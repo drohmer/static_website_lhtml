@@ -3,23 +3,7 @@
 All notable changes to lhtml-site (`lhtml-site` on PyPI) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
-
-### Added
-- The PDF export runs Chromium through Playwright for Python, with the extra
-  `lhtml-site[pdf]` (playwright, pypdf) and
-  `python -m playwright install --only-shell chromium`: no Node.js, poppler
-  nor ImageMagick. One browser for the deck, a few slides at a time, each
-  printed once ready (fonts, math, images, a frame of each video) instead of
-  after a fixed 4 s; the images are screenshots at 3840 px, the merge is
-  pypdf. The outputs keep their names and layout. `lhtml-site doctor`
-  reports it.
-
-### Changed
-- The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
-  when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
-
-## [3.0.0] - unreleased
+## [3.0.0] - 2026-10-19
 
 The first release on PyPI. The generator was named `static_website_lhtml`,
 and projects used it as a copy or a submodule; it is now a package with a
@@ -46,6 +30,14 @@ it is built on.
 - Projects of several decks, each built to several targets (the slides in
   the browser, a PDF), the layout report (`--layout`), the lint of the
   values written by hand (`--lint`).
+- The PDF export runs Chromium through Playwright for Python, with the extra
+  `lhtml-site[pdf]` (playwright, pypdf) and
+  `python -m playwright install --only-shell chromium`: no Node.js, poppler
+  nor ImageMagick. One browser for the deck, a few slides at a time, each
+  printed once ready (fonts, math, images, a frame of each video) instead of
+  after a fixed 4 s; the images are screenshots at 3840 px, the merge is
+  pypdf. The outputs keep their names and layout. `lhtml-site doctor`
+  reports it.
 
 ### Changed
 - Requires LHTML 3 (`lhtml-markup>=3.0`), which reads no file: the
@@ -63,5 +55,7 @@ it is built on.
   changes the id of its headings with these characters (`Part - One`:
   `part___one` before, `part__one` now). A repeated heading gets distinct
   ids (`_id2`, `_id3`...) and characters unsafe in a URL are removed.
+- The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
+  when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
 
 [3.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v3.0.0
