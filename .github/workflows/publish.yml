@@ -10,8 +10,8 @@ name: Publish to PyPI
 #   2. On GitHub, create the environment `pypi` (Settings > Environments),
 #      ideally with a required reviewer.
 #   3. To publish on each version tag, uncomment the `push: tags` trigger
-#      below; the tag must match the version of pyproject.toml (v3.0.1 for
-#      version = "3.0.1"), which the job checks.
+#      below; the tag must match the version of pyproject.toml (v1.0.0 for
+#      version = "1.0.0"), which the job checks.
 on:
   workflow_dispatch:
   # push:

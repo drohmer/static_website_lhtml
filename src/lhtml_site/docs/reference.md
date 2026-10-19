@@ -698,7 +698,7 @@ A heading without an id written by hand (`==(#mine) Title`, `## Title {: #mine}`
 
 A heading whose text comes from Jinja (`= {{ parts[params.current - 1] }}`, a heading in a `{% for %}` loop) gets its id from its text as rendered, with the same scheme, unique in its page: each occurrence of a page reused with `params` gets the id of its own title (`= Interpolation de keyframes` gives `interpolation_de_key_l1`). The ids of the headings written as text are unique in the site and do not depend on these.
 
-The theme webpage-frame lists the level-2 headings with an id of the page in its "Page content" column, read in the page itself (`theme/js/title_id.js`): the column is the same over http and from a file opened on disk. Nothing about the headings is written into the site; the build keeps their record, for `--only` (the ids of the pages it does not generate), in `.verification/headings.json` next to the dependency store (`.verification/<deck>/<target>/` in a project of several). Versions up to 3.0 wrote `<page>.title_id.json`, a copy `title_id.json` and `structure/title_id.json` into the site: a custom theme that read them reads the headings of the page instead (`document.querySelectorAll('h2[id]')`).
+The theme webpage-frame lists the level-2 headings with an id of the page in its "Page content" column, read in the page itself (`theme/js/title_id.js`): the column is the same over http and from a file opened on disk. Nothing about the headings is written into the site; the build keeps their record, for `--only` (the ids of the pages it does not generate), in `.verification/headings.json` next to the dependency store (`.verification/<deck>/<target>/` in a project of several). Version 1.0 wrote `<page>.title_id.json`, a copy `title_id.json` and `structure/title_id.json` into the site: a custom theme that read them reads the headings of the page instead (`document.querySelectorAll('h2[id]')`).
 
 Page-level `config.yaml` files may be empty or contain only comments. Their metadata must otherwise be a mapping. Template discovery has no default depth limit, skips directory symlink cycles and never enters the site (reached through a link). The generator never writes through a link into the sources or the theme: a symbolic link to a directory is copied into the site as a directory (a linked library of videos is thus copied into each build), and a link to a file is kept only if it is relative and leads to a file of the copy, else the file is copied. A link to a directory containing it is kept only if it is relative and stays in the sources; the site itself is never copied.
 
@@ -1018,8 +1018,9 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 
 ## Migrating from the previous layout
 
-Version 3 is a major version: an old form is refused by name, with the
-change to make, rather than accepted with a warning.
+lhtml-site 1.0, the first version as a package and built on LHTML 3, breaks
+with the old generator: an old form is refused by name, with the change to
+make, rather than accepted with a warning.
 
 - `lhtml-site init DIR` copies a few pages to start from into `DIR/src/` (four slides with
   `--theme slides` or `slides-pdf`, two pages with `webpage-frame`), instead of the course example

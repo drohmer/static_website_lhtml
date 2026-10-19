@@ -23,14 +23,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `structure/title_id.json` (144 files, 592 KB on a deck of 78 slides).
   The record of the headings that `--only` needs is build state, in
   `.verification/headings.json`; the `structure/title_id.json` of a site
-  built by 3.0 is read once in its place.
+  built by 1.0 is read once in its place.
 
-## [3.0.0] - 2026-10-19
+## [1.0.0] - 2026-10-19
 
 The first release on PyPI. The generator was named `static_website_lhtml`,
 and projects used it as a copy or a submodule; it is now a package with a
-command, `lhtml-site`, and its version follows the major version of LHTML
-it is built on.
+command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
 
 ### Added
 - `pipx install lhtml-site` (or `pip install lhtml-site` in a virtual
@@ -63,6 +62,14 @@ it is built on.
 - A progress bar while the PDF is made, on a terminal only (a log gets
   nothing). Without Playwright nor the Node export, the build says to
   install Playwright, the command for the way lhtml-site is installed.
+- A slide is printed once the promises a page or a demo (in an iframe too)
+  registered with `window.__lhtmlReady` are settled, as the layout report
+  already waited for them; the whole preparation of a slide is bounded (60
+  s), so a promise that never settles fails the slide instead of blocking
+  the export. After pipx, the commands to install are the same in the
+  README, in `lhtml-site doctor` and in the errors:
+  `pipx inject --include-apps lhtml-site playwright pypdf`, then
+  `playwright install --only-shell chromium`.
 
 ### Changed
 - Requires LHTML 3 (`lhtml-markup>=3.0`), which reads no file: the
@@ -83,4 +90,4 @@ it is built on.
 - The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
   when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
 
-[3.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v3.0.0
+[1.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v1.0.0

@@ -35,7 +35,7 @@ from lhtml_site.pages import markup
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
 # The headings of each page, as text: {page: [{level, title, id}]}, under
-# .verification/<scope>/ next to the dependency store. Sites built up to 3.0
+# .verification/<scope>/ next to the dependency store. Sites built by 1.0
 # kept it in the site (structure/title_id.json): read once, if this one is missing.
 HEADINGS = 'headings.json'
 LEGACY_SUMMARY = 'structure/title_id.json'
@@ -183,7 +183,7 @@ def run(meta):
                  else lhtml_headings(file_content, meta.get('macros')))
         for start, end, level, class_id, written in found:
             title = strip_markers(markdown_page.plain(written) if markdown else written)
-            # Every heading counts, as before 3.1: the ids of the headings
+            # Every heading counts, as in 1.0: the ids of the headings
             # written as text stay those of the sites already published
             generated_id = generate_new_id(title, id_storage) + '_l' + str(level)
             jinja = has_jinja(written)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lhtml-site"
-version = "3.0.0"
+version = "1.0.0"
 description = "Static website and slide generator built on LHTML and Jinja2"
 readme = "README.md"
 license = "MIT"

@@ -174,6 +174,13 @@ class NoEngineTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, r'needs playwright and pypdf.*playwright install --only-shell'):
             self.export('')
 
+    def test_after_pipx_the_commands_need_no_path(self):
+        with patch.object(pdf_export, 'installation', return_value='pipx'), \
+                patch('lhtml_site.doctor.installation', return_value='pipx'):
+            said = pdf_export.playwright_missing()
+        self.assertIn('pipx inject --include-apps lhtml-site playwright pypdf', said)
+        self.assertIn('then playwright install --only-shell chromium', said)
+
     def test_the_node_export_asked_says_what_it_needs(self):
         with self.assertRaisesRegex(RuntimeError, 'puppeteer'):
             self.export('node')
@@ -245,3 +252,64 @@ def _jpeg_width(path):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+READINESS = (REPO / 'src/lhtml_site/themes/slides/js/readiness.js').read_text(encoding='utf-8')
+
+
+def _browser_export(tmp_path, html, **frames):
+    """_export_playwright on one page (and the frames it names), in Chromium."""
+    pytest.importorskip('playwright')
+    pytest.importorskip('pypdf')
+    for name, text in frames.items():
+        (tmp_path / name).write_text(text, encoding='utf-8')
+    page = tmp_path / 'page.html'
+    page.write_text(html, encoding='utf-8')
+    stem = str(tmp_path / 'slide_000')
+    import asyncio
+    asyncio.run(pdf_export._export_playwright([page], [stem], None))
+    from pypdf import PdfReader
+    return PdfReader(stem + '.pdf').pages[0].extract_text()
+
+
+BROWSER = pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chromium')
+
+
+@BROWSER
+def test_a_promise_that_never_settles_fails_the_page_in_time(tmp_path):
+    # MathJax whose typesetting never ends: the page fails, after the bound, not never
+    html = '<html><body>x<script>window.MathJax = {startup: {promise: new Promise(() => {})}};</script></body></html>'
+    with patch.object(pdf_export, 'READY_TIMEOUT', 2000):
+        with pytest.raises(RuntimeError, match='not ready after 2 s'):
+            _browser_export(tmp_path, html)
+
+
+@BROWSER
+def test_the_page_waits_for_its_readiness_promises(tmp_path):
+    # a demo that writes its content asynchronously, then says it is ready
+    demo = ('<html><body><div id="d">loading</div><script>' + READINESS + '''
+        window.__lhtmlReady.optIn();
+        window.__lhtmlReady.waitUntil(new Promise(done => setTimeout(() => {
+            document.getElementById('d').textContent = 'PREPARED-IN-PAGE'; done(); }, 800)));
+        </script></body></html>''')
+    assert 'PREPARED-IN-PAGE' in _browser_export(tmp_path, demo)
+
+
+@BROWSER
+def test_a_frame_waits_for_its_readiness_promises(tmp_path):
+    frame = ('<html><body><div id="d">loading</div><script>' + READINESS + '''
+        window.__lhtmlReady.optIn();
+        window.__lhtmlReady.waitUntil(new Promise(done => setTimeout(() => {
+            document.getElementById('d').textContent = 'PREPARED-IN-FRAME'; done(); }, 800)));
+        </script></body></html>''')
+    html = '<html><body><iframe src="demo.html" width="800" height="300"></iframe></body></html>'
+    assert 'PREPARED-IN-FRAME' in _browser_export(tmp_path, html, **{'demo.html': frame})
+
+
+@BROWSER
+def test_a_rejected_readiness_promise_fails_the_page(tmp_path):
+    demo = ('<html><body>x<script>' + READINESS + '''
+        window.__lhtmlReady.waitUntil(Promise.reject('the demo could not load'));
+        </script></body></html>''')
+    with pytest.raises(RuntimeError, match='the demo could not load'):
+        _browser_export(tmp_path, demo)

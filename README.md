@@ -194,30 +194,28 @@ In a virtual environment or a checkout, `pip install matplotlib numpy` (and
 The export writes `<deck>.pdf` (`slides.pdf` for a project of one deck) and
 `images/` (an image of each slide, 3840 px wide) next to the site directory
 of the target. It runs Chromium through Playwright for Python: two Python
-packages (the extra `pdf`) and a browser, nothing else. With pipx:
+packages and a browser, nothing else. After `pipx install lhtml-site`, in
+any shell:
 
 ```bash
 pipx inject --include-apps lhtml-site playwright pypdf
-playwright install --only-shell chromium         # the Chromium of that Playwright (about 200 MB)
+playwright install --only-shell chromium         # the Chromium of Playwright, about 200 MB, once
 lhtml-site doctor                                # PDF export with Playwright: ready
 ```
 
-`--include-apps` puts the command `playwright` of the environment of
-lhtml-site on the PATH, so the browser downloaded is the one its Playwright
-expects. A first install can take the extra at once:
-`pipx install "lhtml-site[pdf]"`, then
-`(pipx environment --value PIPX_LOCAL_VENVS)/lhtml-site/bin/python -m playwright install --only-shell chromium`
-(the same line with `$(...)` in bash or zsh). In a virtual environment or a
-checkout: `pip install "lhtml-site[pdf]"` (or `pip install playwright pypdf`),
-then `python -m playwright install --only-shell chromium`. `lhtml-site doctor`
-prints these commands with the right Python. On Linux, Playwright may also
-ask for the system libraries of Chromium:
-`python -m playwright install-deps chromium`.
+`--include-apps` makes `playwright` a command, the one of the environment
+of lhtml-site, so the browser downloaded is the one it expects. In a virtual
+environment or a checkout instead: `pip install "lhtml-site[pdf]"`, then
+`python -m playwright install --only-shell chromium`. On Linux, Playwright
+may also ask for the system libraries of Chromium:
+`playwright install-deps chromium`.
 
 The export opens one browser for the deck, prints a few slides at a time,
 and prints a slide once it is ready (fonts loaded, math rendered, images
-decoded, a frame of each video) rather than after a fixed delay; a slide
-that never gets ready, within a minute, fails the build. The configuration
+decoded, a frame of each video, the promises of a demo registered with
+`window.__lhtmlReady`) rather than after a fixed delay; a slide that is not
+ready within a minute fails the build. A bar shows the progress on a
+terminal. The configuration
 key `chrome` names another Chromium or Chrome to run instead.
 
 **The Node export** (the one of the earlier versions) is used when

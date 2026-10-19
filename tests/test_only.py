@@ -103,14 +103,14 @@ class OnlyTests(DeckProjectsTests):
 
     def test_the_headings_are_build_state_not_published(self):
         """Their record is kept next to the dependency store; the site holds
-        no title_id.json (3.0 wrote one per page, and a copy for an index)."""
+        no title_id.json (1.0 wrote one per page, and a copy for an index)."""
         self.write('talk/src/00_plan/index.html.j2', HEAD + "= Plan\n== Same\n{% endblock %}\n")
         self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n== Same\n{% endblock %}\n")
         self.build({'slides': ['00_plan', '01_a']})
         self.assertEqual(sorted(p.name for p in self.site.rglob('*title_id*.json')), [])
         self.assertEqual([h['id'] for h in json.loads(self.headings.read_text())['01_a/index.html']],
                          ['a_l1', 'same_id2_l2'])
-        # A site built by 3.0: its record was in the site, read once by --only
+        # A site built by 1.0: its record was in the site, read once by --only
         legacy = {page: headings for page, headings in json.loads(self.headings.read_text()).items()}
         self.headings.unlink()
         (self.site / 'structure/title_id.json').write_text(json.dumps(legacy))
@@ -129,7 +129,7 @@ class OnlyTests(DeckProjectsTests):
 
     def test_a_heading_from_jinja_gets_its_id_from_its_rendered_text(self):
         """A template reused with params: each occurrence gets the id of its
-        own heading, as rendered (3.0 gave both '_parts[params_curr_l1'),
+        own heading, as rendered (1.0 gave both '_parts[params_curr_l1'),
         each heading of a loop its own, and the headings written as text
         keep their ids (those of the sites already published)."""
         self.write('talk/src/00_plan/index.html.j2', HEAD
@@ -147,7 +147,7 @@ class OnlyTests(DeckProjectsTests):
             second = (self.site / '00_plan/index-2.html').read_text()
             self.assertIn('<h1 id="intro_l1">Intro</h1>', first)
             self.assertIn('<h1 id="rotations_3d__l1">Rotations (3D)</h1>', second)
-            # The headings written as text: unique in the site, as in 3.0
+            # The headings written as text: unique in the site, as in 1.0
             # (00_plan/index.html, 01_a, then 00_plan/index-2.html)
             self.assertIn('<h2 id="same_l2">Same</h2>\n\n<h2 id="_kept__l2">', first)
             self.assertIn('<h2 id="same_id2_l2">Same</h2>', (self.site / '01_a/index.html').read_text())

@@ -184,7 +184,7 @@ for (const [headings, expected] of [
     @unittest.skipUnless(os.environ.get('LHTML_BROWSER_TEST') == '1', 'Set LHTML_BROWSER_TEST=1 for Chromium')
     def test_the_page_content_column_in_a_browser(self):
         """The column of webpage-frame, over http and from the file opened on
-        disk (3.0 fetched a JSON file: the column was empty from file://)."""
+        disk (1.0 fetched a JSON file: the column was empty from file://)."""
         import functools
         import http.server
         import threading
@@ -230,7 +230,7 @@ for (const [headings, expected] of [
         self.build()
         page = (self.site / 'm/index.html').read_text()
         self.assertIn('id="notes_l1"', page)
-        self.assertIn('id="quaternions_unit_l2"', page)          # written as text: as in 3.0
+        self.assertIn('id="quaternions_unit_l2"', page)          # written as text: as in 1.0
         self.assertIn('id="quaternions_unit_id2_l2"', page)      # from Jinja: unique in its page
         self.assertNotIn('{{', page)
 
