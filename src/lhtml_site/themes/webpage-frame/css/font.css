@@ -4,10 +4,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-ExtraLight.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-ExtraLight.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-ExtraLight.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-ExtraLight.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-ExtraLight.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -16,10 +13,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-ExtraLightIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-ExtraLightIt.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-ExtraLightIt.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-ExtraLightIt.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-ExtraLightIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -28,10 +22,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Light.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-Light.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-Light.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-Light.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Light.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -40,10 +31,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-LightIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-LightIt.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-LightIt.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-LightIt.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-LightIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -52,10 +40,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Regular.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-Regular.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-Regular.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-Regular.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Regular.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -64,10 +49,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-It.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-It.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-It.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-It.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-It.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -76,10 +58,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Semibold.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-Semibold.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-Semibold.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-Semibold.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Semibold.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -88,10 +67,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-SemiboldIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-SemiboldIt.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-SemiboldIt.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-SemiboldIt.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-SemiboldIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -100,10 +76,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Bold.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-Bold.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-Bold.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-Bold.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Bold.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -112,10 +85,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-BoldIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-BoldIt.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-BoldIt.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-BoldIt.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-BoldIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -124,10 +94,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Black.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-Black.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-Black.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-Black.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-Black.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -136,10 +103,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-BlackIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_serif_pro/WOFF/OTF/SourceSerifPro-BlackIt.otf.woff') format('woff'),
-         url('../fonts/source_serif_pro/OTF/SourceSerifPro-BlackIt.otf') format('opentype'),
-         url('../fonts/source_serif_pro/TTF/SourceSerifPro-BlackIt.ttf') format('truetype');
+    src: url('../fonts/source_serif_pro/WOFF2/TTF/SourceSerifPro-BlackIt.ttf.woff2') format('woff2');
 }
 
 
@@ -160,10 +124,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-ExtraLight.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-ExtraLight.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-ExtraLight.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-ExtraLight.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-ExtraLight.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -172,10 +133,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-ExtraLightIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-ExtraLightIt.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-ExtraLightIt.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-ExtraLightIt.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-ExtraLightIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -184,10 +142,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Light.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-Light.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-Light.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-Light.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Light.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -196,10 +151,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-LightIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-LightIt.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-LightIt.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-LightIt.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-LightIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -208,10 +160,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Regular.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-Regular.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-Regular.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-Regular.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Regular.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -220,10 +169,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-It.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-It.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-It.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-It.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-It.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -232,10 +178,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Semibold.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-Semibold.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-Semibold.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-Semibold.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Semibold.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -244,10 +187,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-SemiboldIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-SemiboldIt.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-SemiboldIt.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-SemiboldIt.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-SemiboldIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -256,10 +196,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Bold.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-Bold.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-Bold.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-Bold.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Bold.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -268,10 +205,7 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-BoldIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-BoldIt.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-BoldIt.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-BoldIt.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-BoldIt.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -280,10 +214,7 @@
     font-style: normal;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Black.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-Black.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-Black.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-Black.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-Black.ttf.woff2') format('woff2');
 }
 
 @font-face{
@@ -292,8 +223,5 @@
     font-style: italic;
     font-stretch: normal;
     font-display:block;
-    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-BlackIt.ttf.woff2') format('woff2'),
-         url('../fonts/source_code_pro/WOFF/OTF/SourceCodePro-BlackIt.otf.woff') format('woff'),
-         url('../fonts/source_code_pro/OTF/SourceCodePro-BlackIt.otf') format('opentype'),
-         url('../fonts/source_code_pro/TTF/SourceCodePro-BlackIt.ttf') format('truetype');
+    src: url('../fonts/source_code_pro/WOFF2/TTF/SourceCodePro-BlackIt.ttf.woff2') format('woff2');
 }
