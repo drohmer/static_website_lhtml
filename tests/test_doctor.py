@@ -1,4 +1,5 @@
 """lhtml-site doctor, and the helpers the build shares with it (lhtml_site/doctor.py)."""
+import importlib.util
 import os
 import subprocess
 import sys
@@ -41,13 +42,6 @@ class LookupTest(unittest.TestCase):
             self.assertEqual(doctor.find_command('lhtml-test-command'), str(command))
             self.assertIsNone(doctor.find_command('lhtml-no-such-command'))
 
-    def test_the_node_modules_of_the_generator_complete_node_path(self):
-        modules = self.tmp / 'node_modules'
-        with patch.object(doctor, 'NODE_MODULES', modules), patch.dict(os.environ, {'NODE_PATH': '/mine'}):
-            self.assertEqual(doctor.node_environment()['NODE_PATH'], '/mine')       # none there yet
-            modules.mkdir()
-            self.assertEqual(doctor.node_environment()['NODE_PATH'], os.pathsep.join(['/mine', str(modules)]))
-
 
 class CommandTest(unittest.TestCase):
 
@@ -62,13 +56,17 @@ class CommandTest(unittest.TestCase):
                         'SASS', 'Figures in code', 'Code of other repositories'):
             self.assertIn(feature, result.stdout)
 
-    def test_without_node_it_says_what_to_install_for_the_pdf_export(self):
-        env = {**os.environ, 'PATH': os.path.dirname(sys.executable)}       # no node, no poppler
+    def test_without_chromium_it_says_what_to_install_for_the_pdf_export_and_the_layout_report(self):
+        env = {**os.environ, 'PLAYWRIGHT_BROWSERS_PATH': str(Path(tempfile.mkdtemp()) / 'none')}
         result = self.run_doctor(env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('PDF export with Node (the fallback: LHTML_PDF_ENGINE=node): missing node', result.stdout)
-        self.assertRegex(result.stdout, r'missing  puppeteer  -> npm ci')     # a checkout: its package.json
-        self.assertRegex(result.stdout, r'missing  pdfunite   -> poppler')
+        self.assertNotIn('Node', result.stdout)
+        self.assertNotIn('puppeteer', result.stdout)
+        if importlib.util.find_spec('playwright') is None:
+            self.assertRegex(result.stdout, r'Layout report .*: missing playwright, Chromium')
+        else:
+            self.assertRegex(result.stdout, r'Layout report .*: missing Chromium')
+        self.assertRegex(result.stdout, r'missing  Chromium   -> .* -m playwright install --only-shell chromium')
 
 
 if __name__ == '__main__':

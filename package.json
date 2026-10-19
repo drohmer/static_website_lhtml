@@ -1,9 +1,0 @@
-{
-  "name": "lhtml-site",
-  "private": true,
-  "description": "Node dependencies of lhtml-site: the PDF export and the layout report (headless Chrome)",
-  "dependencies": {
-    "minimist": "^1.2.8",
-    "puppeteer": "^25.12.0"
-  }
-}

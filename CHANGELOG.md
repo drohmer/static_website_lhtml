@@ -38,8 +38,15 @@ command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
   pypdf. The outputs keep their names and layout. `lhtml-site doctor`
   reports it.
 - A progress bar while the PDF is made, on a terminal only (a log gets
-  nothing). Without Playwright nor the Node export, the build says to
-  install Playwright, the command for the way lhtml-site is installed.
+  nothing). Without Playwright, the build says what to install, the command
+  for the way lhtml-site is installed.
+- The layout report (`--layout`, `--render`) runs in the same Chromium,
+  through Playwright for Python (`lhtml_site/layout/measure.py`; what runs
+  inside the page is `lhtml_site/layout/page.js`). Its reports are those of
+  the Node version: same blocks, problems and usual values of the deck
+  measured in the same browser. The pages of an existing report are measured
+  again once (the measuring code changed). On a deck of 35 slides, the
+  report takes 7.9 s instead of 9.5 s.
 - A slide is printed once the promises a page or a demo (in an iframe too)
   registered with `window.__lhtmlReady` are settled, as the layout report
   already waited for them; the whole preparation of a slide is bounded (60
@@ -68,8 +75,6 @@ command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
   changes the id of its headings with these characters (`Part - One`:
   `part___one` before, `part__one` now). A repeated heading gets distinct
   ids (`_id2`, `_id3`...) and characters unsafe in a URL are removed.
-- The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
-  when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
 - The "Page content" column of the theme webpage-frame is read in the page
   (its level-2 headings with an id), not fetched from a JSON file: it is
   shown when the site is opened from disk (`file://`), where it was empty,
@@ -83,6 +88,10 @@ command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
   written as text do not change: links into published sites keep working.
 
 ### Removed
+- Node.js is no longer used: the Node PDF export of `static_website_lhtml`
+  (puppeteer, poppler, ImageMagick, `LHTML_PDF_ENGINE`), the Node scripts of
+  the layout report, `package.json`. `lhtml-site doctor` no longer looks for
+  Node, puppeteer or a Chrome of its own.
 - The site no longer holds `<page>.title_id.json`, `title_id.json` nor
   `structure/title_id.json` (144 files, 592 KB on a deck of 78 slides).
   The record of the headings that `--only` needs is build state, in

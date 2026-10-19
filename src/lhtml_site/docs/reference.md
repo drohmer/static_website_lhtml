@@ -138,7 +138,7 @@ Optional keys:
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
 | `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
-| `chrome` | Chrome executable run by the PDF export (instead of the Chromium of Playwright) and by the Node scripts (layout report, `--render`, the Node PDF export), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
+| `chrome` | Chrome executable run by the PDF export, the layout report and `--render`, instead of the Chromium of Playwright; a macOS `.app` bundle is accepted |
 | `title_id` | Give the headings IDs, a stage of the build (`lhtml_site/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
@@ -179,9 +179,8 @@ _site/01_procedural/images/slide_000.jpg ...
   through Playwright (`pipx inject --include-apps lhtml-site playwright pypdf`,
   then `playwright install --only-shell chromium`; with pip,
   `pip install "lhtml-site[pdf]"` then
-  `python -m playwright install --only-shell chromium`); without Playwright,
-  or with `LHTML_PDF_ENGINE=node`, it runs the Node export (puppeteer,
-  poppler, ImageMagick: README, "PDF export"). `lhtml-site doctor` says which.
+  `python -m playwright install --only-shell chromium`). `lhtml-site doctor`
+  says what is missing.
 - `--target html` builds only that target (repeatable, or `--target
   html,pdf`); `--only 01_procedural` builds only that deck, and
   `--only 01_procedural/03_noise` pages of it.
@@ -292,40 +291,16 @@ kept. To install it, see
 [PDF export](https://github.com/drohmer/lhtml-site#pdf-export) in the README;
 `lhtml-site doctor` says what is found.
 
-**With Playwright** (the extra `lhtml-site[pdf]`: playwright, pypdf, and the
-Chromium of Playwright). The export opens one browser for the deck, prints
-a few slides at a time, and prints a slide once it is ready (fonts loaded,
-math rendered, images decoded, a frame of each video, the promises a page
-or a demo, in an iframe too, registered with `window.__lhtmlReady`) rather
-than after a fixed delay; a slide that is not ready within a minute fails
-the build. A bar shows the progress on a terminal. The configuration key
-`chrome` names another Chromium or Chrome to run instead.
-
-**With Node** (the export of `static_website_lhtml`), used when Playwright
-is not installed, or with `LHTML_PDF_ENGINE=node`. It runs a Chrome per
-slide through Node.js and puppeteer, then poppler and ImageMagick. With pipx
-(or pip), on macOS:
-
-```bash
-brew install node poppler imagemagick
-npm install --prefix ~/.lhtml-site puppeteer minimist
-~/.lhtml-site/node_modules/.bin/puppeteer browsers install chrome
-lhtml-site doctor                                # PDF export with Node: ready
-```
-
-On Debian or Ubuntu, the first line is
-`sudo apt install nodejs npm poppler-utils`, with ImageMagick 7 (the command
-`magick`) from <https://imagemagick.org>. The generator finds the Node
-modules of `~/.lhtml-site/node_modules` by itself: no `NODE_PATH` is needed
-(a `NODE_PATH` of yours is still read, first). The third line downloads the
-Chrome of this version of puppeteer (over 100 MB): recent npm versions do not
-run the install script of puppeteer, hence the explicit download. The Node
-export needs it. The layout report still runs through Node and puppeteer,
-and can do without that Chrome (the configuration key `chrome`, or
-`PUPPETEER_EXECUTABLE_PATH`, names a Chrome already installed, and a Chrome
-installed in the usual place is its last resort). In a checkout of the
-generator, `npm ci` in the checkout installs puppeteer and minimist
-(`package.json`), then `npx puppeteer browsers install chrome`.
+It runs Chromium through Playwright for Python (the extra
+`lhtml-site[pdf]`: playwright, pypdf, and the Chromium of Playwright), as the
+layout report and `--render` do: no Node.js. The export opens one browser
+for the deck, prints a few slides at a time, and prints a slide once it is
+ready (fonts loaded, math rendered, images decoded, a frame of each video,
+the promises a page or a demo, in an iframe too, registered with
+`window.__lhtmlReady`) rather than after a fixed delay; a slide that is not
+ready within a minute fails the build. A bar shows the progress on a
+terminal. The configuration key `chrome` names another Chromium or Chrome
+to run instead.
 
 ## Writing slides with an AI agent
 
@@ -767,9 +742,11 @@ that still lists one of them is refused by name.
 
 ## Layout Report (LLM-assisted slide layout)
 
-`--layout` measures the layout of every generated page in headless Chrome and
-writes a text report that an LLM (or any script) can read to find and fix
-layout problems. It requires `npm install` (see Installation).
+`--layout` measures the layout of every generated page in headless Chromium
+and writes a text report that an LLM (or any script) can read to find and fix
+layout problems. It runs the Chromium of Playwright for Python, as the PDF
+export does (the extra `lhtml-site[pdf]`, then
+`python -m playwright install --only-shell chromium`; README, "PDF export").
 
 **What happens when it cannot run.** The analysis never takes the build with
 it: a missing browser, a page it cannot measure, a measurement that crashes

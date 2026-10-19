@@ -298,23 +298,6 @@ def test_readiness_waits_for_explicit_async_setup_and_preserves_legacy(tmp_path)
 
 
 @pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
-def test_the_chrome_asked_for_wins_and_an_installed_one_is_the_last_resort():
-    """plugins/assets/chrome.js decides which Chrome the scripts run."""
-    script = ("const c = require('" + str(REPO / 'src/lhtml_site/plugins/assets/chrome.js') + "');"
-              "console.log(JSON.stringify({asked: c.executablePath({chrome: '/bin/given'}),"
-              " env: c.executablePath({}), installed: c.installedChrome(),"
-              " options: c.launchOptions({chrome: '/bin/given'}, {headless: true})}));")
-    result = subprocess.run(['node', '-e', script], capture_output=True, text=True,
-                            env={k: v for k, v in os.environ.items() if k != 'PUPPETEER_EXECUTABLE_PATH'})
-    assert result.returncode == 0, result.stderr
-    chosen = json.loads(result.stdout)
-    assert chosen['asked'] == '/bin/given'
-    assert chosen['options']['executablePath'] == '/bin/given'
-    assert chosen['env'] == ''                      # nothing asked for: puppeteer decides
-    assert chosen['installed'] == '' or os.path.isfile(chosen['installed'])
-
-
-@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chrome')
 def test_a_failed_measurement_keeps_the_report_of_the_previous_build(tmp_path):
     """An analysis reports, or reports that it could not run: what it cannot
     replace, it does not destroy."""

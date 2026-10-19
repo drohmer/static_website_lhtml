@@ -2,7 +2,7 @@
 
     analysis.py   the checks on the measured blocks (pure functions)
     report.py     the markdown and the contact sheets written from them
-    measure.py    headless Chrome, through the Node scripts of plugins/assets/
+    measure.py    headless Chromium, through Playwright (page.js: what runs in the page)
     build.py      the analysis of a build (--layout): which pages to measure,
                   what to keep of a previous build, where to write
 

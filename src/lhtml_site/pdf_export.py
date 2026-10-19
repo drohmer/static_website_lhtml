@@ -6,59 +6,38 @@ page to `images/slide_NNN.jpg`, next to the site directory - in the directory
 of the deck. The site was an intermediate: it is not published, unless
 --debug keeps it or --only built in the site itself.
 
-Two engines make the same files:
-
-- playwright (the extra `lhtml-site[pdf]`: playwright, pypdf, and the
-  Chromium of `python -m playwright install --only-shell chromium`): one browser for the
-  deck, a few pages at a time, each printed once it is ready (fonts, math,
-  images, videos) rather than after a fixed delay; its image is a screenshot
-  at 3840 px wide, the PDFs merged by pypdf.
-- node (the fallback): a Chrome per page by puppeteer
-  (plugins/assets/template_html_to_pdf.js), its first page rendered by
-  pdftoppm (poppler) and resized by magick, the PDFs merged by pdfunite.
-
-The playwright engine is used when playwright and pypdf are importable;
-LHTML_PDF_ENGINE=node (or playwright) chooses one.
+The pages are exported by Playwright (the extra `lhtml-site[pdf]`:
+playwright, pypdf, and the Chromium of
+`python -m playwright install --only-shell chromium`; lhtml_site/browser.py):
+one browser for the deck, a few pages at a time, each printed once it is
+ready (fonts, math, images, videos) rather than after a fixed delay; its
+image is a screenshot at 3840 px wide, the PDFs merged by pypdf.
 """
 import asyncio
-import importlib.util
 import os
 import re
 import shutil
-import subprocess
-import sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from lhtml_site.doctor import installation, node_environment, playwright_browser_command, playwright_install_command
-from lhtml_site.layout.measure import PUPPETEER_MISSING
+from lhtml_site import browser
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
-SCRIPT = Path(__file__).resolve().parent / 'plugins/assets/template_html_to_pdf.js'
-# Chrome loads a page within 4 s (the script); a page showing videos misses it
-# when too many Chromes run at once: a few at a time, and a page that missed
-# it is tried again before the export fails
+# Pages printed at the same time
 JOBS = min(6, os.cpu_count() or 1)
-ATTEMPTS = 3
 
 # The page of the PDF (the slide is 1920x1080: a few pixels more keep a slide
 # on one page), and the width of its image
 PAGE_WIDTH, PAGE_HEIGHT = 1925, 1085
 IMAGE_WIDTH = 3840
 JPEG_QUALITY = 92                   # the default of magick for an image without one
-# Playwright: the longest a page may take to load and become ready. A clock
+# The longest a page may take to load and become ready. A clock
 # no longer decides when a page is printed: it only bounds a page that never
 # gets ready, which is then an error.
 READY_TIMEOUT = 60_000              # ms
 VIDEO_TIMEOUT = 15_000              # ms, for the first frame of each video
 
-ENGINES = ('playwright', 'node')
-PLAYWRIGHT_MISSING = ('The PDF export needs playwright and pypdf: {install}, '
-                      'then {browser} '
-                      '(or LHTML_PDF_ENGINE=node for the Node export)')
-CHROMIUM_MISSING = ('The Chromium of Playwright is not installed: {browser} '
-                    '(or the configuration key chrome)')
+PDF_MODULES = ('playwright', 'pypdf')
 
 # Ready when: the page has loaded (its deferred scripts ran: KaTeX auto-render
 # included), the promises a page or a demo registered with window.__lhtmlReady
@@ -94,8 +73,7 @@ FRAME_READY = """async () => {
 }"""
 
 # The image shows the page as printed: the PDF is printed without the
-# backgrounds (the default of Chrome, which the Node export kept: the icons
-# of the navigation are backgrounds), except where the page asks for them
+# backgrounds (the default of Chrome: the icons of the navigation are backgrounds), except where the page asks for them
 # (print-color-adjust: exact). A screenshot draws them: removed first.
 AS_PRINTED = """() => {
     for (const element of document.querySelectorAll('*')) {
@@ -121,18 +99,7 @@ def remove_video_controls(meta):
 
 
 def playwright_available():
-    return all(importlib.util.find_spec(module) for module in ('playwright', 'pypdf'))
-
-
-def engine():
-    """The engine of the export: LHTML_PDF_ENGINE, else playwright when it is
-    installed, else node."""
-    asked = os.environ.get('LHTML_PDF_ENGINE', '').strip().lower()
-    if asked:
-        if asked not in ENGINES:
-            raise ValueError(f"LHTML_PDF_ENGINE: '{asked}' is not one of {', '.join(ENGINES)}")
-        return asked
-    return 'playwright' if playwright_available() else 'node'
+    return browser.installed(PDF_MODULES)
 
 
 def export(meta):
@@ -143,37 +110,22 @@ def export(meta):
     site = Path(meta['site_directory']).resolve()
     output = site.parent
     name = meta.get('export_name') or 'slides'
-    chosen = engine()
 
     # Fresh outputs in a staging directory: a failed export reuses no stale
     # PDF, and removes no HTML that would help to diagnose it.
     with TemporaryDirectory(prefix='pdf-export-', dir=output) as staging:
         stems = [os.path.join(staging, 'slide_' + str(counter).zfill(3)) for counter in range(len(pages))]
         inputs = [site / page_path(entry) for entry in pages]
-        meta['log'].detail(f'PDF of {len(pages)} page(s) ({chosen}) ...')
-        with meta['log'].progress(f'PDF ({chosen})', len(pages)) as done:
-            try:
-                if chosen == 'playwright':
-                    export_playwright(inputs, stems, meta.get('chrome'), done=done)
-                else:
-                    export_node(inputs, stems, meta.get('chrome'), done=done)
-            except RuntimeError as error:
-                # Neither engine installed: the one to install is Playwright,
-                # not the Node export it fell back to
-                if chosen == 'node' and not os.environ.get('LHTML_PDF_ENGINE', '').strip() \
-                        and str(error) == PUPPETEER_MISSING:
-                    raise RuntimeError(playwright_missing()) from None
-                raise
+        meta['log'].detail(f'PDF of {len(pages)} page(s) ...')
+        with meta['log'].progress('PDF', len(pages)) as done:
+            export_playwright(inputs, stems, meta.get('chrome'), done=done)
         for stem in stems:
             for file in (stem + '.pdf', stem + '.jpg'):
                 if not os.path.isfile(file) or not os.path.getsize(file):
                     raise RuntimeError(f'{"PDF" if file.endswith(".pdf") else "Image"} not generated: {file}')
 
         merged = os.path.join(staging, name + '.pdf')
-        if chosen == 'playwright':
-            merge_pypdf([stem + '.pdf' for stem in stems], merged)
-        else:
-            subprocess.run(['pdfunite', *[stem + '.pdf' for stem in stems], merged], check=True)
+        merge_pypdf([stem + '.pdf' for stem in stems], merged)
         if not os.path.isfile(merged):
             raise RuntimeError('Merged PDF not generated')
 
@@ -192,98 +144,51 @@ def export(meta):
 
 
 # ---------------------------------------------------------------------------
-# Node: a Chrome per page by puppeteer, poppler and ImageMagick
-# ---------------------------------------------------------------------------
-
-def export_node(inputs, stems, chrome_path=None, done=lambda: None):
-    chrome = ['--chrome=' + chrome_path] if chrome_path else []
-
-    def export_page(item):
-        page, stem = item
-        pdf = stem + '.pdf'
-        command = ['node', str(SCRIPT), '--input=' + str(page), '--output=' + pdf] + chrome
-        for attempt in range(ATTEMPTS):
-            result = subprocess.run(command, capture_output=True, text=True, env=node_environment())
-            if result.returncode == 0:
-                break
-        else:
-            if 'Cannot find module' in result.stderr:
-                raise RuntimeError(PUPPETEER_MISSING)
-            lines = result.stderr.strip().splitlines()
-            said = next((line for line in lines if 'Error' in line), lines[0] if lines else result.returncode)
-            raise RuntimeError(f"PDF of {page} not made after {ATTEMPTS} attempts: {said}")
-        if not os.path.isfile(pdf):
-            raise RuntimeError(f'PDF not generated: {pdf}')
-        subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf, stem], check=True)
-        subprocess.run(['magick', stem + '.ppm', '-resize', str(IMAGE_WIDTH), stem + '.jpg'], check=True)
-        done()
-
-    with ThreadPoolExecutor(max_workers=JOBS) as pool:
-        list(pool.map(export_page, zip(inputs, stems)))
-
-
-# ---------------------------------------------------------------------------
 # Playwright: one browser, pages printed once ready, screenshots, pypdf
 # ---------------------------------------------------------------------------
 
-def playwright_missing():
-    """What to install for the Playwright export, for the way lhtml-site is installed."""
-    return PLAYWRIGHT_MISSING.format(install=playwright_install_command(), browser=playwright_browser_command())
-
-
 def export_playwright(inputs, stems, chrome_path=None, done=lambda: None):
-    if not playwright_available():
-        raise RuntimeError(playwright_missing())
+    browser.require('The PDF export', PDF_MODULES)
     asyncio.run(_export_playwright(inputs, stems, chrome_path, done))
 
 
 async def _export_playwright(inputs, stems, chrome_path, done=lambda: None):
-    from playwright.async_api import Error, async_playwright
+    from playwright.async_api import Error
 
-    async with async_playwright() as playwright:
-        try:
-            browser = await playwright.chromium.launch(executable_path=chrome_path or None)
-        except Error as error:
-            if "Executable doesn't exist" in str(error):
-                raise RuntimeError(CHROMIUM_MISSING.format(browser=playwright_browser_command())) from None
-            raise
-        try:
-            # The viewport is the page of the PDF, drawn at the width of the image
-            context = await browser.new_context(viewport={'width': PAGE_WIDTH, 'height': PAGE_HEIGHT},
-                                                device_scale_factor=IMAGE_WIDTH / PAGE_WIDTH)
-            slots = asyncio.Semaphore(JOBS)
+    async with browser.chromium(chrome_path) as chromium:
+        # The viewport is the page of the PDF, drawn at the width of the image
+        context = await chromium.new_context(viewport={'width': PAGE_WIDTH, 'height': PAGE_HEIGHT},
+                                             device_scale_factor=IMAGE_WIDTH / PAGE_WIDTH)
+        slots = asyncio.Semaphore(JOBS)
 
-            async def export_page(source, stem):
-                async with slots:
-                    page = await context.new_page()
+        async def export_page(source, stem):
+            async with slots:
+                page = await context.new_page()
+                try:
+                    # One bound for the whole preparation of the page: a
+                    # promise that never settles (MathJax, a demo) fails it
                     try:
-                        # One bound for the whole preparation of the page: a
-                        # promise that never settles (MathJax, a demo) fails it
-                        try:
-                            async with asyncio.timeout(READY_TIMEOUT / 1000):
-                                await page.goto(source.as_uri(), wait_until='load', timeout=READY_TIMEOUT)
-                                for frame in page.frames[1:]:
-                                    await frame.evaluate(FRAME_READY)
-                                await page.evaluate(READY, {'videoTimeout': VIDEO_TIMEOUT})
-                        except TimeoutError:
-                            raise RuntimeError(f'PDF of {source} not made: the page was not ready '
-                                               f'after {READY_TIMEOUT // 1000} s') from None
-                        await page.pdf(path=stem + '.pdf', width=f'{PAGE_WIDTH}px', height=f'{PAGE_HEIGHT}px',
-                                       margin={'top': '0px', 'left': '0px', 'right': '0px', 'bottom': '0px'})
-                        # The image of the page as printed: print media, as in the PDF
-                        await page.emulate_media(media='print')
-                        await page.evaluate(AS_PRINTED)
-                        await page.screenshot(path=stem + '.jpg', type='jpeg', quality=JPEG_QUALITY)
-                        done()
-                    except Error as error:
-                        said = str(error).strip().splitlines()[0]
-                        raise RuntimeError(f'PDF of {source} not made: {said}') from None
-                    finally:
-                        await page.close()
+                        async with asyncio.timeout(READY_TIMEOUT / 1000):
+                            await page.goto(source.as_uri(), wait_until='load', timeout=READY_TIMEOUT)
+                            for frame in page.frames[1:]:
+                                await frame.evaluate(FRAME_READY)
+                            await page.evaluate(READY, {'videoTimeout': VIDEO_TIMEOUT})
+                    except TimeoutError:
+                        raise RuntimeError(f'PDF of {source} not made: the page was not ready '
+                                           f'after {READY_TIMEOUT // 1000} s') from None
+                    await page.pdf(path=stem + '.pdf', width=f'{PAGE_WIDTH}px', height=f'{PAGE_HEIGHT}px',
+                                   margin={'top': '0px', 'left': '0px', 'right': '0px', 'bottom': '0px'})
+                    # The image of the page as printed: print media, as in the PDF
+                    await page.emulate_media(media='print')
+                    await page.evaluate(AS_PRINTED)
+                    await page.screenshot(path=stem + '.jpg', type='jpeg', quality=JPEG_QUALITY)
+                    done()
+                except Error as error:
+                    raise RuntimeError(f'PDF of {source} not made: {browser.first_line(error)}') from None
+                finally:
+                    await page.close()
 
-            await asyncio.gather(*(export_page(source, stem) for source, stem in zip(inputs, stems)))
-        finally:
-            await browser.close()
+        await asyncio.gather(*(export_page(source, stem) for source, stem in zip(inputs, stems)))
 
 
 def merge_pypdf(pdfs, merged):

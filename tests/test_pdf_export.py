@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
+from lhtml_site import browser as headless
 from lhtml_site import pdf_export
 from lhtml_site.logger import Logger
 
@@ -32,32 +33,17 @@ def blank_pdf(path, pages=1):
         writer.write(fid)
 
 
-class EngineTest(unittest.TestCase):
-
-    def test_playwright_when_installed_node_otherwise(self):
-        with patch.dict(os.environ, {'LHTML_PDF_ENGINE': ''}):
-            with patch.object(pdf_export, 'playwright_available', return_value=True):
-                self.assertEqual(pdf_export.engine(), 'playwright')
-            with patch.object(pdf_export, 'playwright_available', return_value=False):
-                self.assertEqual(pdf_export.engine(), 'node')
-
-    def test_the_environment_chooses(self):
-        with patch.object(pdf_export, 'playwright_available', return_value=True):
-            with patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'Node'}):
-                self.assertEqual(pdf_export.engine(), 'node')
-            with patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'weasyprint'}):
-                with self.assertRaisesRegex(ValueError, 'not one of playwright, node'):
-                    pdf_export.engine()
+class InstallTest(unittest.TestCase):
 
     def test_without_playwright_it_says_what_to_install(self):
-        with patch.object(pdf_export, 'playwright_available', return_value=False):
+        with patch.object(pdf_export, 'playwright_available', return_value=False), \
+                patch('importlib.util.find_spec', return_value=None):
             with self.assertRaisesRegex(RuntimeError, r'playwright install --only-shell chromium'):
                 pdf_export.export_playwright([], [])
 
 
 class ExportTest(unittest.TestCase):
-    """export() with the Playwright engine, the browser replaced by a function
-    writing what it would."""
+    """export(), the browser replaced by a function writing what it would."""
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='lhtml pdf ')
@@ -67,9 +53,6 @@ class ExportTest(unittest.TestCase):
         self.site.mkdir()
         self.meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(), 'export_name': 'deck',
                      'structure': [{'dir': f'0{i}/', 'filename': 'index.html'} for i in range(3)]}
-        patcher = patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'playwright'})
-        patcher.start()
-        self.addCleanup(patcher.stop)
 
     def export(self, browser):
         with patch.object(pdf_export, 'export_playwright', side_effect=browser):
@@ -151,39 +134,13 @@ class ExportTest(unittest.TestCase):
         self.assertEqual(advanced, [3, 'page', 'page', 'page'])
 
 
-class NoEngineTest(unittest.TestCase):
-    """Neither Playwright nor the Node export installed: the build says to
-    install Playwright, unless the Node export was asked for."""
-
-    def setUp(self):
-        temp = tempfile.TemporaryDirectory(prefix='lhtml pdf ')
-        self.addCleanup(temp.cleanup)
-        site = Path(temp.name).resolve() / 'site'
-        site.mkdir()
-        self.meta = {'site_directory': str(site), 'debug': False, 'log': Logger(),
-                     'structure': [{'dir': '00/', 'filename': 'index.html'}]}
-
-    def export(self, asked):
-        missing = RuntimeError(pdf_export.PUPPETEER_MISSING)
-        with patch.dict(os.environ, {'LHTML_PDF_ENGINE': asked}), \
-                patch.object(pdf_export, 'playwright_available', return_value=False), \
-                patch.object(pdf_export, 'export_node', side_effect=missing):
-            pdf_export.export(self.meta)
-
-    def test_the_fallback_says_to_install_playwright(self):
-        with self.assertRaisesRegex(RuntimeError, r'needs playwright and pypdf.*playwright install --only-shell'):
-            self.export('')
+class InstallMessageTest(unittest.TestCase):
 
     def test_after_pipx_the_commands_need_no_path(self):
-        with patch.object(pdf_export, 'installation', return_value='pipx'), \
-                patch('lhtml_site.doctor.installation', return_value='pipx'):
-            said = pdf_export.playwright_missing()
+        with patch('lhtml_site.doctor.installation', return_value='pipx'):
+            said = headless.missing('The PDF export', pdf_export.PDF_MODULES)
         self.assertIn('pipx inject lhtml-site pypdf, then pipx inject --include-apps lhtml-site playwright', said)
         self.assertIn('then playwright install --only-shell chromium', said)
-
-    def test_the_node_export_asked_says_what_it_needs(self):
-        with self.assertRaisesRegex(RuntimeError, 'puppeteer'):
-            self.export('node')
 
 
 class ProgressTest(unittest.TestCase):
@@ -216,10 +173,8 @@ def test_the_slides_starter_exports_with_playwright(tmp_path):
     project = tmp_path / 'talk'
     generate = [sys.executable, str(REPO / 'generate.py')]
     subprocess.run(generate + ['init', str(project), '--theme', 'slides-pdf'], check=True, capture_output=True)
-    env = {**os.environ, 'LHTML_PDF_ENGINE': 'playwright'}
-    result = subprocess.run(generate + ['-v'], cwd=project, env=env, capture_output=True, text=True)
+    result = subprocess.run(generate + ['-v'], cwd=project, capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert '(playwright)' in result.stdout
 
     slides = sorted(p.relative_to(project / 'src').parts[0] for p in (project / 'src').glob('*/index.html.j2'))
     reader = pypdf.PdfReader(project / 'slides.pdf')

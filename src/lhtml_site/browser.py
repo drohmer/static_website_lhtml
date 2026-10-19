@@ -1,0 +1,59 @@
+"""The headless browser of the generator: the Chromium of Playwright for
+Python, run by the PDF export (lhtml_site/pdf_export.py), the layout report
+and --render (lhtml_site/layout/measure.py).
+
+Playwright comes with the extra `lhtml-site[pdf]`, its browser from
+`python -m playwright install --only-shell chromium`; the configuration key
+'chrome' runs another Chrome instead.
+"""
+import importlib.util
+from contextlib import asynccontextmanager
+
+from lhtml_site.doctor import playwright_browser_command, playwright_install_command
+
+PLAYWRIGHT_MISSING = '{feature} needs {modules}: {install}, then {browser}'
+CHROMIUM_MISSING = ('The Chromium of Playwright is not installed: {browser} '
+                    '(or the configuration key chrome)')
+
+
+def installed(modules=('playwright',)):
+    return all(importlib.util.find_spec(module) for module in modules)
+
+
+def require(feature, modules=('playwright',)):
+    """Raise a RuntimeError saying how to install `modules` when one of them
+    is missing (`feature`: 'The layout report', ...)."""
+    if installed(modules):
+        return
+    raise RuntimeError(missing(feature, modules))
+
+
+def missing(feature, modules=('playwright',)):
+    """What to install for `feature`, for the way lhtml-site is installed
+    (the extra lhtml-site[pdf]: playwright and pypdf, then the browser)."""
+    return PLAYWRIGHT_MISSING.format(feature=feature, modules=' and '.join(modules),
+                                     install=playwright_install_command(), browser=playwright_browser_command())
+
+
+@asynccontextmanager
+async def chromium(chrome_path=None, args=()):
+    """A headless Chromium: the one of Playwright, or the executable
+    `chrome_path` (the configuration key 'chrome')."""
+    from playwright.async_api import Error, async_playwright
+
+    async with async_playwright() as playwright:
+        try:
+            browser = await playwright.chromium.launch(executable_path=chrome_path or None, args=list(args))
+        except Error as error:
+            if "Executable doesn't exist" in str(error):
+                raise RuntimeError(CHROMIUM_MISSING.format(browser=playwright_browser_command())) from None
+            raise
+        try:
+            yield browser
+        finally:
+            await browser.close()
+
+
+def first_line(error):
+    """The first line of what a Playwright error says (the rest is its call log)."""
+    return (str(error).strip().splitlines() or [type(error).__name__])[0]

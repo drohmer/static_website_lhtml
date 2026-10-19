@@ -143,7 +143,7 @@ a [deck](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/ref
 ## Your talk as a PDF
 
 Install the PDF export once (see [PDF export](#pdf-export)): when
-`lhtml-site doctor` says *ready* on its line *PDF export with Playwright*,
+`lhtml-site doctor` says *ready* on its line *PDF export*,
 replace the line `theme: 'slides'` of the talk's `configure.yaml` with:
 
 ```yaml
@@ -229,8 +229,8 @@ for the way lhtml-site is installed:
 
 | Feature | Needs |
 |---|---|
-| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and Playwright's Chromium; or the Node export (see the [reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#pdf-export)) |
-| Layout report (`--layout`, `--render`) | Node.js, puppeteer and minimist, Chrome |
+| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and Playwright's Chromium: see [PDF export](#pdf-export) |
+| Layout report (`--layout`, `--render`) | the same `playwright` and Chromium |
 | Videos in several codecs (`cache_video_directory:`) | `ffmpeg`, and `ffpb` (Python) |
 | SASS (`.sass` files) | `libsass` (Python) |
 | Figures in code (`*.svg.py`, `*.svg.tex`) | the libraries their scripts import, such as `matplotlib`, `numpy` (Python); `latex` and `dvisvgm` (TeX Live) |
@@ -253,14 +253,15 @@ In a virtual environment or a checkout, `pip install matplotlib numpy` (and
 
 ### PDF export
 
-The PDF export runs Chromium through Playwright for Python: two Python
-packages and a browser, nothing else. After `pipx install lhtml-site`:
+The PDF export, and the layout report, run Chromium through Playwright for
+Python: two Python packages and a browser, no Node.js. After
+`pipx install lhtml-site`:
 
 ```bash
 pipx inject lhtml-site pypdf
 pipx inject --include-apps lhtml-site playwright
 playwright install --only-shell chromium         # Playwright's Chromium, about 200 MB, once
-lhtml-site doctor                                # PDF export with Playwright ...: ready
+lhtml-site doctor                                # PDF export (...): ready
 ```
 
 `--include-apps` puts the `playwright` command of lhtml-site's environment
@@ -273,9 +274,8 @@ may also ask for the system libraries of Chromium:
 `playwright install-deps chromium`. The configuration key `chrome` names a
 Chromium or Chrome already installed, to use instead of the download.
 
-How the export waits for each slide, and the Node export of
-`static_website_lhtml` (Node.js, puppeteer, poppler, ImageMagick), are in
-the [reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#pdf-export).
+How the export waits for each slide is in the
+[reference](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md#pdf-export).
 
 ## From a checkout
 

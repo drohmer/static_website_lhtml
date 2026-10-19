@@ -8,10 +8,8 @@ from jinja2 import ChoiceLoader, Environment, FileSystemLoader, FunctionLoader, 
 from jinja2 import meta as jinja_meta
 import tidylib
 import yaml
-import json
 import os
 import shutil
-import tempfile
 import argparse
 import sys
 import time
@@ -105,7 +103,7 @@ def parse_arguments():
                         help='Validate and display resolved configuration without generating files.')
     parser.add_argument('--layout', action='store_true',
                         help='Write a layout report (block positions, collisions, overflows) '
-                             'of each page in .layout/ (lhtml_site/layout/, requires npm install).')
+                             'of each page in .layout/ (lhtml_site/layout/, requires Playwright: lhtml-site doctor).')
     parser.add_argument('--render', metavar='FILE', action='append',
                         help='Render a file as PNG as the slides draw it (an SVG or image at its size, an HTML '
                              'page at the size of the slide), in <layout output>/render/; no build (repeatable).')
@@ -594,7 +592,7 @@ def render_files(meta, files, log):
     (under its path relative to the configuration directory, or, for a file
     outside it, under _outside/<its directory>/), at the size of the slides
     of the layout report."""
-    from lhtml_site.layout.measure import run_node
+    from lhtml_site.layout.measure import render_files as render
     try:
         output = layout_options.output_directory(meta) / 'render'
     except ConfigError as exc:
@@ -616,17 +614,15 @@ def render_files(meta, files, log):
         targets[png] = path
         entries.append({'file': str(path), 'png': str(png)})
     options = layout_options.options_of(meta)
-    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False, encoding='utf-8') as fid:
-        json.dump(entries, fid)
-        listing = fid.name
     try:
-        run_node('render_file.js', [f'--input={listing}', f"--width={options['width']}",
-                                     f"--height={options['height']}"], chrome=options['chrome'], log=log)
+        errors = render(entries, options['width'], options['height'], options['chrome'])
     except RuntimeError as exc:
         log.error(str(exc))
         sys.exit(1)
-    finally:
-        os.remove(listing)
+    for error in errors:
+        log.error(error)
+    if errors:
+        sys.exit(1)
     for entry in entries:
         log.info(f"{filesystem.shown(entry['file'])} -> {filesystem.shown(entry['png'])}")
 

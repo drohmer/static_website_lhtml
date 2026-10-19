@@ -65,7 +65,7 @@ exclude = ["lhtml_site.example", "lhtml_site.example.*"]
 # .verification/, ...) is never shipped (tests/test_packaging.py).
 [tool.setuptools.package-data]
 lhtml_site = ["themes/**/*", "plugins/**/*", "starters/**/*", "docs/*.md",
-              "feedback.js", "configure_example.yaml"]
+              "feedback.js", "layout/page.js", "configure_example.yaml"]
 
 [tool.setuptools.exclude-package-data]
 lhtml_site = ["example/**", "**/.*", "**/.*/**", "**/__pycache__/*", "**/*.pyc",

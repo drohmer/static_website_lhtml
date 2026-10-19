@@ -135,8 +135,8 @@ def _file_or_inline(values, key, inline_types, inline_text, config_directory):
 
 
 def _chrome_executable(values, config_directory):
-    """'chrome': the Chrome executable the Node scripts run (layout report,
-    PDF export, --render), instead of the one downloaded by puppeteer. A
+    """'chrome': the Chrome executable the browser runs (layout report,
+    PDF export, --render), instead of the Chromium of Playwright. A
     relative path is resolved from the configuration directory; a macOS
     bundle ('.app') is resolved to the executable it contains."""
     value = values.get('chrome')
