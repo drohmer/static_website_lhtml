@@ -3,12 +3,11 @@
 All notable changes to lhtml-site (`lhtml-site` on PyPI) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [3.0.0] - 2026-10-19
+## [1.0.0] - 2026-10-19
 
 The first release on PyPI. The generator was named `static_website_lhtml`,
 and projects used it as a copy or a submodule; it is now a package with a
-command, `lhtml-site`, and its version follows the major version of LHTML
-it is built on.
+command, `lhtml-site`, built on LHTML 3 (`lhtml-markup` on PyPI).
 
 ### Added
 - `pipx install lhtml-site` (or `pip install lhtml-site` in a virtual
@@ -69,4 +68,4 @@ it is built on.
 - The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
   when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
 
-[3.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v3.0.0
+[1.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v1.0.0

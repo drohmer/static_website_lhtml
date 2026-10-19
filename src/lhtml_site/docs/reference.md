@@ -1016,8 +1016,9 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 
 ## Migrating from the previous layout
 
-Version 3 is a major version: an old form is refused by name, with the
-change to make, rather than accepted with a warning.
+lhtml-site 1.0, the first version as a package and built on LHTML 3, breaks
+with the old generator: an old form is refused by name, with the change to
+make, rather than accepted with a warning.
 
 - `lhtml-site init DIR` copies a few pages to start from into `DIR/src/` (four slides with
   `--theme slides` or `slides-pdf`, two pages with `webpage-frame`), instead of the course example
