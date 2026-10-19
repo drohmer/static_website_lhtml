@@ -39,6 +39,11 @@ dependencies = [
     "rich",
 ]
 
+[project.optional-dependencies]
+# The PDF export by Playwright (lhtml_site/pdf_export.py); its browser comes
+# from `python -m playwright install --only-shell chromium`
+pdf = ["playwright>=1.49", "pypdf>=4"]
+
 [project.urls]
 Repository = "https://github.com/drohmer/lhtml-site"
 Documentation = "https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md"

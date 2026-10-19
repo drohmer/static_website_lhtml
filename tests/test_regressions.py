@@ -194,6 +194,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         entries = find_files_in_hierarchy(str(self.source), lambda name: name.endswith('.html.j2'))
         self.assertEqual(entries, [('nested/', 'index.html.j2')])
 
+    @patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'node'})     # the Node export: its commands mocked
     def test_pdf_failures_preserve_html_and_previous_export(self):
         for failing_command in ('node', 'pdftoppm', 'magick', 'pdfunite'):
             with self.subTest(command=failing_command):
@@ -225,6 +226,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
                 self.assertTrue((self.site / 'index.html').exists())
                 self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
 
+    @patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'node'})     # the Node export: its commands mocked
     def test_a_pdf_page_that_misses_its_timeout_is_tried_again(self):
         self.site.mkdir()
         calls = []
@@ -244,6 +246,7 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         self.assertEqual(len(calls), 2)
         self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')
 
+    @patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'node'})     # the Node export: its commands mocked
     def test_pdf_asks_not_to_publish_instead_of_deleting(self):
         self.site.mkdir()
         def run(command, check=False, **options):

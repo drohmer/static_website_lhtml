@@ -1,8 +1,8 @@
 """lhtml-site doctor: what is present and what is missing, feature by feature.
 
 A site of HTML pages or slides needs nothing more than the package. Each
-optional feature needs its own programs (Node and puppeteer for the PDF
-export and the layout report, ffmpeg for the videos, ...): this command says,
+optional feature needs its own programs (Playwright, or Node and puppeteer,
+for the PDF export, Node for the layout report, ffmpeg for the videos, ...): this command says,
 for each, what it found and how to install what it did not, for the way the
 generator is installed (a checkout, pipx, a virtual environment). It changes
 nothing.
@@ -143,12 +143,37 @@ def node_checks(report, pdf=False):
             ('Chrome', chrome, browser_hint)]
 
 
+def chromium_check():
+    """The Chromium of Playwright: launched and closed, the surest test."""
+    hint = f'{sys.executable} -m playwright install --only-shell chromium'
+    if importlib.util.find_spec('playwright') is None:
+        return 'Chromium', None, hint
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            found = f'Chromium {browser.version} (Playwright)'
+            browser.close()
+    except Exception:          # not installed, or does not start: what to run is the same
+        found = None
+    return 'Chromium', found, hint
+
+
+def playwright_checks():
+    """playwright, pypdf (the extra lhtml-site[pdf]) and its Chromium."""
+    extra = ('pipx inject lhtml-site playwright pypdf' if installation() == 'pipx'
+             else f'{sys.executable} -m pip install "lhtml-site[pdf]"')
+    return [(name, found, extra) for name, found, _ in (module_check('playwright'), module_check('pypdf'))] \
+        + [chromium_check()]
+
+
 def features():
     """The optional features and their checks, in the order of the README."""
     report = node_report()
     pdf_tools = [system_check('pdfunite'), system_check('pdftoppm'), system_check('magick')]
     return [
-        ('PDF export (theme slides-pdf, a target with export: pdf)', node_checks(report, pdf=True) + pdf_tools),
+        ('PDF export with Playwright (theme slides-pdf, export: pdf; lhtml-site[pdf])', playwright_checks()),
+        ('PDF export with Node (the fallback: LHTML_PDF_ENGINE=node)', node_checks(report, pdf=True) + pdf_tools),
         ('Layout report (--layout, --render)', node_checks(report)),
         ('Videos in several codecs (cache_video_directory)',
          [system_check('ffmpeg'), ('ffpb', find_command('ffpb'), install_hint('ffpb', command=True))]),
@@ -201,6 +226,12 @@ def main(arguments):
           f" (lhtml-markup {lhtml or 'not found'})")
     for line in report_lines(features()):
         print(line)
+    from lhtml_site import pdf_export
+    try:
+        print(f'\nThe PDF export uses: {pdf_export.engine()} '
+              '(playwright when playwright and pypdf are installed; LHTML_PDF_ENGINE=node or playwright chooses)')
+    except ValueError as error:
+        print(f'\n{error}')
     if NODE_MODULES.is_dir():
         print(f'\nNode modules of {NODE_MODULES} are found by the generator (no NODE_PATH needed).')
     return 0

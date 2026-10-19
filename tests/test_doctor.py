@@ -66,7 +66,7 @@ class CommandTest(unittest.TestCase):
         env = {**os.environ, 'PATH': os.path.dirname(sys.executable)}       # no node, no poppler
         result = self.run_doctor(env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('PDF export (theme slides-pdf, a target with export: pdf): missing node', result.stdout)
+        self.assertIn('PDF export with Node (the fallback: LHTML_PDF_ENGINE=node): missing node', result.stdout)
         self.assertRegex(result.stdout, r'missing  puppeteer  -> npm ci')     # a checkout: its package.json
         self.assertRegex(result.stdout, r'missing  pdfunite   -> poppler')
 

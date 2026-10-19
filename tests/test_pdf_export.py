@@ -1,0 +1,192 @@
+"""The PDF export by Playwright (lhtml_site/pdf_export.py).
+
+The unit tests replace the browser; the browser test (LHTML_BROWSER_TEST=1,
+with playwright, pypdf and the Chromium of Playwright) exports the slides
+starter for real.
+"""
+import importlib.util
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from lhtml_site import pdf_export
+from lhtml_site.logger import Logger
+
+REPO = Path(__file__).resolve().parents[1]
+HAS_PYPDF = importlib.util.find_spec('pypdf') is not None
+
+
+def blank_pdf(path, pages=1):
+    from pypdf import PdfWriter
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=1443.75, height=813.75)
+    with open(path, 'wb') as fid:
+        writer.write(fid)
+
+
+class EngineTest(unittest.TestCase):
+
+    def test_playwright_when_installed_node_otherwise(self):
+        with patch.dict(os.environ, {'LHTML_PDF_ENGINE': ''}):
+            with patch.object(pdf_export, 'playwright_available', return_value=True):
+                self.assertEqual(pdf_export.engine(), 'playwright')
+            with patch.object(pdf_export, 'playwright_available', return_value=False):
+                self.assertEqual(pdf_export.engine(), 'node')
+
+    def test_the_environment_chooses(self):
+        with patch.object(pdf_export, 'playwright_available', return_value=True):
+            with patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'Node'}):
+                self.assertEqual(pdf_export.engine(), 'node')
+            with patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'weasyprint'}):
+                with self.assertRaisesRegex(ValueError, 'not one of playwright, node'):
+                    pdf_export.engine()
+
+    def test_without_playwright_it_says_what_to_install(self):
+        with patch.object(pdf_export, 'playwright_available', return_value=False):
+            with self.assertRaisesRegex(RuntimeError, r'playwright install --only-shell chromium'):
+                pdf_export.export_playwright([], [])
+
+
+class ExportTest(unittest.TestCase):
+    """export() with the Playwright engine, the browser replaced by a function
+    writing what it would."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='lhtml pdf ')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.site = self.root / 'site'
+        self.site.mkdir()
+        self.meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(), 'export_name': 'deck',
+                     'structure': [{'dir': f'0{i}/', 'filename': 'index.html'} for i in range(3)]}
+        patcher = patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'playwright'})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def export(self, browser):
+        with patch.object(pdf_export, 'export_playwright', side_effect=browser):
+            pdf_export.export(self.meta)
+
+    @unittest.skipUnless(HAS_PYPDF, 'pypdf')
+    def test_the_pages_are_merged_in_order_with_their_images(self):
+        seen = []
+
+        def browser(inputs, stems, chrome=None):
+            seen.extend(inputs)
+            for i, stem in enumerate(stems):
+                blank_pdf(stem + '.pdf', pages=i + 1)       # a slide that overflows: all its pages
+                Path(stem + '.jpg').write_bytes(b'image')
+        (self.root / 'images').mkdir()
+        (self.root / 'images/slide_009.jpg').write_bytes(b'stale')      # a slide the deck lost
+        self.export(browser)
+        from pypdf import PdfReader
+        self.assertEqual(len(PdfReader(self.root / 'deck.pdf').pages), 1 + 2 + 3)
+        self.assertEqual([p.relative_to(self.site).as_posix() for p in seen],
+                         ['00/index.html', '01/index.html', '02/index.html'])
+        self.assertEqual(sorted(p.name for p in (self.root / 'images').iterdir()),
+                         ['slide_000.jpg', 'slide_001.jpg', 'slide_002.jpg'])
+        self.assertFalse(self.meta['publish_site'])
+        self.assertEqual(self.meta['exported'], self.root / 'deck.pdf')
+        self.assertEqual([p.name for p in self.root.iterdir() if p.name.startswith('pdf-export-')], [])
+
+    def test_a_missing_or_empty_deliverable_is_an_error(self):
+        for missing in ('slide_001.pdf', 'slide_002.jpg'):
+            with self.subTest(missing=missing):
+                old = self.root / 'deck.pdf'
+                old.write_bytes(b'previous PDF')
+
+                def browser(inputs, stems, chrome=None):
+                    for stem in stems:
+                        Path(stem + '.pdf').write_bytes(b'page')
+                        Path(stem + '.jpg').write_bytes(b'image')
+                    Path(stems[0]).with_name(missing).write_bytes(b'')     # empty: a page never printed
+                with self.assertRaisesRegex(RuntimeError, 'not generated: .*' + missing):
+                    self.export(browser)
+                self.assertEqual(old.read_bytes(), b'previous PDF')        # untouched
+                self.assertTrue(self.site.exists())
+
+    def test_a_failure_of_the_browser_keeps_the_previous_export(self):
+        old = self.root / 'deck.pdf'
+        old.write_bytes(b'previous PDF')
+
+        def browser(inputs, stems, chrome=None):
+            raise RuntimeError('PDF of 01/index.html not made: Timeout 60000ms exceeded')
+        with self.assertRaisesRegex(RuntimeError, 'Timeout'):
+            self.export(browser)
+        self.assertEqual(old.read_bytes(), b'previous PDF')
+
+    def test_the_chrome_of_the_configuration_is_passed(self):
+        chosen = []
+
+        def browser(inputs, stems, chrome=None):
+            chosen.append(chrome)
+            raise RuntimeError('stop')
+        self.meta['chrome'] = '/opt/chrome'
+        with self.assertRaises(RuntimeError):
+            self.export(browser)
+        self.assertEqual(chosen, ['/opt/chrome'])
+
+
+@unittest.skipUnless(HAS_PYPDF, 'pypdf')
+class MergeTest(unittest.TestCase):
+
+    def test_merge_keeps_every_page(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parts = [os.path.join(tmp, f'{i}.pdf') for i in range(3)]
+            for i, part in enumerate(parts):
+                blank_pdf(part, pages=i + 1)
+            pdf_export.merge_pypdf(parts, os.path.join(tmp, 'all.pdf'))
+            from pypdf import PdfReader
+            self.assertEqual(len(PdfReader(os.path.join(tmp, 'all.pdf')).pages), 6)
+
+
+@pytest.mark.skipif(os.environ.get('LHTML_BROWSER_TEST') != '1', reason='Set LHTML_BROWSER_TEST=1 for Chromium')
+def test_the_slides_starter_exports_with_playwright(tmp_path):
+    pytest.importorskip('playwright')
+    pypdf = pytest.importorskip('pypdf')
+    project = tmp_path / 'talk'
+    generate = [sys.executable, str(REPO / 'generate.py')]
+    subprocess.run(generate + ['init', str(project), '--theme', 'slides-pdf'], check=True, capture_output=True)
+    env = {**os.environ, 'LHTML_PDF_ENGINE': 'playwright'}
+    result = subprocess.run(generate + ['-v'], cwd=project, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert '(playwright)' in result.stdout
+
+    slides = sorted(p.relative_to(project / 'src').parts[0] for p in (project / 'src').glob('*/index.html.j2'))
+    reader = pypdf.PdfReader(project / 'slides.pdf')
+    assert len(reader.pages) == len(slides)
+    box = reader.pages[0].mediabox
+    assert (round(float(box.width) / 0.75), round(float(box.height) / 0.75)) == \
+        (pdf_export.PAGE_WIDTH, pdf_export.PAGE_HEIGHT)
+    assert all(page.extract_text().strip() for page in reader.pages)      # no empty slide
+    images = sorted((project / 'images').glob('slide_*.jpg'))
+    assert [p.name for p in images] == [f'slide_{i:03}.jpg' for i in range(len(slides))]
+    with open(images[0], 'rb') as fid:
+        header = fid.read(4096)
+    assert header[:2] == b'\xff\xd8'                                     # a JPEG
+    width = _jpeg_width(images[0])
+    assert width == pdf_export.IMAGE_WIDTH
+    assert not list(project.glob('pdf-export-*'))                         # no staging left
+
+
+def _jpeg_width(path):
+    """The width of a JPEG, from its SOF marker."""
+    data = Path(path).read_bytes()
+    i = 2
+    while i < len(data):
+        marker, size = data[i + 1], int.from_bytes(data[i + 2:i + 4], 'big')
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            return int.from_bytes(data[i + 7:i + 9], 'big')
+        i += 2 + size
+    return None
+
+
+if __name__ == '__main__':
+    unittest.main()

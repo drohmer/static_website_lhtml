@@ -26,7 +26,7 @@ site_directory: '.site/'
 # The look of the site: a theme of the generator, or the directory of yours.
 #   webpage-frame  web pages with a navigation menu
 #   slides         slides shown in the browser (1920x1080)
-#   slides-pdf     the same slides, exported to a PDF (needs Node.js: lhtml-site doctor)
+#   slides-pdf     the same slides, exported to a PDF (needs Playwright, lhtml-site[pdf]: lhtml-site doctor)
 theme: 'webpage-frame'
 
 # ---------------------------------------------------------------------------
@@ -101,8 +101,8 @@ theme: 'webpage-frame'
 # layout:
 #   output: '.layout/'
 
-# The Chrome run by the layout report, the PDF export and --render, instead of
-# the one puppeteer downloads (a macOS .app is accepted).
+# The Chrome run by the PDF export, the layout report and --render, instead of
+# the Chromium of Playwright or the Chrome of puppeteer (a macOS .app is accepted).
 # chrome: '/Applications/Google Chrome.app'
 
 # Keep the intermediate files and show the tracebacks (as --debug).
