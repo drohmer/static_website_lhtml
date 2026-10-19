@@ -35,6 +35,7 @@ JPEG_QUALITY = 92                   # the default of magick for an image without
 # no longer decides when a page is printed: it only bounds a page that never
 # gets ready, which is then an error.
 READY_TIMEOUT = 60_000              # ms
+LAST_RESORT = 10                    # s after it, a page that kept no bound is cancelled
 VIDEO_TIMEOUT = 15_000              # ms, for the first frame of each video
 
 PDF_MODULES = ('playwright', 'pypdf')
@@ -43,8 +44,18 @@ PDF_MODULES = ('playwright', 'pypdf')
 # included), the promises a page or a demo registered with window.__lhtmlReady
 # (themes/slides/js/readiness.js) are settled, MathJax (if any) has typeset, the fonts are loaded (KaTeX loads
 # its own once it has rendered), the images are decoded, each video shows a
-# frame, and the page has painted twice.
-READY = """async ({videoTimeout}) => {
+# frame, and the page has painted twice. The bound is kept in the page: the
+# script says false once `timeout` ms have passed, rather than being
+# cancelled from Python (a call of Playwright cancelled midway is rejected
+# when the page closes, and nothing reads it: "Future exception was never
+# retrieved").
+WITHIN = """(prepare, timeout) => {
+    let timer;
+    const late = new Promise(done => { timer = setTimeout(() => done(false), timeout); });
+    return Promise.race([prepare().then(() => true), late]).finally(() => clearTimeout(timer));
+}"""
+
+READY = """async ({videoTimeout, timeout}) => (""" + WITHIN + """)(async () => {
     if (window.__lhtmlReady?.version === 1) {
         await window.__lhtmlReady.ready();
     }
@@ -63,14 +74,14 @@ READY = """async ({videoTimeout}) => {
         })));
     await document.fonts.ready;
     await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
-}"""
+}, timeout)"""
 
 # A frame of the page (a demo in an iframe) registers its promises in its own window
-FRAME_READY = """async () => {
+FRAME_READY = """async ({timeout}) => (""" + WITHIN + """)(async () => {
     if (window.__lhtmlReady?.version === 1) {
         await window.__lhtmlReady.ready();
     }
-}"""
+}, timeout)"""
 
 # The image shows the page as printed: the PDF is printed without the
 # backgrounds (the default of Chrome: the icons of the navigation are backgrounds), except where the page asks for them
@@ -166,16 +177,26 @@ async def _export_playwright(inputs, stems, chrome_path, done=lambda: None):
                 page = await context.new_page()
                 try:
                     # One bound for the whole preparation of the page: a
-                    # promise that never settles (MathJax, a demo) fails it
+                    # promise that never settles (MathJax, a demo) fails it.
+                    # The page keeps it (WITHIN); asyncio.timeout is the last
+                    # resort, for a page too busy to run its timers.
+                    late = RuntimeError(f'PDF of {source} not made: the page was not ready '
+                                        f'after {READY_TIMEOUT // 1000} s')
+                    loop = asyncio.get_running_loop()
+                    deadline = loop.time() + READY_TIMEOUT / 1000
+
+                    def left():
+                        return max(1, round((deadline - loop.time()) * 1000))
                     try:
-                        async with asyncio.timeout(READY_TIMEOUT / 1000):
+                        async with asyncio.timeout(READY_TIMEOUT / 1000 + LAST_RESORT):
                             await page.goto(source.as_uri(), wait_until='load', timeout=READY_TIMEOUT)
                             for frame in page.frames[1:]:
-                                await frame.evaluate(FRAME_READY)
-                            await page.evaluate(READY, {'videoTimeout': VIDEO_TIMEOUT})
+                                if not await frame.evaluate(FRAME_READY, {'timeout': left()}):
+                                    raise late
+                            if not await page.evaluate(READY, {'videoTimeout': VIDEO_TIMEOUT, 'timeout': left()}):
+                                raise late
                     except TimeoutError:
-                        raise RuntimeError(f'PDF of {source} not made: the page was not ready '
-                                           f'after {READY_TIMEOUT // 1000} s') from None
+                        raise late from None
                     await page.pdf(path=stem + '.pdf', width=f'{PAGE_WIDTH}px', height=f'{PAGE_HEIGHT}px',
                                    margin={'top': '0px', 'left': '0px', 'right': '0px', 'bottom': '0px'})
                     # The image of the page as printed: print media, as in the PDF
@@ -188,7 +209,13 @@ async def _export_playwright(inputs, stems, chrome_path, done=lambda: None):
                 finally:
                     await page.close()
 
-        await asyncio.gather(*(export_page(source, stem) for source, stem in zip(inputs, stems)))
+        # Every page ends (each within its bound) before the browser closes:
+        # a page still printing when another failed is not cut midway
+        results = await asyncio.gather(*(export_page(source, stem) for source, stem in zip(inputs, stems)),
+                                       return_exceptions=True)
+        failed = next((result for result in results if isinstance(result, BaseException)), None)
+        if failed:
+            raise failed
 
 
 def merge_pypdf(pdfs, merged):

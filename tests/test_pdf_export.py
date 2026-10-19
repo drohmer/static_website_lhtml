@@ -240,6 +240,31 @@ def test_a_promise_that_never_settles_fails_the_page_in_time(tmp_path):
 
 
 @BROWSER
+def test_a_page_late_is_failed_by_its_bound_not_cancelled(tmp_path):
+    # The page keeps the bound: nothing of Playwright is cancelled midway, so
+    # nothing is left to fail unread when the browser closes ("Future
+    # exception was never retrieved"); the cancellation is a last resort,
+    # made too late here to be what failed the page.
+    pytest.importorskip('playwright')
+    import asyncio
+    import gc
+    page = tmp_path / 'page.html'
+    page.write_text('<html><body>x<script>window.MathJax = {startup: {promise: new Promise(() => {})}};'
+                    '</script></body></html>', encoding='utf-8')
+    unread = []
+
+    async def export():
+        asyncio.get_running_loop().set_exception_handler(lambda loop, context: unread.append(context['message']))
+        await pdf_export._export_playwright([page], [str(tmp_path / 'slide_000')], None)
+
+    with patch.object(pdf_export, 'READY_TIMEOUT', 2000), patch.object(pdf_export, 'LAST_RESORT', 60):
+        with asyncio.Runner() as runner, pytest.raises(RuntimeError, match='not ready after 2 s'):
+            runner.run(asyncio.wait_for(export(), 30))
+        gc.collect()
+    assert unread == []
+
+
+@BROWSER
 def test_the_page_waits_for_its_readiness_promises(tmp_path):
     # a demo that writes its content asynchronously, then says it is ready
     demo = ('<html><body><div id="d">loading</div><script>' + READINESS + '''
