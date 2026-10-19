@@ -38,7 +38,11 @@ ul,ol {
 }
 
 ul {
-    list-style-type: none;
+    list-style-type: disc;
+}
+
+ul ul {
+    list-style-type: circle;
 }
 
 a {

@@ -38,6 +38,9 @@ it is built on.
   [migration of LHTML](https://github.com/drohmer/lhtml/blob/main/docs/migration.md).
 - The README leads to a first talk in a few commands; the reference moves
   to [docs/reference.md](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md).
+- The themes `slides` and `slides-pdf` show a bullet before the items of a
+  list (a circle for a sub-point); they showed none. A slide that wrote its
+  own marker (`* - point`) can drop it.
 - The package holds the themes, plugins and starters but not the demo
   course, and the themes ship their fonts as WOFF2 only: the wheel is about
   8 MB.
