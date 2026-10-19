@@ -1,0 +1,50 @@
+name: Publish to PyPI
+# Prepared, not enabled: it runs only when started by hand (Actions > Publish
+# to PyPI > Run workflow), and fails until PyPI trusts this workflow.
+#
+# To enable it:
+#   1. On PyPI, add a "trusted publisher" (Trusted Publishing, no token) for
+#      the project lhtml-site: owner drohmer, repository lhtml-site, workflow
+#      publish.yml, environment pypi (a pending publisher before the first
+#      release: https://docs.pypi.org/trusted-publishers/).
+#   2. On GitHub, create the environment `pypi` (Settings > Environments),
+#      ideally with a required reviewer.
+#   3. To publish on each version tag, uncomment the `push: tags` trigger
+#      below; the tag must match the version of pyproject.toml (v3.0.1 for
+#      version = "3.0.1"), which the job checks.
+on:
+  workflow_dispatch:
+  # push:
+  #   tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/lhtml-site
+    permissions:
+      id-token: write          # Trusted Publishing: PyPI checks the identity of this workflow
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install build twine
+      - name: The tag is the version of the package
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          test "${GITHUB_REF_NAME}" = "v${version}" || { echo "tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+      - run: python -m build --outdir dist
+      - run: twine check --strict dist/*
+      - name: The wheel installs and builds a project
+        run: |
+          python -m venv "$RUNNER_TEMP/clean"
+          "$RUNNER_TEMP/clean/bin/pip" install -q dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/clean/bin/lhtml-site" init my-talk --theme slides
+          cd my-talk
+          "$RUNNER_TEMP/clean/bin/lhtml-site" --strict
+      - uses: pypa/gh-action-pypi-publish@release/v1

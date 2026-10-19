@@ -23,7 +23,7 @@ jobs:
       - run: npm ci
       - name: Unit and regression tests
         run: python -m pytest tests -q
-      - name: Installed command (pip install .) builds the example outside the repository
+      - name: Installed command (pip install .) builds a new project outside the repository
         run: |
           python -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install -q .
@@ -39,3 +39,40 @@ jobs:
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           python -m pytest tests/test_layout_integration.py tests/test_development.py -q
+  package:
+    # The publishing path: the wheel and the sdist as PyPI would get them,
+    # installed in a clean environment, used outside the repository.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - run: python -m pip install build twine
+      - name: Build the wheel and the sdist
+        run: python -m build --outdir dist
+      - name: Check the metadata (the README as PyPI renders it)
+        run: twine check --strict dist/*
+      - name: Size and content of the wheel
+        run: |
+          ls -l dist
+          python - <<'EOF'
+          import pathlib, re, sys, zipfile
+          wheel = next(pathlib.Path('dist').glob('*.whl'))
+          names = zipfile.ZipFile(wheel).namelist()
+          bad = [n for n in names if re.search(r'/(\.[^/]+|_site|cache_video|example)/|/configure\.yaml$', n)]
+          size = wheel.stat().st_size
+          print(f'{wheel.name}: {size / 1e6:.1f} MB, {len(names)} files')
+          sys.exit(f'build outputs or the demo in the wheel: {bad}' if bad else
+                   f'wheel too large: {size} bytes' if size > 15_000_000 else 0)
+          EOF
+      - name: The wheel in a clean environment (init and build, outside the repository)
+        run: |
+          python -m venv "$RUNNER_TEMP/clean"
+          "$RUNNER_TEMP/clean/bin/pip" install -q dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/clean/bin/lhtml-site" init my-talk --theme slides
+          (cd my-talk && "$RUNNER_TEMP/clean/bin/lhtml-site" --strict && test -f .site/04_image/index.html)
+          "$RUNNER_TEMP/clean/bin/lhtml-site" init my-site
+          (cd my-site && "$RUNNER_TEMP/clean/bin/lhtml-site" --strict && test -f .site/01_welcome/index.html)
+          "$RUNNER_TEMP/clean/bin/lhtml-site" doctor
