@@ -1,6 +1,7 @@
 """--only: generate some pages of the site, the others are kept."""
 import json
 import os
+import re
 import unittest
 
 import yaml
@@ -81,7 +82,7 @@ class OnlyTests(DeckProjectsTests):
                    + "= A\ncode::[python]\n== x\ncode::[-]\n{% endblock %}\n")
         structure = self.build({'slides': ['01_a']})
         self.assertEqual(structure[0]['title'], 'A')
-        headings = json.loads((self.site / 'structure/title_id.json').read_text())['01_a/index.html']
+        headings = json.loads(self.headings.read_text())['01_a/index.html']
         self.assertEqual([h['title'] for h in headings], ['A'])
         config['title_id'] = False
         self.config.write_text(yaml.safe_dump(config))
@@ -95,10 +96,69 @@ class OnlyTests(DeckProjectsTests):
         self.write('talk/src/00_plan/index.html.j2', HEAD + "= Plan\n== Same\n{% endblock %}\n")
         self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n== Same\n{% endblock %}\n")
         self.build({'slides': ['00_plan', '01_a']})
-        full = json.loads((self.site / 'structure/title_id.json').read_text())
+        full = json.loads(self.headings.read_text())
         self.build({'slides': ['00_plan', '01_a']}, '--only', '01_a')
-        self.assertEqual(json.loads((self.site / 'structure/title_id.json').read_text()), full)
+        self.assertEqual(json.loads(self.headings.read_text()), full)
         self.assertIn('id="same_id2_l2"', (self.site / '01_a/index.html').read_text())
+
+    def test_the_headings_are_build_state_not_published(self):
+        """Their record is kept next to the dependency store; the site holds
+        no title_id.json (3.0 wrote one per page, and a copy for an index)."""
+        self.write('talk/src/00_plan/index.html.j2', HEAD + "= Plan\n== Same\n{% endblock %}\n")
+        self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n== Same\n{% endblock %}\n")
+        self.build({'slides': ['00_plan', '01_a']})
+        self.assertEqual(sorted(p.name for p in self.site.rglob('*title_id*.json')), [])
+        self.assertEqual([h['id'] for h in json.loads(self.headings.read_text())['01_a/index.html']],
+                         ['a_l1', 'same_id2_l2'])
+        # A site built by 3.0: its record was in the site, read once by --only
+        legacy = {page: headings for page, headings in json.loads(self.headings.read_text()).items()}
+        self.headings.unlink()
+        (self.site / 'structure/title_id.json').write_text(json.dumps(legacy))
+        self.build({'slides': ['00_plan', '01_a']}, '--only', '01_a')
+        self.assertIn('id="same_id2_l2"', (self.site / '01_a/index.html').read_text())
+        self.assertTrue(self.headings.is_file())
+
+    def test_a_failed_build_keeps_the_record_of_the_previous_one(self):
+        self.write('talk/src/00_plan/index.html.j2', HEAD + "= Plan\n{% endblock %}\n")
+        self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n{% endblock %}\n")
+        self.build({'slides': ['00_plan', '01_a']})
+        before = self.headings.read_text()
+        self.write('talk/src/00_plan/index.html.j2', HEAD + "= Other\n{{ undefined_function() }}\n{% endblock %}\n")
+        self.build({'slides': ['00_plan', '01_a']}, ok=False)
+        self.assertEqual(self.headings.read_text(), before)
+
+    def test_a_heading_from_jinja_gets_its_id_from_its_rendered_text(self):
+        """A template reused with params: each occurrence gets the id of its
+        own heading, as rendered (3.0 gave both '_parts[params_curr_l1'),
+        each heading of a loop its own, and the headings written as text
+        keep their ids (those of the sites already published)."""
+        self.write('talk/src/00_plan/index.html.j2', HEAD
+                   + "{% set parts = ['Intro', 'Rotations (3D)'] %}\n"
+                     "= {{ parts[params.current - 1] }}\n"
+                     "{% for s in ['Same', 'Same'] %}\n== {{ s }}\n{% endfor %}\n"
+                     "== Same\n"
+                     "== {% raw %}{{ kept }}{% endraw %}\n{% endblock %}\n")
+        self.write('talk/src/01_a/index.html.j2', HEAD + "= A\n== Same\n{% endblock %}\n")
+        deck = {'slides': [{'path': '00_plan', 'params': {'current': 1}}, '01_a',
+                           {'path': '00_plan', 'params': {'current': 2}}]}
+        for args in ((), ('--only', '00_plan')):
+            self.build(deck, *args)
+            first = (self.site / '00_plan/index.html').read_text()
+            second = (self.site / '00_plan/index-2.html').read_text()
+            self.assertIn('<h1 id="intro_l1">Intro</h1>', first)
+            self.assertIn('<h1 id="rotations_3d__l1">Rotations (3D)</h1>', second)
+            # The headings written as text: unique in the site, as in 3.0
+            # (00_plan/index.html, 01_a, then 00_plan/index-2.html)
+            self.assertIn('<h2 id="same_l2">Same</h2>\n\n<h2 id="_kept__l2">', first)
+            self.assertIn('<h2 id="same_id2_l2">Same</h2>', (self.site / '01_a/index.html').read_text())
+            self.assertIn('<h2 id="same_id3_l2">Same</h2>\n\n<h2 id="_kept__id2_l2">', second)
+            # those of the loop: from their text, unique in their page
+            self.assertEqual(re.findall(r'<h2 id="(\w+)">Same', first), ['same_id2_l2', 'same_id3_l2', 'same_l2'])
+            self.assertEqual(re.findall(r'<h2 id="(\w+)">Same', second), ['same_l2', 'same_id2_l2', 'same_id3_l2'])
+
+    @property
+    def headings(self):
+        return self.root / 'talk/.verification/headings.json'
 
 
 if __name__ == '__main__':

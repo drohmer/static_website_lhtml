@@ -1,21 +1,8 @@
 "use strict";
 
-function convertJSON(response){
-    return response.json();
-}
-
-async function fetch_title_id(filepath) {
-    await fetch(filepath)
-    .then(convertJSON)
-    .then(load_title_id)
-    .catch(error_fetch_title_id);
-}
-function error_fetch_title_id(error) {
-    // No summary for this page (plugins/title_submenu.py did not run, or the
-    // page has no heading of its own): the column stays hidden.
-    console.log('No title_id file for this page (plugins/title_submenu.py)');
-    console.log(error);
-}
+// The "Page content" column: the level-2 headings of the page that have an
+// id (lhtml_site/headings.py gives them one), read in the page itself. No
+// request: the column is the same over http and from a file opened on disk.
 
 function create_new_link(level, title, id) {
     const div_element = document.createElement('div');
@@ -28,19 +15,23 @@ function create_new_link(level, title, id) {
     return div_element;
 }
 
-function load_title_id(data) {
+function page_headings() {
+    const content = document.querySelector('#main-content-centered') || document.body;
+    return Array.from(content.querySelectorAll('h2[id]'));
+}
+
+function main() {
 
     const title_id_element = document.querySelector('#title_id');
+    if(!title_id_element){
+        return;
+    }
 
     const links = [];
-    for(let k=0; k<data.length; k=k+1) {
-
-        const level = data[k]['level'];
-        const title = data[k]['title'];
-        const id = data[k]['id'];
-
-        if(level>1 && level<3){
-            links.push(create_new_link(level, title, id));
+    for(const heading of page_headings()){
+        const title = heading.textContent.replace(/\s+/g, ' ').trim();
+        if(title){
+            links.push(create_new_link(2, title, heading.id));
         }
     }
 
@@ -54,14 +45,6 @@ function load_title_id(data) {
         title_id_element.appendChild(link);
     }
     title_id_element.style.display = 'block';
-
-}
-
-async function main() {
-
-
-    const filename = window.location.pathname.split('/').pop() || 'index.html';
-    await fetch_title_id(filename + '.title_id.json');
 
 }
 

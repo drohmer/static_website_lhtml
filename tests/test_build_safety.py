@@ -402,7 +402,7 @@ def test_only_refuses_a_link_out_of_the_site(tmp_path):
     config.write_text(yaml.safe_dump({'source_directory': 'src', 'site_directory': 'site',
                                       'theme': str(REPO / 'src/lhtml_site/themes/slides')}))
     assert build(config).returncode == 0
-    link = tmp_path / 'site/b/title_id.json'
+    link = tmp_path / 'site/b/index.html'
     link.unlink()
     link.symlink_to(source / 'b/index.html.j2')
     for flags in ((), ('--strict',)):

@@ -136,46 +136,103 @@ class GeneratorRegressions(unittest.TestCase):
         self.assertEqual(menu[0]['expandable-toc'], 'True')        # a group the menu folds (cgp)
 
     @unittest.skipUnless(shutil.which('node'), 'needs Node.js')
-    def test_each_page_has_its_own_heading_summary(self):
+    def test_the_page_content_column_reads_the_headings_of_the_page(self):
+        """webpage-frame lists the level-2 headings with an id of its content,
+        read in the page: no request (it failed from file://), and no
+        title_id.json written into the site."""
         config = yaml.safe_load(self.config.read_text())
         config['plugin'] = []
         self.config.write_text(yaml.safe_dump(config))
         self.page('a.html.j2', 'A')
-        self.page('b.html.j2', 'B')
         with (self.source / 'a.html.j2').open('a') as stream:
             stream.write('\n== Alpha\n')
-        with (self.source / 'b.html.j2').open('a') as stream:
-            stream.write('\n== Beta\n')
         self.build()
-        for filename, heading in [('a.html', 'Alpha'), ('b.html', 'Beta')]:
-            summary = json.loads((self.site / (filename + '.title_id.json')).read_text())
-            self.assertEqual([entry['title'] for entry in summary], [heading])
-            self.assertIn('id="' + summary[0]['id'] + '"', (self.site / filename).read_text())
-        # Emulate an output directory generated with the old JS reader.
+        self.assertEqual(sorted(p.name for p in self.site.rglob('*title_id*.json')), [])
+        self.assertIn('id="alpha_l2"', (self.site / 'a.html').read_text())
         script = self.site / 'theme/js/title_id.js'
-        script.write_text('old reader')
-        self.build()
-        self.assertIn("filename + '.title_id.json'", script.read_text())
-        # Exercise the actual reader for named pages, encoded names and index URLs.
+        self.assertNotIn('fetch', script.read_text())
         harness = r"""
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
-for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
-                                  ['/b.html', 'b.html.title_id.json'],
-                                  ['/a%20b.html', 'a%20b.html.title_id.json'],
-                                  ['/folder/', 'index.html.title_id.json']]) {
-  const requests = [];
+function element() {
+  return {children: [], classList: {add() {}}, style: {}, innerHTML: '',
+          appendChild(child) { this.children.push(child); }};
+}
+for (const [headings, expected] of [
+    [[{id: 'alpha_l2', textContent: ' Alpha\n beta '}, {id: 'empty_l2', textContent: ' '}],
+     [['#alpha_l2', 'Alpha beta']]],
+    [[], []]]) {
+  const column = element();
+  let selector = null;
+  const content = {querySelectorAll: (s) => { selector = s; return headings; }};
   vm.runInNewContext(fs.readFileSync(process.argv[1], 'utf8'), {
-    window: {location: {pathname}}, console,
-    document: {querySelector: () => ({innerHTML: ''})},
-    fetch: (path) => {requests.push(path); return Promise.resolve({json: () => []});}
+    console,
+    document: {querySelector: (s) => s === '#title_id' ? column : s === '#main-content-centered' ? content : null,
+               body: content, createElement: element},
+    fetch: () => { throw new Error('no request'); }
   });
-  assert.deepStrictEqual(requests, [expected]);
+  assert.strictEqual(selector, 'h2[id]');
+  const links = column.children.map((div) => [div.children[0].href, div.children[0].textContent]);
+  assert.deepStrictEqual(links, expected);
+  assert.strictEqual(column.style.display, expected.length ? 'block' : undefined);
 }
 """
         result = subprocess.run(['node', '-e', harness, str(script)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(os.environ.get('LHTML_BROWSER_TEST') == '1', 'Set LHTML_BROWSER_TEST=1 for Chromium')
+    def test_the_page_content_column_in_a_browser(self):
+        """The column of webpage-frame, over http and from the file opened on
+        disk (3.0 fetched a JSON file: the column was empty from file://)."""
+        import functools
+        import http.server
+        import threading
+        from playwright.sync_api import sync_playwright
+        (self.source / 'a').mkdir()
+        (self.source / 'a/index.html.j2').write_text(
+            "{% set n = 'Two' %}\n= Page\n\n== One **bold**\n\nText\n\n=== Deeper\n\n== {{ n }}\n\n"
+            "==(#mine) Written\n\n==(.only-class) No id\n")
+        (self.source / 'b').mkdir()
+        (self.source / 'b/index.html.j2').write_text("= Alone\n\nText\n")
+        self.build()
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Quiet, directory=str(self.site)))
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        column = """() => { const e = document.querySelector('#title_id');
+            return [getComputedStyle(e).display,
+                    Array.from(e.querySelectorAll('a')).map(a => [a.getAttribute('href'), a.textContent])]; }"""
+        expected = ['block', [['#one_**bold**_l2', 'One bold'], ['#two_l2', 'Two'], ['#mine', 'Written']]]
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            page = browser.new_page()
+            requests = []
+            page.on('request', lambda request: requests.append(request.url))
+            for base in (f'http://127.0.0.1:{server.server_address[1]}/', self.site.as_uri() + '/'):
+                with self.subTest(base=base):
+                    page.goto(base + 'a/index.html')
+                    page.wait_for_function("document.querySelector('#title_id').style.display === 'block'")
+                    self.assertEqual(page.evaluate(column), expected)
+                    page.goto(base + 'b/index.html')
+                    page.wait_for_load_state('load')
+                    self.assertEqual(page.evaluate(column), ['none', []])
+            browser.close()
+            self.assertFalse([url for url in requests if url.endswith('.json')], requests)
+
+    def test_a_markdown_heading_from_jinja_gets_its_id_from_its_rendered_text(self):
+        (self.source / 'm').mkdir()
+        (self.source / 'm/index.md.j2').write_text(
+            "# Notes\n\n{% set topic = 'Quaternions *unit*' %}\n## {{ topic }}\n\n## Quaternions unit\n")
+        self.build()
+        page = (self.site / 'm/index.html').read_text()
+        self.assertIn('id="notes_l1"', page)
+        self.assertIn('id="quaternions_unit_l2"', page)          # written as text: as in 3.0
+        self.assertIn('id="quaternions_unit_id2_l2"', page)      # from Jinja: unique in its page
+        self.assertNotIn('{{', page)
 
     def test_deep_pages_are_generated_in_full_and_only_modes(self):
         name = 'a/b/c/d/e/f/g/index.html.j2'

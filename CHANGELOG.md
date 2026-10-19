@@ -3,6 +3,28 @@
 All notable changes to lhtml-site (`lhtml-site` on PyPI) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+- The "Page content" column of the theme webpage-frame is read in the page
+  (its level-2 headings with an id), not fetched from a JSON file: it is
+  shown when the site is opened from disk (`file://`), where it was empty,
+  and lists the headings as the page shows them (`== One **bold**` is
+  "One bold", it was "One \*\*bold\*\*").
+- A heading whose text comes from Jinja gets its id from its text as
+  rendered, unique in its page: each occurrence of a page reused with
+  `params` has the id of its own title (`interpolation_de_key_l1`; it was
+  `_parties[current__1]_id2_l1`, the same source for all of them), and
+  each heading of a `{% for %}` loop has its own. The ids of the headings
+  written as text do not change: links into published sites keep working.
+
+### Removed
+- The site no longer holds `<page>.title_id.json`, `title_id.json` nor
+  `structure/title_id.json` (144 files, 592 KB on a deck of 78 slides).
+  The record of the headings that `--only` needs is build state, in
+  `.verification/headings.json`; the `structure/title_id.json` of a site
+  built by 3.0 is read once in its place.
+
 ## [3.0.0] - 2026-10-19
 
 The first release on PyPI. The generator was named `static_website_lhtml`,

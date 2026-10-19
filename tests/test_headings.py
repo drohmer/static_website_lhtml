@@ -3,7 +3,7 @@
 import unittest
 
 from lhtml_site.generator_tool import extract_title
-from lhtml_site.headings import generate_new_id, lhtml_headings
+from lhtml_site.headings import generate_new_id, has_jinja, jinja_filter, lhtml_headings, page_unique_id
 
 
 class HeadingIds(unittest.TestCase):
@@ -26,6 +26,29 @@ class HeadingIds(unittest.TestCase):
         storage = {}
         self.assertEqual([generate_new_id('Part - One', storage) for _ in range(3)],
                          ['part__one', 'part__one_id2', 'part__one_id3'])
+
+
+class JinjaHeadings(unittest.TestCase):
+    """A heading whose text comes from Jinja gets its id once rendered."""
+
+    def test_what_comes_from_jinja(self):
+        self.assertTrue(has_jinja('{{ PARTIES[current - 1][0] }}'))
+        self.assertTrue(has_jinja('Part {% if x %}A{% endif %}'))
+        self.assertFalse(has_jinja('Plain {text} 100%'))
+        self.assertFalse(has_jinja('{% raw %}{{ kept }}{% endraw %}'))
+        self.assertTrue(has_jinja('{% raw %}{{ a }}{% endraw %} {{ b }}'))
+
+    def test_an_id_unique_in_its_page(self):
+        taken = {'intro_l1'}
+        self.assertEqual([page_unique_id('Intro', 1, taken) for _ in range(2)], ['intro_id2_l1', 'intro_id3_l1'])
+        self.assertEqual(page_unique_id('Rotations (3D)', 2, taken), 'rotations_3d__l2')
+
+    def test_the_filter_reads_the_rendered_text(self):
+        meta = {'heading_ids': {'a.html': {'x_l2'}}}
+        heading_id = jinja_filter(meta)
+        self.assertEqual(heading_id('\ue000src/a.html.j2:3\ue001X', 2, 'a.html'), 'x_id2_l2')     # markers
+        self.assertEqual(heading_id('A *b*', 2, 'b.html', True), 'a_b_l2')          # Markdown: its text
+        self.assertEqual(meta['heading_ids']['b.html'], {'a_b_l2'})
 
 
 class LhtmlHeadings(unittest.TestCase):

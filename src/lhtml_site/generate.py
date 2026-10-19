@@ -397,6 +397,7 @@ def jinja_environment(meta, selected, built):
     loader = TrackingLoader(loader, roots, marker_transform(meta))
     env = Environment(loader=loader, cache_size=0, extensions=['jinja_markdown.MarkdownExtension'])
     env.filters['markdown_page'] = markdown_page.convert         # the content of a Markdown page
+    env.filters[headings.JINJA_FILTER] = headings.jinja_filter(meta)   # the id of a heading rendered by Jinja
     return env
 
 
@@ -938,6 +939,7 @@ def generate_site(meta, selected, built):
     if failed or plugin_failures:
         raise BuildFailed(', '.join(f'{n} {what}' for n, what in ((len(failed), 'page(s) failed'),
                                                                  (plugin_failures, 'plugin error(s)')) if n))
+    headings.save(meta)                 # the headings, for the next --only
     if meta.get('dependency_store'):
         meta['dependency_store'].save(meta)
     return len(built)

@@ -32,7 +32,7 @@ lhtml-site/
     design.py              # Design tokens, macros and layouts (design.yaml -> design.css)
     theme.py               # What a theme declares about the build (theme.yaml)
     menu.py                # The table of contents written into the theme's menu
-    headings.py            # Heading ids and their summary (title_id.json)
+    headings.py            # Heading ids (from the text, or once Jinja rendered it)
     wrap.py                # The page placed in the template of its theme
     index_page.py          # The index of a site that has none
     video_cache.py         # Transcoded variants of the videos (cache_video_directory:)
