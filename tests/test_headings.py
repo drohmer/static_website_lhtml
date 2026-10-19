@@ -3,7 +3,29 @@
 import unittest
 
 from lhtml_site.generator_tool import extract_title
-from lhtml_site.headings import lhtml_headings
+from lhtml_site.headings import generate_new_id, lhtml_headings
+
+
+class HeadingIds(unittest.TestCase):
+    """The ids of the last copied generator (title_submenu.py, April 2026),
+    used by the sites it built: links into them keep working."""
+
+    def test_the_ids_of_the_previous_generator(self):
+        for title, expected in [('Simulation - Mass-springs Cloth', 'simulation__mass_spr'),
+                                ('Ani3D - Introduction', 'ani3d__introduction'),
+                                ('Animating fluids (I)', 'animating_fluids_i_'),
+                                ('Exemple CMakeLists.txt', 'exemple_cmakelists_t'),
+                                ('std::vector, exemples', 'std_vector_exemples'),
+                                ('Solve: x = A(b)', 'solve_x_=_a_b_')]:
+            self.assertEqual(generate_new_id(title, {}), expected, title)
+
+    def test_unsafe_characters_are_removed(self):
+        self.assertEqual(generate_new_id('A <b> & "c"\t{% raw %}d{% endraw %}', {}), 'a_b_cd')
+
+    def test_a_repeated_heading_gets_distinct_ids(self):
+        storage = {}
+        self.assertEqual([generate_new_id('Part - One', storage) for _ in range(3)],
+                         ['part__one', 'part__one_id2', 'part__one_id3'])
 
 
 class LhtmlHeadings(unittest.TestCase):

@@ -44,5 +44,11 @@ it is built on.
 - The package holds the themes, plugins and starters but not the demo
   course, and the themes ship their fonts as WOFF2 only: the wheel is about
   8 MB.
+- The id of a heading is the one of the generator copied into projects
+  since April 2026 (` -,.:()` become `_`, then `__` becomes `_`), so links
+  into the sites it built keep working; a site built by an older copy
+  changes the id of its headings with these characters (`Part - One`:
+  `part___one` before, `part__one` now). A repeated heading gets distinct
+  ids (`_id2`, `_id3`...) and characters unsafe in a URL are removed.
 
 [3.0.0]: https://github.com/drohmer/lhtml-site/releases/tag/v3.0.0

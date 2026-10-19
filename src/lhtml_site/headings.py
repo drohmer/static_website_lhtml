@@ -34,16 +34,20 @@ MARKDOWN_CLOSING = re.compile(r'[ \t]+#+[ \t]*$')       # # Title ## : the closi
 def generate_new_id(text, id_storage):
     """Return a unique id for a heading text.
 
-    Same scheme as before the refactoring, so that existing links keep
-    working: lower case, spaces and '-' become '_', ',.:()' are removed,
-    truncated to N_max characters. Characters that are unsafe in an HTML
-    attribute or a URL fragment (< > " & ` and whitespace) are removed too,
-    as the Jinja markers ({% raw %}, braces, %) of a title.
-    A repeated id gets the suffix _id2, _id3, ...
+    The scheme of the last copied generator (title_submenu.py, April 2026),
+    so that links into the sites it built keep working: lower case, each of
+    ' -,.:()' becomes '_', then '__' becomes '_' (one pass: ' - ' gives
+    '__'), truncated to N_max characters. Two fixes: characters that are
+    unsafe in an HTML attribute or a URL fragment (< > " & ` and whitespace
+    other than a space) are removed first, as the Jinja markers
+    ({% raw %}, braces, %) of a title; and a repeated id gets the suffix
+    _id2, _id3, ... (the third one was _id2 again). Sites built before
+    April 2026 removed ',.:()' instead: their headings with these
+    characters or ' - ' have other ids.
     """
     N_max = 20
-    text_id = RAW_MARKERS.sub('', text).lower().replace(' ', '_').replace('-', '_')
-    text_id = re.sub(r'[,.:()<>"&`\s{}%]', '', text_id)
+    text_id = re.sub(r'[<>"&`{}%]|[^\S ]', '', RAW_MARKERS.sub('', text).lower())
+    text_id = re.sub(r'[-,.:() ]', '_', text_id).replace('__', '_')
     text_id = text_id[:N_max]
 
     if text_id in id_storage:

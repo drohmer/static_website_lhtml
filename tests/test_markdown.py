@@ -109,7 +109,7 @@ class BuildTests(unittest.TestCase):
         self.assertIn('<title> Calling main </title>', html)
         self.assertIn('<h1 id="calling_main_l1">Calling <code>main</code></h1>', html)
         self.assertIn('<h2 id="learning_c#_today_l2">Learning C# today</h2>', html)
-        self.assertIn('<h3 id="energy_\\x_1\\_l3">Energy \\(x_1\\)</h3>', html)
+        self.assertIn('<h3 id="energy_\\_x_1\\__l3">Energy \\(x_1\\)</h3>', html)
         self.assertIn('<h2 id="custom">Mine</h2>', html)
         self.assertIn('<h2 id="after_l2">After</h2>', html)
         self.assertNotIn('yaml', html)
