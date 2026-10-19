@@ -17,7 +17,7 @@ from rich.table import Column
 from lhtml_site.layout.report import contact_sheets_html
 
 # The Node scripts stay next to those of the PDF export for now; they move
-# when the targets do (step 7 of docs/design.md).
+# when the targets do.
 SCRIPTS = Path(__file__).resolve().parents[1] / 'plugins' / 'assets'
 PUPPETEER_MISSING = ('puppeteer not found: run `npm install` in the checkout of the generator; '
                      'installed with pip, the generator finds it through NODE_PATH (see its README)')

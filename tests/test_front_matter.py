@@ -64,7 +64,7 @@ class FrontMatterTests(unittest.TestCase):
     def test_malformed_yaml_fails_naming_the_page(self):
         self.write('a/index.html.j2', '---\nlayout: [stack\n---\n= Titre\n')
         output = self.build(ok=False)
-        # the console of rich may cut a long path (step C of docs/design.md)
+        # the console of rich may cut a long path
         self.assertIn('a/index.html.j2', output.replace(' ', ''))
         self.assertIn('invalid YAML front matter', output)
 

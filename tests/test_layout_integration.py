@@ -348,7 +348,7 @@ def test_a_plugin_that_fails_does_not_take_the_report_with_it(tmp_path):
     analysis used to run before the plugin that publishes, so a failing
     export still left a report; it runs after them now, and a plugin that
     raises must not suppress it. The build still fails. Since the extension
-    contract (design.md, N4), the page whose plugin raised leaves the build,
+    contract (version 3), the page whose plugin raised leaves the build,
     as one Jinja could not render: the report measures the other pages,
     not a page that was not built."""
     source = tmp_path / 'src'

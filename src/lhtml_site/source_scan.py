@@ -12,7 +12,7 @@ own code blocks, fenced by ``` or ~~~; its other zones are those of LHTML.
 The scanners of an LHTML page read its document tree (`document`,
 lhtml.parse on the template before Jinja, which LHTML keeps opaque): the
 headings and the title, the media files and the planned figures of the
-credits, the styles, spacers and blocks of the lint (N6 of docs/design.md).
+credits, the styles, spacers and blocks of the lint.
 What stays on the text: a Markdown page, the patterns of the lint (words),
 the {% set %} of a page (Jinja), the markers of the source map.
 """
