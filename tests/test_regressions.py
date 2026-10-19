@@ -194,71 +194,33 @@ for (const [pathname, expected] of [['/a.html', 'a.html.title_id.json'],
         entries = find_files_in_hierarchy(str(self.source), lambda name: name.endswith('.html.j2'))
         self.assertEqual(entries, [('nested/', 'index.html.j2')])
 
-    @patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'node'})     # the Node export: its commands mocked
     def test_pdf_failures_preserve_html_and_previous_export(self):
-        for failing_command in ('node', 'pdftoppm', 'magick', 'pdfunite'):
-            with self.subTest(command=failing_command):
-                self.site.mkdir(exist_ok=True)
-                (self.site / 'index.html').write_text('<h1>Keep me</h1>')
-                old_pdf = self.root / 'slides.pdf'
-                old_pdf.write_bytes(b'previous PDF')
-                attempts = []
-                def run(command, check=False, **options):
-                    if command[0] == failing_command:
-                        attempts.append(command[0])
-                        if not check:           # node: tried again, then the export fails
-                            return subprocess.CompletedProcess(command, 1, '', 'TimeoutError')
-                        raise subprocess.CalledProcessError(1, command)
-                    if command[0] == 'node':
-                        Path(command[-1].removeprefix('--output=')).write_bytes(b'page')
-                    elif command[0] == 'magick':
-                        Path(command[-1]).write_bytes(b'image')
-                    return subprocess.CompletedProcess(command, 0)
-                meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
-                        'structure': [{'dir': '', 'filename': 'index.html'}]}
-                with patch.object(pdf_export.subprocess, 'run', side_effect=run):
-                    with self.assertRaises(RuntimeError if failing_command == 'node'
-                                           else subprocess.CalledProcessError) as raised:
-                        pdf_export.export(meta)
-                if failing_command == 'node':
-                    self.assertIn('not made after 3 attempts: TimeoutError', str(raised.exception))
-                    self.assertEqual(attempts, [failing_command] * pdf_export.ATTEMPTS)
-                self.assertTrue((self.site / 'index.html').exists())
-                self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
-
-    @patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'node'})     # the Node export: its commands mocked
-    def test_a_pdf_page_that_misses_its_timeout_is_tried_again(self):
         self.site.mkdir()
-        calls = []
-        def run(command, check=False, **options):
-            if command[0] == 'node':
-                calls.append(command)
-                if len(calls) == 1:                     # Chrome missed its timeout once
-                    return subprocess.CompletedProcess(command, 1, '', 'TimeoutError')
-                Path(command[-1].removeprefix('--output=')).write_bytes(b'page')
-            elif command[0] in ('magick', 'pdfunite'):
-                Path(command[-1]).write_bytes(b'export')
-            return subprocess.CompletedProcess(command, 0)
+        (self.site / 'index.html').write_text('<h1>Keep me</h1>')
+        old_pdf = self.root / 'slides.pdf'
+        old_pdf.write_bytes(b'previous PDF')
         meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                 'structure': [{'dir': '', 'filename': 'index.html'}]}
-        with patch.object(pdf_export.subprocess, 'run', side_effect=run):
-            pdf_export.export(meta)
-        self.assertEqual(len(calls), 2)
-        self.assertEqual((self.root / 'slides.pdf').read_bytes(), b'export')
+        failed = RuntimeError('PDF of index.html not made: Timeout 60000ms exceeded')
+        with patch.object(pdf_export, 'export_playwright', side_effect=failed):
+            with self.assertRaisesRegex(RuntimeError, 'Timeout'):
+                pdf_export.export(meta)
+        self.assertTrue((self.site / 'index.html').exists())
+        self.assertEqual(old_pdf.read_bytes(), b'previous PDF')
 
-    @patch.dict(os.environ, {'LHTML_PDF_ENGINE': 'node'})     # the Node export: its commands mocked
     def test_pdf_asks_not_to_publish_instead_of_deleting(self):
         self.site.mkdir()
-        def run(command, check=False, **options):
+        def browser(inputs, stems, chrome=None):
             self.assertTrue(self.site.exists())
-            if command[0] == 'node':
-                Path(command[-1].removeprefix('--output=')).write_bytes(b'page')
-            elif command[0] in ('magick', 'pdfunite'):
-                Path(command[-1]).write_bytes(b'export')
-            return subprocess.CompletedProcess(command, 0)
+            for stem in stems:
+                Path(stem + '.pdf').write_bytes(b'page')
+                Path(stem + '.jpg').write_bytes(b'export')
+        def merge(pdfs, merged):
+            Path(merged).write_bytes(b'export')
         meta = {'site_directory': str(self.site), 'debug': False, 'log': Logger(),
                 'structure': [{'dir': '', 'filename': 'index.html'}]}
-        with patch.object(pdf_export.subprocess, 'run', side_effect=run):
+        with patch.object(pdf_export, 'export_playwright', side_effect=browser), \
+                patch.object(pdf_export, 'merge_pypdf', side_effect=merge):
             partial = {**meta, 'only': True}                        # --only: built in the site itself
             pdf_export.export(partial)
             self.assertTrue(self.site.exists())

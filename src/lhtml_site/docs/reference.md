@@ -135,7 +135,7 @@ Optional keys:
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
 | `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
-| `chrome` | Chrome executable run by the PDF export (instead of the Chromium of Playwright) and by the Node scripts (layout report, `--render`, the Node PDF export), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
+| `chrome` | Chrome executable run by the PDF export, the layout report and `--render`, instead of the Chromium of Playwright; a macOS `.app` bundle is accepted |
 | `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lhtml_site/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
@@ -176,9 +176,8 @@ _site/01_procedural/images/slide_000.jpg ...
   through Playwright (`pipx inject --include-apps lhtml-site playwright pypdf`,
   then `playwright install --only-shell chromium`; with pip,
   `pip install "lhtml-site[pdf]"` then
-  `python -m playwright install --only-shell chromium`); without Playwright,
-  or with `LHTML_PDF_ENGINE=node`, it runs the Node export (puppeteer,
-  poppler, ImageMagick: README, "PDF export"). `lhtml-site doctor` says which.
+  `python -m playwright install --only-shell chromium`). `lhtml-site doctor`
+  says what is missing.
 - `--target html` builds only that target (repeatable, or `--target
   html,pdf`); `--only 01_procedural` builds only that deck, and
   `--only 01_procedural/03_noise` pages of it.
@@ -717,9 +716,11 @@ that still lists one of them is refused by name.
 
 ## Layout Report (LLM-assisted slide layout)
 
-`--layout` measures the layout of every generated page in headless Chrome and
-writes a text report that an LLM (or any script) can read to find and fix
-layout problems. It requires `npm install` (see Installation).
+`--layout` measures the layout of every generated page in headless Chromium
+and writes a text report that an LLM (or any script) can read to find and fix
+layout problems. It runs the Chromium of Playwright for Python, as the PDF
+export does (the extra `lhtml-site[pdf]`, then
+`python -m playwright install --only-shell chromium`; README, "PDF export").
 
 **What happens when it cannot run.** The analysis never takes the build with
 it: a missing browser, a page it cannot measure, a measurement that crashes

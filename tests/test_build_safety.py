@@ -139,11 +139,12 @@ def test_the_layout_analysis_validates_even_when_called_directly(tmp_path):
     assert output_directory(meta) == tmp_path / 'custom-reports'
 
 
-def test_layout_reports_browser_errors(tmp_path):
-    failed = Mock(stdout=iter(['progress 0 1 a.html\n']), stderr=iter(['Chrome failed\n']), returncode=1)
-    with patch.object(measure.subprocess, 'Popen', return_value=failed):
-        with pytest.raises(RuntimeError, match='Chrome failed'):
-            measure.run_node('layout_measure.js', [])
+def test_layout_says_what_to_install_without_playwright(tmp_path):
+    with patch('importlib.util.find_spec', return_value=None):
+        with pytest.raises(RuntimeError, match='The layout report needs playwright: .*playwright install'):
+            measure.measure_pages([{'html': 'a.html', 'out': str(tmp_path), 'name': 'a.html'}], {}, 1, Mock())
+        with pytest.raises(RuntimeError, match='--render needs playwright'):
+            measure.render_files([], 1920, 1080, None)
 
 
 def test_watcher_detects_add_edit_delete(tmp_path):
@@ -162,12 +163,12 @@ def test_watcher_detects_add_edit_delete(tmp_path):
 
 def test_a_layout_report_that_cannot_run_leaves_the_build_alone(tmp_path):
     """An analysis reports, or reports that it could not run. A missing
-    browser (or here, a missing node) used to raise through the plugin and
-    throw away a site that had rendered correctly."""
+    browser (here, no Chromium for Playwright) used to raise through the
+    plugin and throw away a site that had rendered correctly."""
     config, _ = project(tmp_path)
-    without_node = dict(os.environ, PATH='/usr/bin:/bin')
+    without_browser = dict(os.environ, PLAYWRIGHT_BROWSERS_PATH=str(tmp_path / 'no-browsers'))
     result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), '--layout'],
-                            capture_output=True, text=True, env=without_node)
+                            capture_output=True, text=True, env=without_browser)
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'Layout report not produced' in result.stdout
     assert (tmp_path / '.site/index.html').is_file()

@@ -119,7 +119,7 @@ a [deck](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/ref
 |---|---|---|
 | `webpage-frame` (default) | Web pages: documentation, a course website, with a navigation menu | nothing more |
 | `slides` | Slides shown in the browser, 1920x1080, one page per slide | nothing more |
-| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Playwright and its Chromium (`lhtml-site[pdf]`), or Node.js: see [PDF export](#pdf-export) |
+| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Playwright and its Chromium (`lhtml-site[pdf]`): see [PDF export](#pdf-export) |
 
 Change the theme at any time by editing `theme:`; it also takes the
 directory of a theme of your own. To publish the same slides both in the
@@ -167,8 +167,8 @@ missing, for the way lhtml-site is installed:
 
 | Feature | Needs |
 |---|---|
-| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and the Chromium of Playwright; or, as before, Node.js, puppeteer and minimist, Chrome, poppler (`pdfunite`, `pdftoppm`), ImageMagick (`magick`) |
-| Layout report (`--layout`, `--render`) | Node.js, puppeteer and minimist, Chrome |
+| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and the Chromium of Playwright |
+| Layout report (`--layout`, `--render`) | `playwright` (Python, the extra `lhtml-site[pdf]`) and the Chromium of Playwright |
 | Videos in several codecs (`cache_video_directory:`) | `ffmpeg`, and `ffpb` (Python) |
 | SASS (`.sass` files) | `libsass` (Python) |
 | Figures in code (`*.svg.py`, `*.svg.tex`) | the libraries their scripts import, such as `matplotlib`, `numpy` (Python); `latex` and `dvisvgm` (TeX Live) |
@@ -220,32 +220,8 @@ decoded, a frame of each video) rather than after a fixed delay; a slide
 that never gets ready, within a minute, fails the build. The configuration
 key `chrome` names another Chromium or Chrome to run instead.
 
-**The Node export** (the one of the earlier versions) is used when
-Playwright is not installed, or with `LHTML_PDF_ENGINE=node`. It runs a
-Chrome per slide through Node.js and puppeteer, then poppler and
-ImageMagick. With pipx (or pip), on macOS:
-
-```bash
-brew install node poppler imagemagick
-npm install --prefix ~/.lhtml-site puppeteer minimist
-~/.lhtml-site/node_modules/.bin/puppeteer browsers install chrome
-lhtml-site doctor                                # PDF export with Node: ready
-```
-
-On Debian or Ubuntu, the first line is
-`sudo apt install nodejs npm poppler-utils`, with ImageMagick 7 (the command
-`magick`) from <https://imagemagick.org>. The generator finds the Node
-modules of `~/.lhtml-site/node_modules` by itself: no `NODE_PATH` is needed
-(a `NODE_PATH` of yours is still read, first). The third line downloads the
-Chrome of this version of puppeteer (over 100 MB): recent npm versions do not
-run the install script of puppeteer, hence the explicit download. The Node
-export needs it. The layout report still runs through Node and puppeteer,
-and can do without that Chrome (the configuration key `chrome`, or
-`PUPPETEER_EXECUTABLE_PATH`, names a Chrome already installed, and a Chrome
-installed in the usual place is its last resort).
-
-In a checkout of the generator, `npm ci` in the checkout installs puppeteer
-and minimist (`package.json`), then `npx puppeteer browsers install chrome`.
+The same Playwright and Chromium run the layout report (`--layout`,
+`--render`): the extra `pdf` serves both.
 
 ### Your talk as a PDF
 
@@ -287,8 +263,7 @@ naming its files as `<submodule>/themes/slides/` or
 `<submodule>/plugins/pre_include.py` (they are found in `src/lhtml_site/`).
 `pip install -e .` in a checkout installs the command from it. Runtime and
 transitive dependencies are pinned in `requirements-lock.txt`;
-`requirements.txt` applies these constraints. `npm ci` installs the locked
-Node dependencies.
+`requirements.txt` applies these constraints.
 
 The checkout also holds a complete demo, a course website with its videos,
 in `src/lhtml_site/example/` (not installed by pip: too heavy). To build it:

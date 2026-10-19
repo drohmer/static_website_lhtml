@@ -1,33 +1,26 @@
 """lhtml-site doctor: what is present and what is missing, feature by feature.
 
 A site of HTML pages or slides needs nothing more than the package. Each
-optional feature needs its own programs (Playwright, or Node and puppeteer,
-for the PDF export, Node for the layout report, ffmpeg for the videos, ...): this command says,
-for each, what it found and how to install what it did not, for the way the
+optional feature needs its own programs (Playwright and its Chromium for
+the PDF export and the layout report, ffmpeg for the videos, ...): this
+command says, for each, what it found and how to install what it did not, for the way the
 generator is installed (a checkout, pipx, a virtual environment). It changes
 nothing.
 
 The helpers of this module are also those of the build, so that the build
 and the diagnosis look for the same things in the same places:
-`find_command`, `install_hint`, `node_environment`.
+`find_command`, `install_hint`.
 """
 import argparse
 import importlib.metadata
 import importlib.util
-import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent
-SCRIPTS = PACKAGE / 'plugins' / 'assets'
-# Where the Node modules of an installed generator go (README, "PDF export
-# with pipx"): the Node scripts find them there without NODE_PATH.
-NODE_HOME = Path.home() / '.lhtml-site'
-NODE_MODULES = NODE_HOME / 'node_modules'
 
 
 def installation():
@@ -56,24 +49,11 @@ def find_command(name):
     return shutil.which(name) or shutil.which(name, path=os.path.dirname(sys.executable))
 
 
-def node_environment():
-    """The environment of the Node scripts: NODE_PATH ends with NODE_MODULES
-    when it exists, so that an installed generator finds puppeteer there."""
-    env = dict(os.environ)
-    if NODE_MODULES.is_dir():
-        env['NODE_PATH'] = os.pathsep.join(p for p in (env.get('NODE_PATH'), str(NODE_MODULES)) if p)
-    return env
-
-
 # ---------------------------------------------------------------------------
 # The checks: (name, what was found or None, how to install it)
 # ---------------------------------------------------------------------------
 
 SYSTEM = {   # program: (what provides it, macOS, Debian/Ubuntu)
-    'node': ('Node.js', 'brew install node', 'https://nodejs.org (or apt install nodejs npm)'),
-    'pdfunite': ('poppler', 'brew install poppler', 'sudo apt install poppler-utils'),
-    'pdftoppm': ('poppler', 'brew install poppler', 'sudo apt install poppler-utils'),
-    'magick': ('ImageMagick 7', 'brew install imagemagick', 'https://imagemagick.org (magick)'),
     'ffmpeg': ('ffmpeg', 'brew install ffmpeg', 'sudo apt install ffmpeg'),
     'git': ('git', 'xcode-select --install', 'sudo apt install git'),
     'latex': ('TeX Live', 'brew install --cask mactex-no-gui', 'sudo apt install texlive-latex-extra'),
@@ -103,46 +83,6 @@ def tidy_check():
     return 'libtidy', found, hint
 
 
-def node_report():
-    """What plugins/assets/doctor.js says (node, puppeteer, Chrome); {} without node."""
-    node = shutil.which('node')
-    if node is None:
-        return {}
-    try:
-        result = subprocess.run([node, str(SCRIPTS / 'doctor.js')], capture_output=True, text=True,
-                                timeout=60, env=node_environment(), cwd=SCRIPTS)
-        return json.loads(result.stdout.strip().splitlines()[-1])
-    except (subprocess.SubprocessError, json.JSONDecodeError, IndexError, OSError):
-        return {'node': node}            # a node that does not run the script: the rest is missing
-
-
-def node_checks(report, pdf=False):
-    """node, puppeteer, minimist, Chrome: those of the Node scripts (report: node_report()).
-    The Chrome installed on the machine is a last resort of the layout report;
-    the PDF export does not launch it (macOS: it fails to start with the
-    options of the export), it needs the Chrome of puppeteer."""
-    checkout = installation() == 'checkout'
-    npm = (f'npm ci (in {PACKAGE.parents[1]})' if checkout
-           else f'npm install --prefix {NODE_HOME} puppeteer minimist')
-    browsers = ('npx puppeteer browsers install chrome' if checkout
-                else f'{NODE_MODULES}/.bin/puppeteer browsers install chrome')
-    if report.get('asked'):
-        chrome = report['asked'] + ' (PUPPETEER_EXECUTABLE_PATH)'
-    elif report.get('downloaded'):
-        chrome = report['downloaded']
-    elif report.get('installed') and not pdf:
-        chrome = report['installed'] + ' (installed on the machine, used as a last resort)'
-    else:
-        chrome = None
-    browser_hint = (f'{browsers} (the Chrome of puppeteer: not the one installed on the machine)' if pdf
-                    else f"{browsers}, or the configuration key 'chrome'")
-    node_hint = system_check('node')[2]
-    return [('node', report.get('node') or None, node_hint),
-            ('puppeteer', report.get('puppeteer') or None, npm),
-            ('minimist', report.get('minimist') or None, npm),
-            ('Chrome', chrome, browser_hint)]
-
-
 def chromium_check():
     """The Chromium of Playwright: launched and closed, the surest test."""
     hint = f'{sys.executable} -m playwright install --only-shell chromium'
@@ -159,22 +99,21 @@ def chromium_check():
     return 'Chromium', found, hint
 
 
-def playwright_checks():
-    """playwright, pypdf (the extra lhtml-site[pdf]) and its Chromium."""
+def playwright_checks(chromium):
+    """playwright, pypdf (the extra lhtml-site[pdf]); `chromium`: chromium_check()."""
     extra = ('pipx inject lhtml-site playwright pypdf' if installation() == 'pipx'
              else f'{sys.executable} -m pip install "lhtml-site[pdf]"')
-    return [(name, found, extra) for name, found, _ in (module_check('playwright'), module_check('pypdf'))] \
-        + [chromium_check()]
+    playwright, pypdf = [(name, found, extra) for name, found, _ in (module_check('playwright'),
+                                                                      module_check('pypdf'))]
+    return playwright, pypdf, chromium
 
 
 def features():
     """The optional features and their checks, in the order of the README."""
-    report = node_report()
-    pdf_tools = [system_check('pdfunite'), system_check('pdftoppm'), system_check('magick')]
+    playwright, pypdf, chromium = playwright_checks(chromium_check())
     return [
-        ('PDF export with Playwright (theme slides-pdf, export: pdf; lhtml-site[pdf])', playwright_checks()),
-        ('PDF export with Node (the fallback: LHTML_PDF_ENGINE=node)', node_checks(report, pdf=True) + pdf_tools),
-        ('Layout report (--layout, --render)', node_checks(report)),
+        ('PDF export (theme slides-pdf, export: pdf; lhtml-site[pdf])', [playwright, pypdf, chromium]),
+        ('Layout report (--layout, --render; playwright of lhtml-site[pdf])', [playwright, chromium]),
         ('Videos in several codecs (cache_video_directory)',
          [system_check('ffmpeg'), ('ffpb', find_command('ffpb'), install_hint('ffpb', command=True))]),
         ('SASS (.sass files)', [module_check('sass', 'libsass')]),
@@ -226,12 +165,4 @@ def main(arguments):
           f" (lhtml-markup {lhtml or 'not found'})")
     for line in report_lines(features()):
         print(line)
-    from lhtml_site import pdf_export
-    try:
-        print(f'\nThe PDF export uses: {pdf_export.engine()} '
-              '(playwright when playwright and pypdf are installed; LHTML_PDF_ENGINE=node or playwright chooses)')
-    except ValueError as error:
-        print(f'\n{error}')
-    if NODE_MODULES.is_dir():
-        print(f'\nNode modules of {NODE_MODULES} are found by the generator (no NODE_PATH needed).')
     return 0

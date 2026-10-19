@@ -15,9 +15,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pypdf. The outputs keep their names and layout. `lhtml-site doctor`
   reports it.
 
-### Changed
-- The Node export (puppeteer, poppler, ImageMagick) is the fallback: used
-  when Playwright is not installed, or with `LHTML_PDF_ENGINE=node`.
+- The layout report (`--layout`, `--render`) runs in the same Chromium,
+  through Playwright for Python (`lhtml_site/layout/measure.py`; what runs
+  inside the page is `lhtml_site/layout/page.js`). Its reports are those of
+  the Node version: same blocks, problems and usual values of the deck
+  measured in the same browser. The pages of an existing report are measured
+  again once (the measuring code changed). On a deck of 35 slides, the
+  report takes 7.9 s instead of 9.5 s.
+
+### Removed
+- Node.js is no longer used: the Node PDF export (puppeteer, poppler,
+  ImageMagick, `LHTML_PDF_ENGINE`), the Node scripts of the layout report,
+  `package.json`. `lhtml-site doctor` no longer looks for Node, puppeteer or
+  a Chrome of its own.
 
 ## [3.0.0] - unreleased
 

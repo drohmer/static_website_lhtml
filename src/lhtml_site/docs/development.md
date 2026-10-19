@@ -10,7 +10,6 @@ lhtml-site/
   generate.py              # Runs the generator of the checkout (python generate.py = lhtml-site)
   pyproject.toml           # The package lhtml-site and its command
   requirements.txt         # Python dependencies (requirements-lock.txt: versions, requirements-dev.txt: tests)
-  package.json             # Node dependencies (puppeteer: PDF export, layout report)
   tests/                   # pytest suite
   src/lhtml_site/          # The package: its code, and the files it reads next to it
     generate.py            # The pipeline, and the command (main)
@@ -26,6 +25,7 @@ lhtml-site/
     dependencies.py        # Files each page depends on: --only, validity of the reports
     pages.py               # Pages: sources, templates, occurrences, placement in the site
     pdf_export.py          # The PDF of a target whose theme declares export: pdf
+    browser.py             # The headless Chromium (Playwright): PDF export, layout report, --render
     project.py             # A project: its decks, each built to its targets
     video_convert/         # Video conversion utilities (ffmpeg)
     deck.py                # Deck: order of the slides (deck.yaml)
@@ -49,14 +49,14 @@ lhtml-site/
       analysis.py          # What a measured page shows: collisions, overflows, density, deviations
       findings.py          # The checks: their code, their severity, their sentence
       report.py            # layout.md, summary.md, changes.md and the contact sheets
-      measure.py           # Measurement in headless Chrome (Node scripts of plugins/assets/)
+      measure.py           # Measurement in headless Chromium (Playwright), images of the report, --render
+      page.js              # What runs inside the page: the blocks, the overlays, the media frozen
       build.py             # The analysis of a build (--layout): which pages, what to keep, where
     structure.py           # Pages of the site for plugins (structure, built_pages),
                            #   what may be published, and .structure/ of a project
     plugins/
       pre_include.py       # Pre-include content into templates
       code_include.py      # Include code from external repos
-      assets/              # Node scripts of the PDF export, of the layout report and of doctor
     themes/                # each with theme.yaml (contract with the build)
       webpage-frame/       #   and, for the slides, design.yaml (tokens, macros)
       slides/              # Presentation slides theme
@@ -77,9 +77,9 @@ python -m pytest tests -q -n auto
 
 Most tests run a build in a subprocess, so they are slow one after the other and almost free in parallel: `-n auto` (pytest-xdist) takes the suite from about 85 s to 15 s, and about 110 s to 30 s with the browser tests. Drop `-n auto` to read the output of a single test.
 
-Development dependencies are listed separately in `requirements-dev.txt` and share the version lock. The tests require Node.js to validate generated menu JavaScript and the heading reader. The suite covers configuration precedence, validation, path protection, read-only diagnostics, plugin context isolation, generation regressions, and simulated PDF tool failures.
+Development dependencies are listed separately in `requirements-dev.txt` and share the version lock. When Node.js is on the PATH, the tests also run the generated menu JavaScript and the heading reader in it (skipped otherwise); the generator itself does not use Node. The suite covers configuration precedence, validation, path protection, read-only diagnostics, plugin context isolation, generation regressions, and simulated PDF tool failures.
 
-The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and 3.14 with Node.js 22. It installs the Chromium of Playwright (`python -m playwright install --with-deps --only-shell chromium`), runs the suite and real Chrome/HTTP smoke tests, the PDF export of the slides starter included. Its job `package` follows the publishing path: it builds the wheel and the sdist, runs `twine check --strict`, checks that the wheel holds no build output nor the demo and stays under 15 MB, installs it in a clean environment and runs `lhtml-site init` and a build outside the repository, then the wheel with the extra `pdf` and a PDF export by Playwright, without Node (`tests/test_packaging.py` checks the content of the wheel locally). `.github/workflows/publish.yml` publishes to PyPI with Trusted Publishing; it is prepared, not enabled: it runs only by hand, and its header says how to enable it. Run these locally after `npm ci` and `python -m playwright install --only-shell chromium`:
+The GitHub Actions workflow runs on pushes and pull requests, on Python 3.11 and 3.14. It installs the Chromium of Playwright (`python -m playwright install --with-deps --only-shell chromium`), runs the suite and real Chromium/HTTP smoke tests: the layout report and the PDF export of the slides starter included. Its job `package` follows the publishing path: it builds the wheel and the sdist, runs `twine check --strict`, checks that the wheel holds no build output nor the demo and stays under 15 MB, installs it in a clean environment and runs `lhtml-site init` and a build outside the repository, then the wheel with the extra `pdf`, a PDF export and a layout report by Playwright (`tests/test_packaging.py` checks the content of the wheel locally). `.github/workflows/publish.yml` publishes to PyPI with Trusted Publishing; it is prepared, not enabled: it runs only by hand, and its header says how to enable it. Run these locally after `python -m playwright install --only-shell chromium`:
 
 ```bash
 LHTML_BROWSER_TEST=1 LHTML_PREVIEW_TEST=1 python -m pytest tests/test_layout_integration.py tests/test_development.py tests/test_pdf_export.py -q

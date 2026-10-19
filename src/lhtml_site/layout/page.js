@@ -1,37 +1,7 @@
-'use strict';
+// The layout report, inside the page: the functions lhtml_site/layout/measure.py
+// runs in each page it measures (Playwright, page.evaluate), by their name.
+// Nothing here runs outside the page; each call gets the functions anew.
 
-// Measure the layout of generated pages in headless Chrome (puppeteer).
-//
-// Usage:
-//   node layout_measure.js --input=pages.json [--root=body]
-//        [--exclude="nav, footer"] [--width=1920] [--height=1080] [--images=1|render|0]
-//
-// pages.json: [{"html": "/abs/path/index.html", "out": "/abs/output/dir"}, ...]
-// For each page, writes <out>/layout.json and, if images=1, <out>/render.png
-// (real render), <out>/overlay.png (real render + outlined ink of each block)
-// and <out>/blocks.png (ink of each block as solid rectangles).
-
-const fs = require('fs');
-const path = require('path');
-const puppeteer = require('puppeteer');
-const {launchBrowser} = require('./chrome');
-const {localFrames} = require('./frames');
-const args = require('minimist')(process.argv.slice(2));
-
-const pages = JSON.parse(fs.readFileSync(args.input, 'utf-8'));
-const rootSelector = args.root || 'body';
-const excludeSelector = args.exclude || 'nav, footer';
-const width = parseInt(args.width || 1920);
-const height = parseInt(args.height || 1080);
-// images: 1 = render, overlay and blocks; render = render only; 0 = none
-const images = String(args.images === undefined ? '1' : args.images);
-const withImages = images !== '0';
-// number of pages measured at the same time (tabs of one browser)
-const jobs = Math.max(1, parseInt(args.jobs || 1) || 1);
-
-const PALETTE = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#42d4f4',
-                 '#f032e6', '#bfef45', '#469990', '#9a6324', '#800000', '#808000',
-                 '#000075', '#fabed4', '#ffd8b1', '#aaffc3'];
 
 
 // Runs in the page: extracts the top-level blocks under the content root.
@@ -900,61 +870,59 @@ function drawOverlay(blocks, palette, filled) {
 
 // Reproducible renders: CSS animations at their start, videos at their first
 // frame, animated GIFs replaced by their first frame (WebCodecs ImageDecoder).
-async function freezeMedia(page) {
-    await page.evaluate(async () => {
-        for (const a of document.getAnimations()) { try { a.pause(); a.currentTime = 0; } catch (e) { /* ignore */ } }
-        // wait for the size of each video (its box depends on it), then for its
-        // first frame; a video already at 0 sends no 'seeked'
-        await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
-            v.autoplay = false;
-            // Ask for the data, then pause (each worker has a window of its
-            // own: in a hidden tab, Chrome would not load it). A video
-            // without its dimensions has no size of its own,
-            // so the browser gives it its default box, 300 px wide, and
-            // every check of that page runs on a rectangle the slide never
-            // shows.
-            // not when it is loading already: load() would abort that request
-            // (a failed request in the health of the page, for nothing)
-            if (v.readyState === 0 && v.networkState !== v.NETWORK_LOADING) { v.preload = 'auto'; v.load(); }
-            v.pause();
-            const timer = setTimeout(resolve, 30000);
-            const done = () => { clearTimeout(timer); resolve(); };
-            v.addEventListener('error', done, {once: true});
-            const first = () => {
-                if (v.currentTime !== 0) {
-                    v.addEventListener('seeked', done, {once: true});
-                    v.currentTime = 0;
-                } else if (v.readyState >= 2) done();
-                else v.addEventListener('loadeddata', done, {once: true});
-            };
-            if (v.readyState >= 1) first();
-            else v.addEventListener('loadedmetadata', first, {once: true});
-        })));
-        const gifs = [...document.images].filter(i => /\.gif(\?|#|$)/i.test(i.currentSrc || i.src));
-        for (const img of gifs) img.dataset.layoutGifUrl = img.currentSrc || img.src;
-        if (!('ImageDecoder' in window)) return;
-        const load = (url) => new Promise((resolve, reject) => {      // fetch() does not read file://
-            const xhr = new XMLHttpRequest();
-            xhr.open('GET', url);
-            xhr.responseType = 'arraybuffer';
-            xhr.onload = () => resolve(xhr.response);
-            xhr.onerror = reject;
-            xhr.send();
-        });
-        for (const img of gifs) {
-            try {
-                img.dataset.layoutGifUrl = img.currentSrc || img.src;
-                const decoder = new ImageDecoder({data: await load(img.currentSrc || img.src), type: 'image/gif'});
-                const {image} = await decoder.decode({frameIndex: 0});
-                const canvas = document.createElement('canvas');
-                canvas.width = image.displayWidth; canvas.height = image.displayHeight;
-                canvas.getContext('2d').drawImage(image, 0, 0);
-                image.close(); decoder.close();
-                img.dataset.layoutSrc = img.getAttribute('src');
-                await new Promise(resolve => { img.onload = img.onerror = resolve; img.src = canvas.toDataURL(); });
-            } catch (e) { /* the GIF as it is */ }
-        }
+async function freezeMedia() {
+    for (const a of document.getAnimations()) { try { a.pause(); a.currentTime = 0; } catch (e) { /* ignore */ } }
+    // wait for the size of each video (its box depends on it), then for its
+    // first frame; a video already at 0 sends no 'seeked'
+    await Promise.all([...document.querySelectorAll('video')].map(v => new Promise(resolve => {
+        v.autoplay = false;
+        // Ask for the data, then pause (each worker has a window of its
+        // own: in a hidden tab, Chrome would not load it). A video
+        // without its dimensions has no size of its own,
+        // so the browser gives it its default box, 300 px wide, and
+        // every check of that page runs on a rectangle the slide never
+        // shows.
+        // not when it is loading already: load() would abort that request
+        // (a failed request in the health of the page, for nothing)
+        if (v.readyState === 0 && v.networkState !== v.NETWORK_LOADING) { v.preload = 'auto'; v.load(); }
+        v.pause();
+        const timer = setTimeout(resolve, 30000);
+        const done = () => { clearTimeout(timer); resolve(); };
+        v.addEventListener('error', done, {once: true});
+        const first = () => {
+            if (v.currentTime !== 0) {
+                v.addEventListener('seeked', done, {once: true});
+                v.currentTime = 0;
+            } else if (v.readyState >= 2) done();
+            else v.addEventListener('loadeddata', done, {once: true});
+        };
+        if (v.readyState >= 1) first();
+        else v.addEventListener('loadedmetadata', first, {once: true});
+    })));
+    const gifs = [...document.images].filter(i => /\.gif(\?|#|$)/i.test(i.currentSrc || i.src));
+    for (const img of gifs) img.dataset.layoutGifUrl = img.currentSrc || img.src;
+    if (!('ImageDecoder' in window)) return;
+    const load = (url) => new Promise((resolve, reject) => {      // fetch() does not read file://
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url);
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = () => resolve(xhr.response);
+        xhr.onerror = reject;
+        xhr.send();
     });
+    for (const img of gifs) {
+        try {
+            img.dataset.layoutGifUrl = img.currentSrc || img.src;
+            const decoder = new ImageDecoder({data: await load(img.currentSrc || img.src), type: 'image/gif'});
+            const {image} = await decoder.decode({frameIndex: 0});
+            const canvas = document.createElement('canvas');
+            canvas.width = image.displayWidth; canvas.height = image.displayHeight;
+            canvas.getContext('2d').drawImage(image, 0, 0);
+            image.close(); decoder.close();
+            img.dataset.layoutSrc = img.getAttribute('src');
+            await new Promise(resolve => { img.onload = img.onerror = resolve; img.src = canvas.toDataURL(); });
+        } catch (e) { /* the GIF as it is */ }
+    }
 }
 
 
@@ -963,240 +931,157 @@ async function freezeMedia(page) {
 // the viewBox (window.__layoutSvgInk): the image is drawn on a canvas covering
 // its viewBox and all its elements, and its pixels outside the viewBox are what
 // is cut when it is shown (the ink: not the boxes of the glyphs).
-async function loadSvgImages(page) {
-    await page.evaluate(async () => {
-        window.__layoutSvg = {};
-        window.__layoutSvgInk = {};
-        const read = (url) => new Promise(resolve => {
-            const xhr = new XMLHttpRequest();         // fetch() does not read file://
-            xhr.open('GET', url);
-            xhr.onload = () => resolve(xhr.responseText || null);
-            xhr.onerror = () => resolve(null);
-            xhr.send();
-        });
-        const plain = (v) => /^\s*[\d.]+(px)?\s*$/.test(v || '') ? parseFloat(v) : NaN;
-        async function inkBeyond(root) {
-            const vbAttr = root.viewBox && root.viewBox.baseVal && root.viewBox.baseVal.width > 0 ? root.viewBox.baseVal : null;
-            const vb = vbAttr ? {x: vbAttr.x, y: vbAttr.y, w: vbAttr.width, h: vbAttr.height}
-                : {x: 0, y: 0, w: plain(root.getAttribute('width')), h: plain(root.getAttribute('height'))};
-            if (!(vb.w > 0 && vb.h > 0)) return null;
-            // extent of the elements (in units), with the copy laid out out of the page
-            const svg = document.importNode(root, true);
-            svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-            svg.setAttribute('width', vb.w); svg.setAttribute('height', vb.h);
-            svg.setAttribute('preserveAspectRatio', 'none');
-            const holder = document.createElement('div');
-            Object.assign(holder.style, {position: 'absolute', left: '-20000px', top: '0', opacity: '0', pointerEvents: 'none'});
-            holder.appendChild(svg);
-            document.body.appendChild(holder);
-            let ex = {x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h};
-            try {
-                const frame = svg.getBoundingClientRect();
-                const u = frame.width / vb.w || 1;
-                for (const e of svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse, text, image, use')) {
-                    if (e.closest('defs, marker, clipPath, mask, pattern, symbol')) continue;
-                    const r = e.getBoundingClientRect();
-                    if (r.width <= 0 && r.height <= 0) continue;
-                    const pad = (parseFloat(getComputedStyle(e).strokeWidth) || 0) + 1;
-                    ex.x0 = Math.min(ex.x0, vb.x + (r.left - frame.left) / u - pad);
-                    ex.y0 = Math.min(ex.y0, vb.y + (r.top - frame.top) / u - pad);
-                    ex.x1 = Math.max(ex.x1, vb.x + (r.right - frame.left) / u + pad);
-                    ex.y1 = Math.max(ex.y1, vb.y + (r.bottom - frame.top) / u + pad);
-                }
-            } finally {
-                holder.remove();
-            }
-            const m = 0.05 * Math.max(vb.w, vb.h);
-            ex = {x0: ex.x0 - m, y0: ex.y0 - m, x1: ex.x1 + m, y1: ex.y1 + m};
-            const W = ex.x1 - ex.x0, H = ex.y1 - ex.y0;
-            const scale = 1600 / Math.max(W, H);              // px per unit
-            const cw = Math.max(1, Math.round(W * scale)), ch = Math.max(1, Math.round(H * scale));
-            const copy = document.importNode(root, true);
-            copy.setAttribute('viewBox', `${ex.x0} ${ex.y0} ${W} ${H}`);
-            copy.setAttribute('width', cw); copy.setAttribute('height', ch);
-            copy.setAttribute('preserveAspectRatio', 'none');
-            copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-            const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], {type: 'image/svg+xml'}));
-            try {
-                const img = new Image();
-                await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
-                const canvas = document.createElement('canvas');
-                canvas.width = cw; canvas.height = ch;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, cw, ch);
-                const data = ctx.getImageData(0, 0, cw, ch).data;
-                // the viewBox on the canvas (px)
-                const vx0 = (vb.x - ex.x0) * scale, vy0 = (vb.y - ex.y0) * scale;
-                const vx1 = vx0 + vb.w * scale, vy1 = vy0 + vb.h * scale;
-                const out = {left: 0, top: 0, right: 0, bottom: 0};
-                for (let j = 0; j < ch; j++) {
-                    for (let i = 0; i < cw; i++) {
-                        if (data[4 * (j * cw + i) + 3] <= 32) continue;
-                        if (i < vx0) out.left = Math.max(out.left, vx0 - i);
-                        if (i + 1 > vx1) out.right = Math.max(out.right, i + 1 - vx1);
-                        if (j < vy0) out.top = Math.max(out.top, vy0 - j);
-                        if (j + 1 > vy1) out.bottom = Math.max(out.bottom, j + 1 - vy1);
-                    }
-                }
-                for (const side in out) out[side] /= scale;   // units
-                return out;
-            } catch (e) {
-                return null;
-            } finally {
-                URL.revokeObjectURL(url);
-            }
-        }
-        const urls = [...new Set([...document.images].map(i => i.currentSrc || i.src)
-            .filter(u => /\.svg(\?|#|$)/i.test(u)))];
-        for (const url of urls.slice(0, 40)) {
-            const text = await read(url);
-            if (!text) continue;
-            window.__layoutSvg[url] = text;
-            const root = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
-            if (root && root.tagName.toLowerCase() === 'svg') window.__layoutSvgInk[url] = await inkBeyond(root);
-        }
+async function loadSvgImages() {
+    window.__layoutSvg = {};
+    window.__layoutSvgInk = {};
+    const read = (url) => new Promise(resolve => {
+        const xhr = new XMLHttpRequest();         // fetch() does not read file://
+        xhr.open('GET', url);
+        xhr.onload = () => resolve(xhr.responseText || null);
+        xhr.onerror = () => resolve(null);
+        xhr.send();
     });
-}
-
-
-async function waitForContent(page) {
-    const explicit = await page.evaluate(async () => {
-        const contract = window.__lhtmlReady;
-        const trusted = contract?.version === 1 && contract.trusted();
-        if (trusted) await contract.ready();
-        await document.fonts.ready;
-        await Promise.all([...document.images].filter(img => !img.complete).map(img =>
-            new Promise(resolve => { img.onload = img.onerror = resolve; })));
-        return trusted && !document.querySelector('video, audio');
-    });
-    // Legacy apps retain their settling period; explicit readiness avoids it.
-    if (!explicit)
-    // let deferred scripts (KaTeX auto-render, theme scripts) finish
-    await new Promise(resolve => setTimeout(resolve, 150));
-}
-
-
-(async () => {
-    // pages are independent: `jobs` tabs of one browser measure them in parallel;
-    // background tabs are not throttled (timers, rendering)
-    const browser = await launchBrowser(puppeteer, args, {headless: true,
-        args: ['--allow-file-access-from-files',
-               '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-               '--disable-backgrounding-occluded-windows']});
-    let failures = 0, next = 0, done = 0;
-    await Promise.all(Array.from({length: Math.min(jobs, pages.length) || 1}, (_, k) => worker(k)));
-    console.log(`progress ${pages.length} ${pages.length} done`);
-    await browser.close();
-    process.exit(0);
-
-  // Each worker measures in a window of its own. Tabs of one window are
-  // hidden but one, and Chrome defers the loading of the videos of a hidden
-  // page until it is shown: with six tabs, the videos of a page waited the
-  // whole budget of freezeMedia (30 s) and were measured without their
-  // dimensions, a different box at each build (soiree, 78 slides, 21
-  // videos: 1 to 3 pages; with a window each, none, and 32 s instead of 49).
-  async function worker(k) {
-    const session = await browser.target().createCDPSession();
-    const url = `about:blank#layout-worker-${k}`;
-    await session.send('Target.createTarget', {url, newWindow: true});
-    const page = await (await browser.waitForTarget(t => t.type() === 'page' && t.url() === url)).page();
-    await session.detach();
-    await page.setViewport({width, height});
-    let events = [];
-    let resources = new Set();
-    page.on('request', request => resources.add(request.url()));
-    page.on('pageerror', error => events.push({type: 'javascript', message: error.message}));
-    // a media request the player cancels itself (to ask for another range)
-    // is not a failure: a video that does not load has video.error, or no
-    // dimensions (measure(), health)
-    page.on('requestfailed', request => {
-        if (request.resourceType() === 'media' && request.failure()?.errorText === 'net::ERR_ABORTED') return;
-        events.push({type: 'request', url: request.url(), message: request.failure()?.errorText || 'Request failed'});
-    });
-    page.on('response', response => { if (response.status() >= 400) events.push({type: 'http',
-        url: response.url(), status: response.status()}); });
-    async function ready() {
-        let timer;
+    const plain = (v) => /^\s*[\d.]+(px)?\s*$/.test(v || '') ? parseFloat(v) : NaN;
+    async function inkBeyond(root) {
+        const vbAttr = root.viewBox && root.viewBox.baseVal && root.viewBox.baseVal.width > 0 ? root.viewBox.baseVal : null;
+        const vb = vbAttr ? {x: vbAttr.x, y: vbAttr.y, w: vbAttr.width, h: vbAttr.height}
+            : {x: 0, y: 0, w: plain(root.getAttribute('width')), h: plain(root.getAttribute('height'))};
+        if (!(vb.w > 0 && vb.h > 0)) return null;
+        // extent of the elements (in units), with the copy laid out out of the page
+        const svg = document.importNode(root, true);
+        svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+        svg.setAttribute('width', vb.w); svg.setAttribute('height', vb.h);
+        svg.setAttribute('preserveAspectRatio', 'none');
+        const holder = document.createElement('div');
+        Object.assign(holder.style, {position: 'absolute', left: '-20000px', top: '0', opacity: '0', pointerEvents: 'none'});
+        holder.appendChild(svg);
+        document.body.appendChild(holder);
+        let ex = {x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h};
         try {
-            await Promise.race([Promise.all((await localFrames(page)).map(frame => waitForContent(frame))),
-                new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Content readiness timeout')), 15000); })]);
-        } finally { clearTimeout(timer); }
-    }
-    async function measure(frame, checkedFrames) {
-        // the health first: a video whose dimensions arrive while the blocks
-        // are extracted was measured without them, and must say so
-        const health = await frame.evaluate(checkedFrames => ({
-            images: [...document.images].filter(i => !i.complete || !i.naturalWidth).map(i => ({type: 'image', url: i.currentSrc || i.src})),
-            fonts: [...document.fonts].filter(f => f.status === 'error').map(f => ({type: 'font', family: f.family})),
-            math: [...document.querySelectorAll('.katex-error')].map(e => ({type: 'math', message: e.getAttribute('title') || e.textContent})),
-            video: [...document.querySelectorAll('video')].filter(v => v.error).map(v => ({type: 'video', url: v.src, message: v.error.message})),
-            // a video whose dimensions never arrived: its box is the default
-            // of the browser, not the one of the slide
-            sizeless: [...document.querySelectorAll('video')].filter(v => !v.error && !v.videoWidth)
-                .map(v => ({type: 'video', url: v.currentSrc || v.src,
-                            message: 'measured without its dimensions (not loaded, readyState '
-                                     + v.readyState + ', networkState ' + v.networkState + '): the box of '
-                                     + 'this video, and the blocks around it, are not those of the slide'})),
-            clock: (window.__lhtmlVerificationClock?.errors || []).map(message => ({type: 'javascript', message})),
-            unchecked: [...document.querySelectorAll('iframe, canvas')]
-                .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 &&
-                    !(e.tagName === 'IFRAME' && checkedFrames.includes(e.src || 'about:srcdoc')); })
-                .map(e => ({type: e.tagName.toLowerCase(), url: e.src || null,
-                    reason: e.tagName === 'CANVAS' ? 'Raster geometry captured; canvas semantics are not verified' : 'Frame inaccessible or not sampled'}))
-        }), checkedFrames);
-        const layout = await frame.evaluate(extractBlocks, frame === page.mainFrame() ? rootSelector : 'body',
-                                           frame === page.mainFrame() ? excludeSelector : '');
-        const errors = [...events, ...health.images, ...health.fonts, ...health.math, ...health.video,
-                        ...health.sizeless, ...health.clock];
-        layout.media_samples = await frame.evaluate(() => window.__lhtmlMediaSamples || []);
-        layout.render_health = {status: errors.length ? 'incomplete' : 'ready', errors, unchecked: health.unchecked};
-        return layout;
-    }
-    async function snapshot(out) {
-        fs.mkdirSync(out, {recursive: true});
-        await page.evaluate(() => document.getElementById('__layout_overlay')?.remove());
-        const layout = await measure(page.mainFrame(), []);
-        if (withImages) await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'render.png'), clip: {x: 0, y: 0, width, height}});
-        if (withImages && images !== 'render') {
-            const clip = {x: 0, y: 0, width, height};
-            await page.evaluate(drawOverlay, layout.subblocks, PALETTE, false);
-            await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'internal-overlay.png'), clip});
-            await page.evaluate(drawOverlay, layout.blocks, PALETTE, false);
-            await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'overlay.png'), clip});
-            await page.evaluate(drawOverlay, layout.blocks, PALETTE, true);
-            await page.screenshot({optimizeForSpeed: true, path: path.join(out, 'blocks.png'), clip});
-            await page.evaluate(() => document.getElementById('__layout_overlay')?.remove());
+            const frame = svg.getBoundingClientRect();
+            const u = frame.width / vb.w || 1;
+            for (const e of svg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse, text, image, use')) {
+                if (e.closest('defs, marker, clipPath, mask, pattern, symbol')) continue;
+                const r = e.getBoundingClientRect();
+                if (r.width <= 0 && r.height <= 0) continue;
+                const pad = (parseFloat(getComputedStyle(e).strokeWidth) || 0) + 1;
+                ex.x0 = Math.min(ex.x0, vb.x + (r.left - frame.left) / u - pad);
+                ex.y0 = Math.min(ex.y0, vb.y + (r.top - frame.top) / u - pad);
+                ex.x1 = Math.max(ex.x1, vb.x + (r.right - frame.left) / u + pad);
+                ex.y1 = Math.max(ex.y1, vb.y + (r.bottom - frame.top) / u + pad);
+            }
+        } finally {
+            holder.remove();
         }
-        return layout;
-    }
-    while (next < pages.length) {
-        const entry = pages[next++];
-        // progress on stdout, read by lhtml_site/layout/measure.py: "progress <done> <total> <page>"
-        console.log(`progress ${done} ${pages.length} ${entry.name || entry.html}`);
-        events = [];
-        resources = new Set();
+        const m = 0.05 * Math.max(vb.w, vb.h);
+        ex = {x0: ex.x0 - m, y0: ex.y0 - m, x1: ex.x1 + m, y1: ex.y1 + m};
+        const W = ex.x1 - ex.x0, H = ex.y1 - ex.y0;
+        const scale = 1600 / Math.max(W, H);              // px per unit
+        const cw = Math.max(1, Math.round(W * scale)), ch = Math.max(1, Math.round(H * scale));
+        const copy = document.importNode(root, true);
+        copy.setAttribute('viewBox', `${ex.x0} ${ex.y0} ${W} ${H}`);
+        copy.setAttribute('width', cw); copy.setAttribute('height', ch);
+        copy.setAttribute('preserveAspectRatio', 'none');
+        copy.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], {type: 'image/svg+xml'}));
         try {
-            fs.mkdirSync(entry.out, {recursive: true});
-            // pages with streaming media (autoplay videos, iframes) never become
-            // idle: wait for the load event, then for a short network idle
-            await page.goto('file://' + path.resolve(entry.html), {waitUntil: 'load', timeout: 60000});
-            const trustedFrames = await Promise.all((await localFrames(page)).map(frame =>
-                frame.evaluate(() => window.__lhtmlReady?.version === 1 && window.__lhtmlReady.trusted() && !document.querySelector('video, audio') && ![...document.querySelectorAll('iframe')].some(el => /^https?:/.test(el.src)))));
-            if (!trustedFrames.length || trustedFrames.some(trusted => !trusted))
-                await page.waitForNetworkIdle({idleTime: 500, timeout: 5000}).catch(() => {});
-            await ready();
-            await freezeMedia(page);
-            await loadSvgImages(page);
-            const layout = await snapshot(entry.out);
-            layout.resources = [...resources].filter(url => !url.startsWith('data:'));
-            fs.writeFileSync(path.join(entry.out, 'layout.json'), JSON.stringify(layout, null, 1));
-
+            const img = new Image();
+            await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+            const canvas = document.createElement('canvas');
+            canvas.width = cw; canvas.height = ch;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, cw, ch);
+            const data = ctx.getImageData(0, 0, cw, ch).data;
+            // the viewBox on the canvas (px)
+            const vx0 = (vb.x - ex.x0) * scale, vy0 = (vb.y - ex.y0) * scale;
+            const vx1 = vx0 + vb.w * scale, vy1 = vy0 + vb.h * scale;
+            const out = {left: 0, top: 0, right: 0, bottom: 0};
+            for (let j = 0; j < ch; j++) {
+                for (let i = 0; i < cw; i++) {
+                    if (data[4 * (j * cw + i) + 3] <= 32) continue;
+                    if (i < vx0) out.left = Math.max(out.left, vx0 - i);
+                    if (i + 1 > vx1) out.right = Math.max(out.right, i + 1 - vx1);
+                    if (j < vy0) out.top = Math.max(out.top, vy0 - j);
+                    if (j + 1 > vy1) out.bottom = Math.max(out.bottom, j + 1 - vy1);
+                }
+            }
+            for (const side in out) out[side] /= scale;   // units
+            return out;
         } catch (e) {
-            failures += 1;
-            console.error(`layout_measure: ${entry.html}: ${e.message}`);
+            return null;
+        } finally {
+            URL.revokeObjectURL(url);
         }
-        done += 1;
     }
-    await page.close();
-  }
-})();
+    const urls = [...new Set([...document.images].map(i => i.currentSrc || i.src)
+        .filter(u => /\.svg(\?|#|$)/i.test(u)))];
+    for (const url of urls.slice(0, 40)) {
+        const text = await read(url);
+        if (!text) continue;
+        window.__layoutSvg[url] = text;
+        const root = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement;
+        if (root && root.tagName.toLowerCase() === 'svg') window.__layoutSvgInk[url] = await inkBeyond(root);
+    }
+}
+
+
+// Runs in each local frame: waits for the readiness contract of the page
+// (window.__lhtmlReady), its fonts and its images. Returns whether the page
+// declared itself ready: a page that did not (a legacy page) is given a
+// settling period by the caller.
+async function waitForContent() {
+    const contract = window.__lhtmlReady;
+    const trusted = contract?.version === 1 && contract.trusted();
+    if (trusted) await contract.ready();
+    await document.fonts.ready;
+    await Promise.all([...document.images].filter(img => !img.complete).map(img =>
+        new Promise(resolve => { img.onload = img.onerror = resolve; })));
+    return trusted && !document.querySelector('video, audio');
+}
+
+
+// Whether a frame says when it is ready, and nothing in it keeps the network
+// busy (media, remote frames): no wait for the network to settle then.
+function trustedFrame() {
+    return window.__lhtmlReady?.version === 1 && window.__lhtmlReady.trusted()
+        && !document.querySelector('video, audio')
+        && ![...document.querySelectorAll('iframe')].some(el => /^https?:/.test(el.src));
+}
+
+
+// What did not render: images, fonts, math, videos; the frames and canvases
+// whose content is not checked. Taken before the blocks: a video whose
+// dimensions arrive while the blocks are extracted was measured without them,
+// and must say so.
+function renderHealth(checkedFrames) {
+    return {
+        images: [...document.images].filter(i => !i.complete || !i.naturalWidth).map(i => ({type: 'image', url: i.currentSrc || i.src})),
+        fonts: [...document.fonts].filter(f => f.status === 'error').map(f => ({type: 'font', family: f.family})),
+        math: [...document.querySelectorAll('.katex-error')].map(e => ({type: 'math', message: e.getAttribute('title') || e.textContent})),
+        video: [...document.querySelectorAll('video')].filter(v => v.error).map(v => ({type: 'video', url: v.src, message: v.error.message})),
+        // a video whose dimensions never arrived: its box is the default
+        // of the browser, not the one of the slide
+        sizeless: [...document.querySelectorAll('video')].filter(v => !v.error && !v.videoWidth)
+            .map(v => ({type: 'video', url: v.currentSrc || v.src,
+                        message: 'measured without its dimensions (not loaded, readyState '
+                                 + v.readyState + ', networkState ' + v.networkState + '): the box of '
+                                 + 'this video, and the blocks around it, are not those of the slide'})),
+        clock: (window.__lhtmlVerificationClock?.errors || []).map(message => ({type: 'javascript', message})),
+        unchecked: [...document.querySelectorAll('iframe, canvas')]
+            .filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 &&
+                !(e.tagName === 'IFRAME' && checkedFrames.includes(e.src || 'about:srcdoc')); })
+            .map(e => ({type: e.tagName.toLowerCase(), url: e.src || null,
+                reason: e.tagName === 'CANVAS' ? 'Raster geometry captured; canvas semantics are not verified' : 'Frame inaccessible or not sampled'}))
+    };
+}
+
+
+// The samples of the media the page took (window.__lhtmlMediaSamples).
+function mediaSamples() {
+    return window.__lhtmlMediaSamples || [];
+}
+
+
+function removeOverlay() {
+    document.getElementById('__layout_overlay')?.remove();
+}

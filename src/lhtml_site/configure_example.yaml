@@ -96,13 +96,13 @@ theme: 'webpage-frame'
 # Tools
 # ---------------------------------------------------------------------------
 
-# The layout report (lhtml-site --layout, needs Node.js): where it is
+# The layout report (lhtml-site --layout, needs Playwright, lhtml-site[pdf]): where it is
 # written. The theme says which part of the page it measures.
 # layout:
 #   output: '.layout/'
 
 # The Chrome run by the PDF export, the layout report and --render, instead of
-# the Chromium of Playwright or the Chrome of puppeteer (a macOS .app is accepted).
+# the Chromium of Playwright (a macOS .app is accepted).
 # chrome: '/Applications/Google Chrome.app'
 
 # Keep the intermediate files and show the tracebacks (as --debug).

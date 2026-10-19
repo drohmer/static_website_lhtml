@@ -28,7 +28,8 @@ Coordinates are in CSS pixels, origin at the top-left corner of the page
 (lhtml_site/report_lock.py).
 
 The checks themselves are lhtml_site/layout/analysis.py, the markdown is
-lhtml_site/layout/report.py, and the browser is lhtml_site/layout/measure.py. What this
+lhtml_site/layout/report.py, and the browser is lhtml_site/layout/measure.py
+(with the JavaScript it runs in the page, lhtml_site/layout/page.js). What this
 module decides is everything that depends on the build: which pages to
 measure, what to keep of a previous measure, where to write.
 
@@ -65,7 +66,8 @@ from lhtml_site.filesystem import shown
 from lhtml_site.configuration import ConfigError
 from lhtml_site.layout.analysis import analyse, deck_norms
 from lhtml_site.layout.findings import count_problems
-from lhtml_site.layout.measure import SCRIPTS, run_node_on, warn_degenerate_root, write_contact_sheets
+from lhtml_site.layout import measure
+from lhtml_site.layout.measure import PAGE_SCRIPT, measure_pages, warn_degenerate_root, write_contact_sheets
 from lhtml_site.layout.report import changes_markdown, layout_changes, page_markdown, summary_markdown
 from lhtml_site.layout_options import jobs, options_of, output_directory, validate as validate_options
 from lhtml_site.lint import Linter
@@ -119,9 +121,10 @@ def _write(path, text):
 
 def _measure_key(options):
     """What a measure depends on besides the page: the options of the
-    measure, the browser asked for and the script that measures."""
+    measure, the browser asked for and the code that measures (the driver
+    and the script it runs in the page)."""
     return {**{k: options[k] for k in ('width', 'height', 'root', 'exclude', 'images', 'chrome')},
-            'script': dependencies.file_hash(SCRIPTS / 'layout_measure.js')}
+            'script': dependencies.file_hash(PAGE_SCRIPT) + dependencies.file_hash(Path(measure.__file__))}
 
 
 def _reusable(meta, page, key, hashes):
@@ -251,12 +254,8 @@ def _measure_and_report(meta):
     log.detail(f'Measure layout of {len(pages)} pages ({len(reused)} unchanged, kept) ...')
     start = time.time()
     if pages:
-        run_node_on('layout_measure.js', [{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages],
-                    [f"--root={options['root']}", f"--exclude={options['exclude']}",
-                     f"--width={options['width']}", f"--height={options['height']}",
-                     f"--images={ {True: 1, 'render': 'render', False: 0}[options['images']] }",
-                     f"--jobs={jobs(options)}"],
-                    'Measure layout', options['chrome'], log)
+        measure_pages([{'html': p['html'], 'out': p['out'], 'name': p['name']} for p in pages],
+                      options, jobs(options), log)
     _clean_after_measure(output_dir, pages, previous, partial, start)
     for p in pages:                         # images of another value of `images`: not of this measure
         for name, written_by in IMAGES.items():

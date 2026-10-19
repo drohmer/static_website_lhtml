@@ -90,11 +90,11 @@ class ContactSheets(unittest.TestCase):
             options = {'contact_columns': 4, 'contact_rows': 4, 'chrome': None}
             taken = []
 
-            def run(script, sheets, *args):
+            def run(sheets, chrome, log):
                 taken.append(len(sheets))
                 for sheet in sheets:
                     Path(sheet['png']).write_bytes(b'png')
-            with mock.patch.object(measure, 'run_node_on', run):
+            with mock.patch.object(measure, 'screenshot_sheets', run):
                 measure.write_contact_sheets(str(out), rows, {'w': 1920, 'h': 1080}, options, None)
                 measure.write_contact_sheets(str(out), rows, {'w': 1920, 'h': 1080}, options, None)
                 time.sleep(0.01)
