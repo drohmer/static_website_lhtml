@@ -40,7 +40,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# The PDF export by Playwright (lhtml_site/pdf_export.py); its browser comes
+# Playwright, for the PDF export and the layout report (lhtml_site/browser.py); its browser comes
 # from `python -m playwright install --only-shell chromium`
 pdf = ["playwright>=1.49", "pypdf>=4"]
 
