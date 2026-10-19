@@ -20,6 +20,8 @@ jobs:
           node-version: '22'
           cache: npm
       - run: pip install -r requirements-dev.txt
+      - name: The Chromium of Playwright (the PDF export) and its system libraries
+        run: python -m playwright install --with-deps --only-shell chromium
       - run: npm ci
       - name: Unit and regression tests
         run: python -m pytest tests -q
@@ -31,14 +33,14 @@ jobs:
           "$RUNNER_TEMP/venv/bin/lhtml-site" init example
           cd example
           "$RUNNER_TEMP/venv/bin/lhtml-site" --strict
-      - name: Chrome layout smoke test
+      - name: Chrome layout and PDF export smoke test
         env:
           LHTML_BROWSER_TEST: '1'
           LHTML_PREVIEW_TEST: '1'
         # Chrome keeps its sandbox; allow its user namespace on Ubuntu runners.
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          python -m pytest tests/test_layout_integration.py tests/test_development.py -q
+          python -m pytest tests/test_layout_integration.py tests/test_development.py tests/test_pdf_export.py -q
   package:
     # The publishing path: the wheel and the sdist as PyPI would get them,
     # installed in a clean environment, used outside the repository.
@@ -76,3 +78,14 @@ jobs:
           "$RUNNER_TEMP/clean/bin/lhtml-site" init my-site
           (cd my-site && "$RUNNER_TEMP/clean/bin/lhtml-site" --strict && test -f .site/01_welcome/index.html)
           "$RUNNER_TEMP/clean/bin/lhtml-site" doctor
+      - name: The wheel with the extra pdf exports a deck (Playwright, no Node)
+        run: |
+          python -m venv "$RUNNER_TEMP/pdf"
+          "$RUNNER_TEMP/pdf/bin/pip" install -q "$(ls dist/*.whl)[pdf]"
+          "$RUNNER_TEMP/pdf/bin/python" -m playwright install --with-deps --only-shell chromium
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/pdf/bin/lhtml-site" init my-pdf --theme slides-pdf
+          cd my-pdf
+          "$RUNNER_TEMP/pdf/bin/lhtml-site" -v | tee build.log
+          grep -q '(playwright)' build.log
+          test -s slides.pdf && test -s images/slide_003.jpg

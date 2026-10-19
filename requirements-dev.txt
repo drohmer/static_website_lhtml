@@ -1,6 +1,9 @@
 -r requirements.txt
 pytest
 pytest-xdist
+# The PDF export (the extra lhtml-site[pdf]); its browser: python -m playwright install --only-shell chromium
+playwright
+pypdf
 # tests/test_packaging.py builds the wheel and the sdist (python -m build --no-isolation)
 build
 setuptools>=77

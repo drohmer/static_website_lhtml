@@ -946,7 +946,7 @@ def generate_site(meta, selected, built):
 # The themes of the generator, for `lhtml-site init --theme` (README, "Getting started")
 THEMES = {'webpage-frame': 'web pages with a navigation menu (the default)',
           'slides': 'slides shown in the browser (1920x1080)',
-          'slides-pdf': 'the same slides, exported to a PDF (requires Node.js: lhtml-site doctor)'}
+          'slides-pdf': 'the same slides, exported to a PDF (needs Playwright, lhtml-site[pdf]: lhtml-site doctor)'}
 # The pages `init` copies into the src/ of a new project, by theme (lhtml_site/starters/)
 STARTERS = {'webpage-frame': 'site', 'slides': 'slides', 'slides-pdf': 'slides'}
 

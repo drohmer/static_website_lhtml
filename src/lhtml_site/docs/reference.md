@@ -135,7 +135,7 @@ Optional keys:
 | `keywords` | Extra Jinja2 template variables |
 | `plugin_arg` | Arguments passed to specific plugins |
 | `layout` | Options of the layout analysis (`--layout`): content root, viewport, thresholds, output directory, design rules (see [Layout Report](#layout-report-llm-assisted-slide-layout)). Unrelated to the `layout` of a page, which chooses its arrangement |
-| `chrome` | Chrome executable run by the Node scripts (layout report, PDF export, `--render`), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
+| `chrome` | Chrome executable run by the PDF export (instead of the Chromium of Playwright) and by the Node scripts (layout report, `--render`, the Node PDF export), instead of the one downloaded by puppeteer; a macOS `.app` bundle is accepted. Without it, `PUPPETEER_EXECUTABLE_PATH` is used when set |
 | `title_id` | Give the headings IDs and write their summary (`title_id.json`), a stage of the build (`lhtml_site/headings.py`; default: true) |
 | `deck` | Order of the pages: path of a deck file, or mapping/list of slides (see [Deck](#deck-order-of-the-slides)); without deck, the order of the files |
 | `design` | Tokens, macros and layouts overriding the theme's `design.yaml` (mapping, or path of a YAML file; see [Design](#design-tokens-macros-and-layouts)) |
@@ -172,7 +172,13 @@ _site/01_procedural/images/slide_000.jpg ...
   site directory itself.
 - The site of a deck for a target is `<site>/<deck>/<target>/`. A target
   whose theme declares `export: pdf` is rendered to `<site>/<deck>/<deck>.pdf`
-  and `images/`, and its site is not published.
+  and `images/`, and its site is not published. The export runs Chromium
+  through Playwright (`pipx inject --include-apps lhtml-site playwright pypdf`,
+  then `playwright install --only-shell chromium`; with pip,
+  `pip install "lhtml-site[pdf]"` then
+  `python -m playwright install --only-shell chromium`); without Playwright,
+  or with `LHTML_PDF_ENGINE=node`, it runs the Node export (puppeteer,
+  poppler, ImageMagick: README, "PDF export"). `lhtml-site doctor` says which.
 - `--target html` builds only that target (repeatable, or `--target
   html,pdf`); `--only 01_procedural` builds only that deck, and
   `--only 01_procedural/03_noise` pages of it.

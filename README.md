@@ -119,7 +119,7 @@ a [deck](https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/ref
 |---|---|---|
 | `webpage-frame` (default) | Web pages: documentation, a course website, with a navigation menu | nothing more |
 | `slides` | Slides shown in the browser, 1920x1080, one page per slide | nothing more |
-| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Node.js, puppeteer and Chrome, poppler, ImageMagick: see [PDF export](#pdf-export) |
+| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Playwright and its Chromium (`lhtml-site[pdf]`), or Node.js: see [PDF export](#pdf-export) |
 
 Change the theme at any time by editing `theme:`; it also takes the
 directory of a theme of your own. To publish the same slides both in the
@@ -167,7 +167,7 @@ missing, for the way lhtml-site is installed:
 
 | Feature | Needs |
 |---|---|
-| PDF export (`slides-pdf`) | Node.js, puppeteer and minimist, Chrome, poppler (`pdfunite`, `pdftoppm`), ImageMagick (`magick`) |
+| PDF export (`slides-pdf`) | `playwright` and `pypdf` (Python, the extra `lhtml-site[pdf]`) and the Chromium of Playwright; or, as before, Node.js, puppeteer and minimist, Chrome, poppler (`pdfunite`, `pdftoppm`), ImageMagick (`magick`) |
 | Layout report (`--layout`, `--render`) | Node.js, puppeteer and minimist, Chrome |
 | Videos in several codecs (`cache_video_directory:`) | `ffmpeg`, and `ffpb` (Python) |
 | SASS (`.sass` files) | `libsass` (Python) |
@@ -191,16 +191,45 @@ In a virtual environment or a checkout, `pip install matplotlib numpy` (and
 
 ### PDF export
 
-The PDF export (and the layout report) run Chrome through Node.js and
-puppeteer. The export writes `<deck>.pdf` (`slides.pdf` for a project of one
-deck) and `images/` (an image of each slide) next to the site directory of
-the target. With pipx (or pip), on macOS:
+The export writes `<deck>.pdf` (`slides.pdf` for a project of one deck) and
+`images/` (an image of each slide, 3840 px wide) next to the site directory
+of the target. It runs Chromium through Playwright for Python: two Python
+packages (the extra `pdf`) and a browser, nothing else. With pipx:
+
+```bash
+pipx inject --include-apps lhtml-site playwright pypdf
+playwright install --only-shell chromium         # the Chromium of that Playwright (about 200 MB)
+lhtml-site doctor                                # PDF export with Playwright: ready
+```
+
+`--include-apps` puts the command `playwright` of the environment of
+lhtml-site on the PATH, so the browser downloaded is the one its Playwright
+expects. A first install can take the extra at once:
+`pipx install "lhtml-site[pdf]"`, then
+`(pipx environment --value PIPX_LOCAL_VENVS)/lhtml-site/bin/python -m playwright install --only-shell chromium`
+(the same line with `$(...)` in bash or zsh). In a virtual environment or a
+checkout: `pip install "lhtml-site[pdf]"` (or `pip install playwright pypdf`),
+then `python -m playwright install --only-shell chromium`. `lhtml-site doctor`
+prints these commands with the right Python. On Linux, Playwright may also
+ask for the system libraries of Chromium:
+`python -m playwright install-deps chromium`.
+
+The export opens one browser for the deck, prints a few slides at a time,
+and prints a slide once it is ready (fonts loaded, math rendered, images
+decoded, a frame of each video) rather than after a fixed delay; a slide
+that never gets ready, within a minute, fails the build. The configuration
+key `chrome` names another Chromium or Chrome to run instead.
+
+**The Node export** (the one of the earlier versions) is used when
+Playwright is not installed, or with `LHTML_PDF_ENGINE=node`. It runs a
+Chrome per slide through Node.js and puppeteer, then poppler and
+ImageMagick. With pipx (or pip), on macOS:
 
 ```bash
 brew install node poppler imagemagick
 npm install --prefix ~/.lhtml-site puppeteer minimist
 ~/.lhtml-site/node_modules/.bin/puppeteer browsers install chrome
-lhtml-site doctor                                # PDF export: ready
+lhtml-site doctor                                # PDF export with Node: ready
 ```
 
 On Debian or Ubuntu, the first line is
@@ -209,10 +238,11 @@ On Debian or Ubuntu, the first line is
 modules of `~/.lhtml-site/node_modules` by itself: no `NODE_PATH` is needed
 (a `NODE_PATH` of yours is still read, first). The third line downloads the
 Chrome of this version of puppeteer (over 100 MB): recent npm versions do not
-run the install script of puppeteer, hence the explicit download. The PDF
-export needs it; the layout report can do without it (the configuration key
-`chrome`, or `PUPPETEER_EXECUTABLE_PATH`, names a Chrome already installed,
-and a Chrome installed in the usual place is its last resort).
+run the install script of puppeteer, hence the explicit download. The Node
+export needs it. The layout report still runs through Node and puppeteer,
+and can do without that Chrome (the configuration key `chrome`, or
+`PUPPETEER_EXECUTABLE_PATH`, names a Chrome already installed, and a Chrome
+installed in the usual place is its last resort).
 
 In a checkout of the generator, `npm ci` in the checkout installs puppeteer
 and minimist (`package.json`), then `npx puppeteer browsers install chrome`.
