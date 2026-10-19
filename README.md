@@ -61,9 +61,10 @@ replace its content with:
 ```
 
 Save, and refresh the browser. The line starting with `=` is the title of
-the slide (and its name in the menu); each `*` starts a bullet point
-(`**` at the start of a line, a point under the one before); `**...**`
-around words is bold, `__...__` italic.
+the slide (and its name in the menu); each `*` starts an item of a list
+(`**` at the start of a line, an item under the one before; the theme
+`slides` shows no bullet before them); `**...**` around words is bold,
+`__...__` italic.
 
 **5. Put an image in it.** Copy your image, say `photo.png`, into
 `src/04_image/assets/`; then, in `src/04_image/index.html.j2`, replace
