@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -78,7 +79,7 @@ class ExportTest(unittest.TestCase):
     def test_the_pages_are_merged_in_order_with_their_images(self):
         seen = []
 
-        def browser(inputs, stems, chrome=None):
+        def browser(inputs, stems, chrome=None, done=None):
             seen.extend(inputs)
             for i, stem in enumerate(stems):
                 blank_pdf(stem + '.pdf', pages=i + 1)       # a slide that overflows: all its pages
@@ -102,7 +103,7 @@ class ExportTest(unittest.TestCase):
                 old = self.root / 'deck.pdf'
                 old.write_bytes(b'previous PDF')
 
-                def browser(inputs, stems, chrome=None):
+                def browser(inputs, stems, chrome=None, done=None):
                     for stem in stems:
                         Path(stem + '.pdf').write_bytes(b'page')
                         Path(stem + '.jpg').write_bytes(b'image')
@@ -116,7 +117,7 @@ class ExportTest(unittest.TestCase):
         old = self.root / 'deck.pdf'
         old.write_bytes(b'previous PDF')
 
-        def browser(inputs, stems, chrome=None):
+        def browser(inputs, stems, chrome=None, done=None):
             raise RuntimeError('PDF of 01/index.html not made: Timeout 60000ms exceeded')
         with self.assertRaisesRegex(RuntimeError, 'Timeout'):
             self.export(browser)
@@ -125,13 +126,67 @@ class ExportTest(unittest.TestCase):
     def test_the_chrome_of_the_configuration_is_passed(self):
         chosen = []
 
-        def browser(inputs, stems, chrome=None):
+        def browser(inputs, stems, chrome=None, done=None):
             chosen.append(chrome)
             raise RuntimeError('stop')
         self.meta['chrome'] = '/opt/chrome'
         with self.assertRaises(RuntimeError):
             self.export(browser)
         self.assertEqual(chosen, ['/opt/chrome'])
+
+    def test_each_page_done_advances_the_progress(self):
+        advanced = []
+
+        @contextmanager
+        def progress(description, total):
+            advanced.append(total)
+            yield lambda: advanced.append('page')
+
+        def browser(inputs, stems, chrome=None, done=None):
+            for stem in stems:
+                done()
+            raise RuntimeError('stop')
+        with patch.object(self.meta['log'], 'progress', progress), self.assertRaises(RuntimeError):
+            self.export(browser)
+        self.assertEqual(advanced, [3, 'page', 'page', 'page'])
+
+
+class NoEngineTest(unittest.TestCase):
+    """Neither Playwright nor the Node export installed: the build says to
+    install Playwright, unless the Node export was asked for."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(prefix='lhtml pdf ')
+        self.addCleanup(temp.cleanup)
+        site = Path(temp.name).resolve() / 'site'
+        site.mkdir()
+        self.meta = {'site_directory': str(site), 'debug': False, 'log': Logger(),
+                     'structure': [{'dir': '00/', 'filename': 'index.html'}]}
+
+    def export(self, asked):
+        missing = RuntimeError(pdf_export.PUPPETEER_MISSING)
+        with patch.dict(os.environ, {'LHTML_PDF_ENGINE': asked}), \
+                patch.object(pdf_export, 'playwright_available', return_value=False), \
+                patch.object(pdf_export, 'export_node', side_effect=missing):
+            pdf_export.export(self.meta)
+
+    def test_the_fallback_says_to_install_playwright(self):
+        with self.assertRaisesRegex(RuntimeError, r'needs playwright and pypdf.*playwright install --only-shell'):
+            self.export('')
+
+    def test_the_node_export_asked_says_what_it_needs(self):
+        with self.assertRaisesRegex(RuntimeError, 'puppeteer'):
+            self.export('node')
+
+
+class ProgressTest(unittest.TestCase):
+
+    def test_no_bar_outside_a_terminal(self):
+        log = Logger()
+        with patch('lhtml_site.logger.console.print') as printed, log.progress('PDF', 2) as done:
+            done()
+            done()
+        printed.assert_not_called()
 
 
 @unittest.skipUnless(HAS_PYPDF, 'pypdf')

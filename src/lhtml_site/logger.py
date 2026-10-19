@@ -48,6 +48,19 @@ class Logger:
         self.problem('error', message, place)
 
     @contextmanager
+    def progress(self, description, total):
+        """A bar for a long step of `total` items, on a terminal only (a log
+        gets nothing), gone once done: yields the function to call per item."""
+        if not console.is_terminal:
+            yield lambda: None
+            return
+        from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
+        with Progress(TextColumn('{task.description}'), BarColumn(), MofNCompleteColumn(), TimeElapsedColumn(),
+                      console=console, transient=True) as bar:
+            task = bar.add_task(description, total=total)
+            yield lambda: bar.advance(task)
+
+    @contextmanager
     def stage(self, title):
         """A stage of the build: its title and its time, with -v."""
         if self.verbose:

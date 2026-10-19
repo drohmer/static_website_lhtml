@@ -38,6 +38,9 @@ it is built on.
   after a fixed 4 s; the images are screenshots at 3840 px, the merge is
   pypdf. The outputs keep their names and layout. `lhtml-site doctor`
   reports it.
+- A progress bar while the PDF is made, on a terminal only (a log gets
+  nothing). Without Playwright nor the Node export, the build says to
+  install Playwright, the command for the way lhtml-site is installed.
 
 ### Changed
 - Requires LHTML 3 (`lhtml-markup>=3.0`), which reads no file: the

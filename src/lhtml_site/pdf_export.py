@@ -24,6 +24,7 @@ import asyncio
 import importlib.util
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -140,10 +141,19 @@ def export(meta):
         stems = [os.path.join(staging, 'slide_' + str(counter).zfill(3)) for counter in range(len(pages))]
         inputs = [site / page_path(entry) for entry in pages]
         meta['log'].detail(f'PDF of {len(pages)} page(s) ({chosen}) ...')
-        if chosen == 'playwright':
-            export_playwright(inputs, stems, meta.get('chrome'))
-        else:
-            export_node(inputs, stems, meta.get('chrome'))
+        with meta['log'].progress(f'PDF ({chosen})', len(pages)) as done:
+            try:
+                if chosen == 'playwright':
+                    export_playwright(inputs, stems, meta.get('chrome'), done=done)
+                else:
+                    export_node(inputs, stems, meta.get('chrome'), done=done)
+            except RuntimeError as error:
+                # Neither engine installed: the one to install is Playwright,
+                # not the Node export it fell back to
+                if chosen == 'node' and not os.environ.get('LHTML_PDF_ENGINE', '').strip() \
+                        and str(error) == PUPPETEER_MISSING:
+                    raise RuntimeError(playwright_missing()) from None
+                raise
         for stem in stems:
             for file in (stem + '.pdf', stem + '.jpg'):
                 if not os.path.isfile(file) or not os.path.getsize(file):
@@ -175,7 +185,7 @@ def export(meta):
 # Node: a Chrome per page by puppeteer, poppler and ImageMagick
 # ---------------------------------------------------------------------------
 
-def export_node(inputs, stems, chrome_path=None):
+def export_node(inputs, stems, chrome_path=None, done=lambda: None):
     chrome = ['--chrome=' + chrome_path] if chrome_path else []
 
     def export_page(item):
@@ -196,6 +206,7 @@ def export_node(inputs, stems, chrome_path=None):
             raise RuntimeError(f'PDF not generated: {pdf}')
         subprocess.run(['pdftoppm', '-f', '1', '-singlefile', pdf, stem], check=True)
         subprocess.run(['magick', stem + '.ppm', '-resize', str(IMAGE_WIDTH), stem + '.jpg'], check=True)
+        done()
 
     with ThreadPoolExecutor(max_workers=JOBS) as pool:
         list(pool.map(export_page, zip(inputs, stems)))
@@ -205,15 +216,21 @@ def export_node(inputs, stems, chrome_path=None):
 # Playwright: one browser, pages printed once ready, screenshots, pypdf
 # ---------------------------------------------------------------------------
 
-def export_playwright(inputs, stems, chrome_path=None):
+def playwright_missing():
+    """What to install for the Playwright export, for the way lhtml-site is installed."""
+    python = shlex.quote(sys.executable)        # pipx puts it under "Application Support" on macOS
+    install = ('pipx inject --include-apps lhtml-site playwright pypdf' if re.search(r'pipx[/\\]venvs', sys.prefix)
+               else f'{python} -m pip install "lhtml-site[pdf]"')
+    return PLAYWRIGHT_MISSING.format(install=install, python=python)
+
+
+def export_playwright(inputs, stems, chrome_path=None, done=lambda: None):
     if not playwright_available():
-        install = ('pipx inject lhtml-site playwright pypdf' if re.search(r'pipx[/\\]venvs', sys.prefix)
-                   else f'{sys.executable} -m pip install "lhtml-site[pdf]"')
-        raise RuntimeError(PLAYWRIGHT_MISSING.format(install=install, python=sys.executable))
-    asyncio.run(_export_playwright(inputs, stems, chrome_path))
+        raise RuntimeError(playwright_missing())
+    asyncio.run(_export_playwright(inputs, stems, chrome_path, done))
 
 
-async def _export_playwright(inputs, stems, chrome_path):
+async def _export_playwright(inputs, stems, chrome_path, done=lambda: None):
     from playwright.async_api import Error, async_playwright
 
     async with async_playwright() as playwright:
@@ -221,7 +238,7 @@ async def _export_playwright(inputs, stems, chrome_path):
             browser = await playwright.chromium.launch(executable_path=chrome_path or None)
         except Error as error:
             if "Executable doesn't exist" in str(error):
-                raise RuntimeError(CHROMIUM_MISSING.format(python=sys.executable)) from None
+                raise RuntimeError(CHROMIUM_MISSING.format(python=shlex.quote(sys.executable))) from None
             raise
         try:
             # The viewport is the page of the PDF, drawn at the width of the image
@@ -241,6 +258,7 @@ async def _export_playwright(inputs, stems, chrome_path):
                         await page.emulate_media(media='print')
                         await page.evaluate(AS_PRINTED)
                         await page.screenshot(path=stem + '.jpg', type='jpeg', quality=JPEG_QUALITY)
+                        done()
                     except Error as error:
                         said = str(error).strip().splitlines()[0]
                         raise RuntimeError(f'PDF of {source} not made: {said}') from None
