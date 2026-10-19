@@ -2,6 +2,72 @@
 
 A static site generator built on [LHTML](https://github.com/drohmer/lhtml) and Jinja2. Transforms template sources (`.html.j2` with LHTML markup) into a complete static website. It was named `static_website_lhtml`.
 
+## Getting started
+
+**1. Install** the command `lhtml-site` (Python 3.11 or newer; details in
+[Installation](#installation)):
+
+```bash
+pipx install git+https://github.com/drohmer/lhtml-site
+```
+
+**2. Set up the project**, with one of these two commands:
+
+- *You already have your pages* in a directory `src/`: go into the
+  directory that contains `src/` and run
+
+  ```bash
+  lhtml-site init --theme slides      # or webpage-frame (the default), slides-pdf
+  ```
+
+  It writes only `configure.yaml` there (commented), which says: the pages
+  are in `src/`, the site goes into `.site/`, with this theme. Nothing else
+  is created or changed.
+
+- *You start from nothing*: `lhtml-site init my-site` creates the directory
+  `my-site/` with `configure.yaml` and a copy of the example (`example/`, a
+  few pages to start from). Then `cd my-site`.
+
+**3. Build and preview**, from the directory of `configure.yaml`:
+
+```bash
+lhtml-site --serve --watch     # builds .site/, serves it on http://127.0.0.1:8000/, rebuilds on save
+lhtml-site                     # builds .site/ only
+```
+
+From a checkout of the generator (a submodule of the project),
+`python <checkout>/generate.py` takes the place of `lhtml-site`.
+
+**The themes** given with the generator (`--theme` of `init`, or the key
+`theme:` of `configure.yaml`):
+
+| Theme | For | Needs |
+|---|---|---|
+| `webpage-frame` (default) | Web pages: documentation, a course website, with a navigation menu | nothing more |
+| `slides` | Slides shown in the browser, 1920x1080, one page per slide | nothing more |
+| `slides-pdf` | The same slides, exported to a PDF, with an image of each slide | Node.js and puppeteer, poppler, ImageMagick (see [Installation](#installation)) |
+
+Change the theme at any time by editing `theme:`; it also takes the
+directory of a theme of your own (see [Themes](#themes)). To publish the
+same slides both in the browser and as a PDF, see
+[Decks and targets](#decks-and-targets).
+
+**What `src/` holds.** Each page is a file `.html.j2` (LHTML and Jinja2) or
+`.md.j2` (Markdown), giving the `.html` of the same name. The usual layout is
+a directory per page, with its `index.html.j2` and its files (images,
+videos) next to it:
+
+```
+src/
+  01_introduction/index.html.j2     ->  .site/01_introduction/index.html
+  02_rotations/index.html.j2
+  02_rotations/assets/euler.png
+```
+
+The pages follow the order of the paths, hence the numbers; a
+[deck](#deck-order-of-the-slides) (`deck.yaml`) gives another order. All the
+settings are in [Configuration](#configuration).
+
 ## Installation
 
 ```bash
@@ -66,28 +132,11 @@ reliable launcher: another program may put its own `python` first in the
 - **SASS**: `pip install libsass` to compile `.sass` files (a warning is shown if they are left uncompiled).
 - **Figures in code**: the libraries their scripts import, in the Python that runs the generator (`pip install matplotlib numpy`); `latex` and `dvisvgm` (TeX Live) for the TikZ figures.
 
-## Quick Start
-
-```bash
-pipx install git+https://github.com/drohmer/lhtml-site
-lhtml-site init mon-site       # a project: mon-site/configure.yaml and its sources, example/
-cd mon-site
-lhtml-site --serve --watch     # builds it into .site/, previews it on http://127.0.0.1:8000/
-```
-
-`lhtml-site` works on the project of the current directory: its
-`configure.yaml`, whose relative paths are read from that directory (`-i`
-names another configuration). `lhtml-site` alone builds the site;
-`lhtml-site init` with no directory creates the project in the current one.
-For your own content, edit `configure.yaml` (commented: source directory,
-theme, plugins) and replace `example/` with your sources. From a checkout,
-`python <checkout>/generate.py` takes the place of `lhtml-site`.
-
 ## CLI Options
 
 ```
 lhtml-site [-i config.yaml] [-v] [-d | --no-debug] [--strict] [-c] [--only POINTER] [--lint] [--check-config] [--layout] [--render FILE] [--deck FILE] [--scaffold] [--serve] [--watch] [--port PORT]
-lhtml-site init [DIR]
+lhtml-site init [DIR] [--theme NAME]
 
   -i, --input_config   YAML configuration file (default: configure.yaml)
   -v, --verbose        Display the stages of the build, their time, and what they did
@@ -109,7 +158,9 @@ lhtml-site init [DIR]
   --deck FILE          Order of the slides: deck file replacing the 'deck' of the configuration
                        (relative to the current directory, else to the configuration file)
   --scaffold           Create the source of the deck slides that do not exist yet
-  init [DIR]           Create a project in DIR (default: the current directory) from the example
+  init [DIR]           Write configure.yaml in DIR (default: the current directory): its pages in
+                       src/ if it has one, else a copy of the example; --theme NAME (default
+                       webpage-frame, see Getting started)
 ```
 
 ## Local preview
@@ -391,7 +442,8 @@ lhtml-site/
 
 ## Themes
 
-Three built-in themes are available:
+Three built-in themes are available, named alone in the configuration
+(`theme: slides`; see [Getting started](#getting-started) for which to choose):
 
 - **`webpage-frame/`** — Standard website with navigation menu, suitable for documentation and course pages
 - **`slides/`** — Presentation slides for browser display
@@ -1141,7 +1193,7 @@ Errors are non-fatal — the generator continues processing remaining files (a p
 Version 3 is a major version: an old form is refused by name, with the
 change to make, rather than accepted with a warning.
 
-- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/`, `example/` and `configure_example.yaml`. `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...`, `<checkout>/plugins/...` and `<checkout>/example/` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site init <dir>` creates a project from the example.
+- The generator is a package, `lhtml-site` (`pip install`, command `lhtml-site`): its code is in `src/lhtml_site/` (the package `lib` is now `lhtml_site`: a plugin or a script that imported `from lib.structure import ...` imports `from lhtml_site.structure import ...`), with its `themes/`, `plugins/`, `example/` and `configure_example.yaml`. `python generate.py` in a checkout still runs it, and the paths `<checkout>/themes/...`, `<checkout>/plugins/...` and `<checkout>/example/` of a configuration still find these files. A configuration that names a theme of the generator can name it alone (`theme: slides`), which works from a checkout and from an installation. `configure_example.yaml` is no longer at the root: `lhtml-site init` sets up a project (see [Getting started](#getting-started)).
 
 - `configure_default.yaml` is now `configure_example.yaml`.
 - Replace `plugin_post` with `plugin` (all the hooks of a plugin run). `include_head` is gone (it was read nowhere).

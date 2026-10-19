@@ -3,7 +3,8 @@
 # Relative paths are resolved from this file's directory; absolute paths work too.
 source_directory: 'example/'
 site_directory: '.site/'  # Optional; .site/ is the built-in default.
-theme: 'webpage-frame'  # The name of a theme of the generator, or a directory.
+theme: 'webpage-frame'  # A theme of the generator - webpage-frame (web pages), slides,
+                        # slides-pdf (slides exported to a PDF) - or the directory of yours.
 
 # Extensions, in the order they run. Everything a bundled theme needs is a
 # stage of the build - the page placed in the template of its theme, the

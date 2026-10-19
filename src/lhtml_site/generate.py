@@ -928,26 +928,48 @@ def generate_site(meta, selected, built):
     return len(built)
 
 
+# The themes of the generator, for `lhtml-site init --theme` (README, "Getting started")
+THEMES = {'webpage-frame': 'web pages with a navigation menu (the default)',
+          'slides': 'slides shown in the browser (1920x1080)',
+          'slides-pdf': 'the same slides, exported to a PDF (requires Node.js, see the README)'}
+
+
 def init_project(arguments):
-    """lhtml-site init [DIR]: a project in DIR (created if needed, the current
-    directory by default), from the example of the generator: its sources and
-    their configure.yaml, which the command then builds alone in DIR."""
-    parser = argparse.ArgumentParser(prog='lhtml-site init',
-                                     description='Create a project from the example of the generator.')
+    """lhtml-site init [DIR] [--theme NAME]: the configure.yaml of a project
+    in DIR (created if needed, the current directory by default). The pages
+    of a DIR that has a src/ are its sources; otherwise the example of the
+    generator is copied into example/. The command then builds DIR alone."""
+    parser = argparse.ArgumentParser(
+        prog='lhtml-site init', formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Create the configuration of a project: its pages in src/ when the directory has one, '
+                    'else a copy of the example of the generator.',
+        epilog='themes:\n' + '\n'.join(f'  {name:14} {text}' for name, text in THEMES.items()))
     parser.add_argument('directory', nargs='?', default='.',
                         help='Directory of the project (created if needed; default: the current directory).')
-    directory = Path(parser.parse_args(arguments).directory)
+    parser.add_argument('--theme', choices=THEMES, default='webpage-frame',
+                        help='Theme of the site (default: webpage-frame).')
+    args = parser.parse_args(arguments)
+    directory = Path(args.directory)
     if directory.exists() and not directory.is_dir():
-        sys.exit(f"lhtml-site init: '{directory}' is a file; give an empty or new directory")
-    sources, config = directory / 'example', directory / 'configure.yaml'
-    for path in (sources, config):
-        if path.exists():
-            sys.exit(f"lhtml-site init: '{path}' exists already; give an empty or new directory")
-    directory.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(GENERATOR_DIRECTORY / 'example', sources)
-    shutil.copy2(GENERATOR_DIRECTORY / 'configure_example.yaml', config)
+        sys.exit(f"lhtml-site init: '{directory}' is a file; give a directory")
+    config = directory / 'configure.yaml'
+    if config.exists():
+        sys.exit(f"lhtml-site init: '{config}' exists already: the project is set up")
+    has_sources = (directory / 'src').is_dir()
+    if not has_sources:
+        if (directory / 'example').exists():
+            sys.exit(f"lhtml-site init: '{directory / 'example'}' exists already; give an empty or new directory")
+        directory.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(GENERATOR_DIRECTORY / 'example', directory / 'example')
+    text = (GENERATOR_DIRECTORY / 'configure_example.yaml').read_text(encoding='utf-8')
+    if has_sources:
+        text = text.replace("source_directory: 'example/'", "source_directory: 'src/'", 1)
+    text = text.replace("theme: 'webpage-frame'", f"theme: '{args.theme}'", 1)
+    config.write_text(text, encoding='utf-8')
+    pages = 'the pages of src/' if has_sources else 'a copy of the example (example/)'
     go = '' if directory.resolve() == Path.cwd().resolve() else f'cd {directory}, then '
-    print(f'Project created in {directory}: {go}lhtml-site builds it, lhtml-site --serve --watch previews it.')
+    print(f"Project set up in {directory}: {config.name} builds {pages} with the theme {args.theme}.\n"
+          f"Next: {go}lhtml-site --serve --watch (build, preview on http://127.0.0.1:8000/, rebuild on save).")
 
 
 def main():

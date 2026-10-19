@@ -189,6 +189,29 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue((project / '.site/content/01_introduction/index.html').is_file())
 
+    def test_init_on_a_directory_with_src_writes_only_its_configuration(self):
+        project = self.root / 'talk'
+        (project / 'src/01_title').mkdir(parents=True)
+        (project / 'src/01_title/index.html.j2').write_text('= Hello\n')
+        run = lambda *args: subprocess.run([sys.executable, str(REPO / 'generate.py'), *args],
+                                           cwd=project, capture_output=True, text=True)
+        self.assertNotEqual(run('init', '--theme', 'nope').returncode, 0)
+        result = run('init', '--theme', 'slides')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((project / 'example').exists())                # the pages are those of src/
+        config = load_config(project / 'configure.yaml')[0]
+        self.assertEqual(config.source_directory, project / 'src')
+        self.assertEqual(config.theme, REPO / 'src/lhtml_site/themes/slides')
+        self.assertIn('exists already', run('init').stderr)            # never over a configuration
+        result = run()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((project / '.site/01_title/index.html').is_file())
+
+    def test_init_offers_every_theme_of_the_generator(self):
+        from lhtml_site.generate import THEMES
+        shipped = {p.parent.name for p in (REPO / 'src/lhtml_site/themes').glob('*/theme.yaml')}
+        self.assertEqual(set(THEMES), shipped)
+
     def test_paths_into_a_checkout_find_the_files_of_its_package(self):
         """A project with the generator as a submodule names its themes,
         plugins and example as they were at the root of the repository."""
