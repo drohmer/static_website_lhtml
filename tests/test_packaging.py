@@ -51,6 +51,10 @@ class PackageContentTest(unittest.TestCase):
                         'themes/slides/.structure/design.md'):
             (package / planted).parent.mkdir(parents=True, exist_ok=True)
             (package / planted).write_text('build output')
+        # a stale egg-info of an earlier build, which still lists the demo (MANIFEST.in prunes it)
+        stale = source / 'src' / (PACKAGE + '.egg-info')
+        stale.mkdir()
+        (stale / 'SOURCES.txt').write_text('\n'.join(n for n in files if '/example/' in n) + '\n')
         result = subprocess.run([sys.executable, '-m', 'build', '--no-isolation', '-o', str(cls.tmp / 'dist'),
                                  str(source)], capture_output=True, text=True)
         if result.returncode:
@@ -75,6 +79,10 @@ class PackageContentTest(unittest.TestCase):
                             'themes/slides/theme.yaml', 'plugins/assets/chrome.js', 'docs/agents.md',
                             'configure_example.yaml', 'feedback.js'):
                 self.assertIn(starter, files)
+
+    def test_the_sdist_has_the_changelog(self):
+        names = tarfile.open(self.sdist).getnames()
+        self.assertTrue(any(n.endswith('/CHANGELOG.md') for n in names))
 
     def test_the_wheel_stays_light(self):
         self.assertLess(self.wheel.stat().st_size, WHEEL_LIMIT)

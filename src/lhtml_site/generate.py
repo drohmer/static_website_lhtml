@@ -62,6 +62,18 @@ class BuildFailed(Exception):
 
 # Configuration & CLI
 
+def version():
+    """The version of lhtml-site: installed, or read from the pyproject.toml of a checkout."""
+    import importlib.metadata
+    try:
+        return importlib.metadata.version('lhtml-site')
+    except importlib.metadata.PackageNotFoundError:
+        import tomllib
+        pyproject = Path(__file__).resolve().parents[2] / 'pyproject.toml'
+        with open(pyproject, 'rb') as fid:
+            return tomllib.load(fid)['project']['version']
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Generate Website: the project of the current directory '
                                                  '(its configure.yaml), or the one of -i.',
@@ -104,6 +116,8 @@ def parse_arguments():
     parser.add_argument('--serve', action='store_true', help='Serve the generated site on localhost.')
     parser.add_argument('--watch', action='store_true', help='Rebuild when sources, theme or configuration change.')
     parser.add_argument('--port', type=int, default=8000, help='Local HTTP port (default: 8000).')
+    parser.add_argument('-V', '--version', action='version',
+                        version=f'lhtml-site {version()} (LHTML {lhtml.__version__})')
     args = parser.parse_args()
     args.target = [t for value in args.target or [] for t in value.split(',') if t] or None
     if not 0 <= args.port <= 65535:

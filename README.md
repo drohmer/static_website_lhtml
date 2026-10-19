@@ -14,10 +14,8 @@ cd my-talk
 lhtml-site --serve --watch
 ```
 
-(Until lhtml-site is on PyPI, the first line is
-`pipx install git+https://github.com/drohmer/lhtml-site`. Python 3.11 or
-newer; without pipx, `pip install` in a virtual environment does the same,
-see [Installation](#installation).)
+(Python 3.11 or newer; without pipx, `pip install lhtml-site` in a virtual
+environment does the same, see [Installation](#installation).)
 
 `init` creates `my-talk/` with a configuration (`configure.yaml`) and four
 slides to start from, in `src/`:
@@ -105,8 +103,9 @@ browser and as a PDF, see
 pipx install lhtml-site                  # the command lhtml-site, in an environment of its own
 ```
 
-or, in a virtual environment, `pip install lhtml-site`. (Until lhtml-site
-is on PyPI: `pipx install git+https://github.com/drohmer/lhtml-site`.)
+or, in a virtual environment, `pip install lhtml-site`. `lhtml-site --version`
+says the version installed, and the LHTML it runs. The version of `main`,
+before its release: `pipx install git+https://github.com/drohmer/lhtml-site`.
 
 **Python**: 3.11 or newer. **Required**, and installed with it: `lhtml-markup`
 (3.0 or later), `Jinja2`, `jinja-markdown`, `pytidylib`, `pyyaml`, `rich`.

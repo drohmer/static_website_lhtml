@@ -1,0 +1,7 @@
+# The sdist: the package as pyproject.toml lists it, its tests and the changelog.
+# Never the demo course (its videos stay in a checkout), nor what a build or a
+# test run leaves behind - even when a stale *.egg-info/SOURCES.txt lists it.
+include CHANGELOG.md
+prune src/lhtml_site/example
+global-exclude *.py[cod] .DS_Store
+prune **/__pycache__

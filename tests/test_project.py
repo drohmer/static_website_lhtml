@@ -319,5 +319,18 @@ class BuildTests(ProjectTests):
         self.assertEqual(sorted(p.name for p in (deck / 'images').iterdir()), ['slide_000.jpg'])
 
 
+
+class VersionTests(unittest.TestCase):
+    def test_version(self):
+        # from a checkout, the version of pyproject.toml; and the LHTML it runs
+        import tomllib
+        with open(REPO / 'pyproject.toml', 'rb') as fid:
+            expected = tomllib.load(fid)['project']['version']
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '--version'],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, rf'^lhtml-site {expected} \(LHTML 3\.')
+
+
 if __name__ == '__main__':
     unittest.main()
