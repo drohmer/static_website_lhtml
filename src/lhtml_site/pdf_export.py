@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from lhtml_site.doctor import node_environment
 from lhtml_site.layout.measure import PUPPETEER_MISSING
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
@@ -59,7 +60,7 @@ def export(meta):
             pdf = stem + '.pdf'
             command = ['node', str(SCRIPT), '--input=' + str(site / page_path(entry)), '--output=' + pdf] + chrome
             for attempt in range(ATTEMPTS):
-                result = subprocess.run(command, capture_output=True, text=True)
+                result = subprocess.run(command, capture_output=True, text=True, env=node_environment())
                 if result.returncode == 0:
                     break
             else:

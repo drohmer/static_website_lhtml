@@ -65,7 +65,8 @@ class BuildFailed(Exception):
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Generate Website: the project of the current directory '
                                                  '(its configure.yaml), or the one of -i.',
-                                     epilog='lhtml-site init [DIR] creates a project, from the example.')
+                                     epilog='lhtml-site init [DIR] creates a project; lhtml-site doctor says '
+                                            'what the optional features (PDF export, layout report) need.')
     debug_group = parser.add_mutually_exclusive_group()
     debug_group.add_argument('-d', '--debug', action='store_true', default=None,
                         help='Display more information and keep temporary files.')
@@ -931,18 +932,20 @@ def generate_site(meta, selected, built):
 # The themes of the generator, for `lhtml-site init --theme` (README, "Getting started")
 THEMES = {'webpage-frame': 'web pages with a navigation menu (the default)',
           'slides': 'slides shown in the browser (1920x1080)',
-          'slides-pdf': 'the same slides, exported to a PDF (requires Node.js, see the README)'}
+          'slides-pdf': 'the same slides, exported to a PDF (requires Node.js: lhtml-site doctor)'}
+# The pages `init` copies into the src/ of a new project, by theme (lhtml_site/starters/)
+STARTERS = {'webpage-frame': 'site', 'slides': 'slides', 'slides-pdf': 'slides'}
 
 
 def init_project(arguments):
     """lhtml-site init [DIR] [--theme NAME]: the configure.yaml of a project
     in DIR (created if needed, the current directory by default). The pages
-    of a DIR that has a src/ are its sources; otherwise the example of the
-    generator is copied into example/. The command then builds DIR alone."""
+    of a DIR that has a src/ are its sources; otherwise the starter of the
+    theme (STARTERS) is copied into src/. The command then builds DIR alone."""
     parser = argparse.ArgumentParser(
         prog='lhtml-site init', formatter_class=argparse.RawDescriptionHelpFormatter,
         description='Create the configuration of a project: its pages in src/ when the directory has one, '
-                    'else a copy of the example of the generator.',
+                    'else a few pages to start from, copied into src/.',
         epilog='themes:\n' + '\n'.join(f'  {name:14} {text}' for name, text in THEMES.items()))
     parser.add_argument('directory', nargs='?', default='.',
                         help='Directory of the project (created if needed; default: the current directory).')
@@ -955,24 +958,30 @@ def init_project(arguments):
     config = directory / 'configure.yaml'
     if config.exists():
         sys.exit(f"lhtml-site init: '{config}' exists already: the project is set up")
-    has_sources = (directory / 'src').is_dir()
+    sources = directory / 'src'
+    has_sources = sources.is_dir()
     if not has_sources:
-        if (directory / 'example').exists():
-            sys.exit(f"lhtml-site init: '{directory / 'example'}' exists already; give an empty or new directory")
+        if sources.exists():
+            sys.exit(f"lhtml-site init: '{sources}' is a file; give an empty or new directory")
         directory.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(GENERATOR_DIRECTORY / 'example', directory / 'example')
+        shutil.copytree(GENERATOR_DIRECTORY / 'starters' / STARTERS[args.theme], sources)
     text = (GENERATOR_DIRECTORY / 'configure_example.yaml').read_text(encoding='utf-8')
-    if has_sources:
-        text = text.replace("source_directory: 'example/'", "source_directory: 'src/'", 1)
     text = text.replace("theme: 'webpage-frame'", f"theme: '{args.theme}'", 1)
     config.write_text(text, encoding='utf-8')
-    pages = 'the pages of src/' if has_sources else 'a copy of the example (example/)'
     go = '' if directory.resolve() == Path.cwd().resolve() else f'cd {directory}, then '
-    print(f"Project set up in {directory}: {config.name} builds {pages} with the theme {args.theme}.\n"
-          f"Next: {go}lhtml-site --serve --watch (build, preview on http://127.0.0.1:8000/, rebuild on save).")
+    if has_sources:
+        print(f"Project set up in {directory}: {config.name} builds the pages of src/ with the theme {args.theme}.")
+    else:
+        first = min(p for p in sources.rglob('index.html.j2')).relative_to(directory).as_posix()
+        print(f"Project set up in {directory}: {config.name}, and pages to start from in src/ "
+              f"(theme {args.theme}).\nEdit {first}; copy one of the directories of src/ to add a page.")
+    print(f"Next: {go}lhtml-site --serve --watch (build, preview on http://127.0.0.1:8000/, rebuild on save).")
 
 
 def main():
+    if sys.argv[1:2] == ['doctor']:      # before the version check: it says what to update
+        from lhtml_site.doctor import main as doctor
+        return doctor(sys.argv[2:])
     if int(lhtml.__version__.split('.')[0]) < 3:
         # LHTML 2 ignores the `media` resolver and expands include:: on its own
         sys.exit('lhtml-site requires lhtml-markup >= 3.0 (pip install -U lhtml-markup)')

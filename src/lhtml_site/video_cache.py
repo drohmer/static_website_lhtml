@@ -23,6 +23,7 @@ import pathlib
 import shutil
 from multiprocessing import Pool
 
+from lhtml_site.doctor import find_command, install_hint
 from lhtml_site.structure import built_pages
 from lhtml_site.video_convert import video_convert
 
@@ -87,8 +88,8 @@ def _missing_variants(cache_directory, videos):
 
 
 def _convert(job):
-    source, codec, destination = job
-    VARIANTS[codec][1](source, destination, {'exec': CONVERTER, 'threads': THREADS})
+    source, codec, destination, converter = job
+    VARIANTS[codec][1](source, destination, {'exec': converter, 'threads': THREADS})
 
 
 def run(meta):
@@ -101,12 +102,13 @@ def run(meta):
     videos = _videos_of(meta, built_pages(meta))
     work = _missing_variants(cache_directory, videos)
     (log.info if work else log.detail)(f'{len(videos)} video(s) in the assets, {len(work)} to transcode')
-    jobs = [(os.fspath(meta['site_directory'] / source), codec, destination)
+    converter = find_command(CONVERTER)
+    jobs = [(os.fspath(meta['site_directory'] / source), codec, destination, converter)
             for source, destinations in work for codec, destination in destinations.items()]
-    if jobs and shutil.which(CONVERTER) is None:
+    if jobs and converter is None:
         # A page still shows its video, as written: said, not a failed build
         log.warning(f'{CONVERTER} not found: {len(work)} video(s) not transcoded, shown as written '
-                    f'(pip install {CONVERTER}; it runs ffmpeg)')
+                    f'({install_hint(CONVERTER)}; it runs ffmpeg)')
         jobs = []
     if jobs:
         with Pool(processes=min(MAX_JOBS, len(jobs))) as pool:

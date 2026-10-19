@@ -1,3 +1,6 @@
 -r requirements.txt
 pytest
 pytest-xdist
+# tests/test_packaging.py builds the wheel and the sdist (python -m build --no-isolation)
+build
+setuptools>=77

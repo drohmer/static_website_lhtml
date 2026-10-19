@@ -14,13 +14,15 @@ from pathlib import Path
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Column
 
+from lhtml_site.doctor import node_environment
 from lhtml_site.layout.report import contact_sheets_html
 
 # The Node scripts stay next to those of the PDF export for now; they move
 # when the targets do.
 SCRIPTS = Path(__file__).resolve().parents[1] / 'plugins' / 'assets'
 PUPPETEER_MISSING = ('puppeteer not found: run `npm install` in the checkout of the generator; '
-                     'installed with pip, the generator finds it through NODE_PATH (see its README)')
+                     'installed with pip or pipx: npm install --prefix ~/.lhtml-site puppeteer minimist '
+                     '(lhtml-site doctor says what is missing)')
 
 
 def run_node(script, arguments, label=None, chrome=None, log=None):
@@ -35,10 +37,10 @@ def run_node(script, arguments, label=None, chrome=None, log=None):
     cmd = ['node', script if os.path.isabs(script) else str(SCRIPTS / script)] + arguments
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                encoding='utf-8', errors='replace')
+                                encoding='utf-8', errors='replace', env=node_environment())
     except FileNotFoundError:
         raise RuntimeError('node not found: install Node.js, then puppeteer (`npm install` in a '
-                           'checkout of the generator; installed with pip: see NODE_PATH in its README)')
+                           'checkout of the generator; installed with pip or pipx: lhtml-site doctor)')
     errors = []
     reader = threading.Thread(target=lambda: errors.extend(proc.stderr))   # no deadlock on a full pipe
     reader.start()

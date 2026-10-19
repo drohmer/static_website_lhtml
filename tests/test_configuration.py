@@ -187,7 +187,25 @@ class ConfigurationTests(unittest.TestCase):
         project = project / 'mon-site'                              # the command alone, in the project
         result = run()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((project / '.site/content/01_introduction/index.html').is_file())
+        self.assertTrue((project / '.site/01_welcome/index.html').is_file())
+        self.assertTrue((project / 'src/01_welcome/assets/diagram.svg').is_file())
+        self.assertIn("source_directory: 'src/'", (project / 'configure.yaml').read_text())
+
+    def test_init_with_the_slides_theme_copies_a_slide_starter_that_builds_strictly(self):
+        project = self.root / 'my-talk'
+        run = lambda *args, cwd=self.root: subprocess.run([sys.executable, str(REPO / 'generate.py'), *args],
+                                                          cwd=cwd, capture_output=True, text=True)
+        result = run('init', 'my-talk', '--theme', 'slides')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('src/01_title/index.html.j2', result.stdout)     # which file to open
+        slides = sorted(p.parent.name for p in (project / 'src').glob('*/index.html.j2'))
+        self.assertEqual(slides, ['01_title', '02_text', '03_two_columns', '04_image'])
+        result = run('--strict', cwd=project)                            # a warning would fail it
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        image = (project / '.site/04_image/index.html').read_text()
+        self.assertIn('assets/diagram.svg', image)
+        self.assertIn('layout-side', image)
+        self.assertIn('class="cols even"', (project / '.site/03_two_columns/index.html').read_text())
 
     def test_init_on_a_directory_with_src_writes_only_its_configuration(self):
         project = self.root / 'talk'

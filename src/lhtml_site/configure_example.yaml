@@ -8,7 +8,8 @@
 # Relative paths are read from this directory. A line starting with # is a
 # comment: remove the # in front of an option to use it. The options of the
 # command line (--debug, ...) take precedence over this file. Every option is
-# described in the section Configuration of the README of lhtml-site.
+# described in the section Configuration of the reference of lhtml-site:
+# https://github.com/drohmer/lhtml-site/blob/main/src/lhtml_site/docs/reference.md
 
 # ---------------------------------------------------------------------------
 # Essentials
@@ -17,7 +18,7 @@
 # Where the pages are. A page is a file .html.j2 (LHTML) or .md.j2 (Markdown),
 # usually <name>/index.html.j2 with its images and videos next to it; the
 # pages follow the order of their paths (01_..., 02_...) unless a deck says.
-source_directory: 'example/'
+source_directory: 'src/'
 
 # Where the site is written. It is replaced at each build: never edit it.
 site_directory: '.site/'
@@ -25,7 +26,7 @@ site_directory: '.site/'
 # The look of the site: a theme of the generator, or the directory of yours.
 #   webpage-frame  web pages with a navigation menu
 #   slides         slides shown in the browser (1920x1080)
-#   slides-pdf     the same slides, exported to a PDF (needs Node.js, see the README)
+#   slides-pdf     the same slides, exported to a PDF (needs Node.js: lhtml-site doctor)
 theme: 'webpage-frame'
 
 # ---------------------------------------------------------------------------
@@ -33,7 +34,7 @@ theme: 'webpage-frame'
 # ---------------------------------------------------------------------------
 
 # The order of the pages (of the slides of a talk): a file listing them, see
-# the section Deck of the README. Without it, the order of their paths.
+# the section Deck of the reference. Without it, the order of their paths.
 # deck: 'deck.yaml'
 
 # Values every page can show, as Jinja variables: {{ author }}, {{ year }}.

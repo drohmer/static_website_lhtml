@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <rect x="1" y="1" width="398" height="298" rx="12" fill="#f4f4f4" stroke="#888" stroke-width="2"/>
+  <circle cx="120" cy="150" r="70" fill="#4a7ab7" opacity="0.85"/>
+  <rect x="210" y="80" width="130" height="140" rx="8" fill="#d9822b" opacity="0.85"/>
+  <path d="M 190 150 L 205 150" stroke="#333" stroke-width="4"/>
+  <text x="200" y="275" font-family="sans-serif" font-size="20" text-anchor="middle" fill="#333">assets/diagram.svg</text>
+</svg>
