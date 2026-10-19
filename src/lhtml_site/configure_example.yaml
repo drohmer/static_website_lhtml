@@ -1,36 +1,111 @@
-# Example to copy to configure.yaml; this file is never merged automatically.
-# Precedence: built-in defaults < this YAML file < explicit CLI options.
-# Relative paths are resolved from this file's directory; absolute paths work too.
+# configure.yaml: the configuration of a site built by lhtml-site.
+#
+# Run from this directory:
+#   lhtml-site --serve --watch   build, preview on http://127.0.0.1:8000/, rebuild on save
+#   lhtml-site                   build only
+#   lhtml-site --check-config    check this file, without building
+#
+# Relative paths are read from this directory. A line starting with # is a
+# comment: remove the # in front of an option to use it. The options of the
+# command line (--debug, ...) take precedence over this file. Every option is
+# described in the section Configuration of the README of lhtml-site.
+
+# ---------------------------------------------------------------------------
+# Essentials
+# ---------------------------------------------------------------------------
+
+# Where the pages are. A page is a file .html.j2 (LHTML) or .md.j2 (Markdown),
+# usually <name>/index.html.j2 with its images and videos next to it; the
+# pages follow the order of their paths (01_..., 02_...) unless a deck says.
 source_directory: 'example/'
-site_directory: '.site/'  # Optional; .site/ is the built-in default.
-theme: 'webpage-frame'  # A theme of the generator - webpage-frame (web pages), slides,
-                        # slides-pdf (slides exported to a PDF) - or the directory of yours.
 
-# Extensions, in the order they run. Everything a bundled theme needs is a
-# stage of the build - the page placed in the template of its theme, the
-# heading ids, the menu, the index of a site that has none - so a project
-# lists only what is its own, and the default is empty.
-# Paths are relative to this file, then to the generator installation.
-# plugin: ['plugins/pre_include.py']
+# Where the site is written. It is replaced at each build: never edit it.
+site_directory: '.site/'
 
-# Optional settings (uncomment to override the defaults):
-# debug: false           # --debug takes precedence; also keeps intermediate files.
-# use_tidy: false
+# The look of the site: a theme of the generator, or the directory of yours.
+#   webpage-frame  web pages with a navigation menu
+#   slides         slides shown in the browser (1920x1080)
+#   slides-pdf     the same slides, exported to a PDF (needs Node.js, see the README)
+theme: 'webpage-frame'
+
+# ---------------------------------------------------------------------------
+# Common options
+# ---------------------------------------------------------------------------
+
+# The order of the pages (of the slides of a talk): a file listing them, see
+# the section Deck of the README. Without it, the order of their paths.
+# deck: 'deck.yaml'
+
+# Values every page can show, as Jinja variables: {{ author }}, {{ year }}.
+# keywords:
+#   author: 'Your Name'
+#   year: 2026
+
+# Your own macros and design tokens, added to those of the theme (the slides
+# themes have a design: .structure/design.md lists it after a build).
+# design:
+#   tokens:
+#     font: {small: 80%}
+#   macros:
+#     note:
+#       class: note
+#       doc: 'A remark in gray: note:: ... ::'
+#       css: '.note { color: gray; }'
+
+# The videos of the pages, converted to the formats every browser reads
+# (needs ffmpeg, and ffpb: pip install ffpb). The converted files are kept
+# in this directory.
+# cache_video_directory: 'cache_video/'
+
+# The headings get an id, so that a section can be linked, and the theme
+# lists them. Default: true.
 # title_id: true
-# keywords: {}           # Variables exposed to Jinja2 templates.
-# chrome: '/Applications/Google Chrome.app'  # Chrome run by the Node scripts (layout
-                                             # report, PDF export, --render); without it,
-                                             # PUPPETEER_EXECUTABLE_PATH, else the Chrome
-                                             # downloaded by puppeteer.
-# plugin_arg: {}         # Plugin-specific options.
-# cache_video_directory: 'cache_video_directory/'   # setting it asks for the
-                                                   # transcoded videos (ffpb)
 
-# The layout analysis (--layout) is part of the generator, not a plugin.
-# Its reports default to .layout/; override with:
+# A line break in a source is a line break in the page. Default: false (the
+# lines of a paragraph are joined).
+# line-breaks: false
+
+# ---------------------------------------------------------------------------
+# Several decks, in the browser and as a PDF
+# ---------------------------------------------------------------------------
+
+# Each directory of source_directory is a deck, built once for each target,
+# into <site_directory>/<deck>/<target>/. Takes the place of 'theme:' above
+# (remove that line).
+# decks: directories
+# targets:
+#   html: {theme: slides}
+#   pdf: {theme: slides-pdf}
+
+# ---------------------------------------------------------------------------
+# Extensions
+# ---------------------------------------------------------------------------
+
+# Transformations of the pages, in the order they run. The menu, the heading
+# ids and the template of the theme are part of the build: list only your
+# own here. Paths are relative to this file, then to the generator, which
+# comes with two:
+#   plugins/pre_include.py   text at the top of every page (shared Jinja macros)
+#   plugins/code_include.py  code of a git repository inserted in the pages
+# plugin: ['plugins/pre_include.py']
+# plugin_arg:                      # the options of each extension, by its name
+#   pre_include: ['macros.html']
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+# The layout report (lhtml-site --layout, needs Node.js): where it is
+# written. The theme says which part of the page it measures.
 # layout:
-#     output: '.layout/'
-#     root: '#main-content-centered'   # the theme declares this in its theme.yaml;
-#                                      # set it here only to override what it says. With a
-#                                      # root that does not match the theme, each page
-#                                      # is measured as a single block (the report says so).
+#   output: '.layout/'
+
+# The Chrome run by the layout report, the PDF export and --render, instead of
+# the one puppeteer downloads (a macOS .app is accepted).
+# chrome: '/Applications/Google Chrome.app'
+
+# Keep the intermediate files and show the tracebacks (as --debug).
+# debug: false
+
+# Clean the HTML of the pages with tidy (needs the tidy library).
+# use_tidy: false

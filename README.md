@@ -212,11 +212,14 @@ sources) need a full build.
 ## Configuration
 
 ```yaml
-source_directory: 'example/'           # Source content directory
+source_directory: 'src/'               # Source content directory
 site_directory: '.site/'               # Output directory
-theme: 'themes/webpage-frame/'         # Theme directory
+theme: 'webpage-frame'                 # A theme of the generator, or a theme directory
 plugin: []                             # Extensions, in order (none by default)
 ```
+
+`lhtml-site init` writes a `configure.yaml` that explains each of the usual
+options, ready to uncomment (the file is `src/lhtml_site/configure_example.yaml`).
 
 **The site is published; the documents of a project are not.** The site
 holds the pages, the assets, the theme and `structure/structure.{json,yaml}`
