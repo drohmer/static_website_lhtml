@@ -41,6 +41,14 @@ it is built on.
 - A progress bar while the PDF is made, on a terminal only (a log gets
   nothing). Without Playwright nor the Node export, the build says to
   install Playwright, the command for the way lhtml-site is installed.
+- A slide is printed once the promises a page or a demo (in an iframe too)
+  registered with `window.__lhtmlReady` are settled, as the layout report
+  already waited for them; the whole preparation of a slide is bounded (60
+  s), so a promise that never settles fails the slide instead of blocking
+  the export. After pipx, the commands to install are the same in the
+  README, in `lhtml-site doctor` and in the errors:
+  `pipx inject --include-apps lhtml-site playwright pypdf`, then
+  `playwright install --only-shell chromium`.
 
 ### Changed
 - Requires LHTML 3 (`lhtml-markup>=3.0`), which reads no file: the

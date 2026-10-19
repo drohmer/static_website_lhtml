@@ -17,6 +17,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,16 @@ def install_hint(name, command=False):
     if installation() == 'pipx':
         return f"pipx inject {'--include-apps ' if command else ''}lhtml-site {name}"
     return f'{sys.executable} -m pip install {name}'
+
+
+def playwright_browser_command():
+    """The command that downloads the Chromium of the Playwright of the
+    generator: after pipx, the command `playwright` that `pipx inject
+    --include-apps` put on the PATH (no path of pipx to type); otherwise the
+    Python of the generator."""
+    if installation() == 'pipx':
+        return 'playwright install --only-shell chromium'
+    return f'{shlex.quote(sys.executable)} -m playwright install --only-shell chromium'
 
 
 def find_command(name):
@@ -145,7 +156,7 @@ def node_checks(report, pdf=False):
 
 def chromium_check():
     """The Chromium of Playwright: launched and closed, the surest test."""
-    hint = f'{sys.executable} -m playwright install --only-shell chromium'
+    hint = playwright_browser_command()
     if importlib.util.find_spec('playwright') is None:
         return 'Chromium', None, hint
     try:

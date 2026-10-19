@@ -32,7 +32,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from lhtml_site.doctor import node_environment
+from lhtml_site.doctor import installation, node_environment, playwright_browser_command
 from lhtml_site.layout.measure import PUPPETEER_MISSING
 from lhtml_site.structure import built_pages, page_path, structure, template_path
 
@@ -56,16 +56,20 @@ VIDEO_TIMEOUT = 15_000              # ms, for the first frame of each video
 
 ENGINES = ('playwright', 'node')
 PLAYWRIGHT_MISSING = ('The PDF export needs playwright and pypdf: {install}, '
-                      'then {python} -m playwright install --only-shell chromium '
+                      'then {browser} '
                       '(or LHTML_PDF_ENGINE=node for the Node export)')
-CHROMIUM_MISSING = ('The Chromium of Playwright is not installed: {python} -m playwright install --only-shell chromium '
+CHROMIUM_MISSING = ('The Chromium of Playwright is not installed: {browser} '
                     '(or the configuration key chrome)')
 
 # Ready when: the page has loaded (its deferred scripts ran: KaTeX auto-render
-# included), MathJax (if any) has typeset, the fonts are loaded (KaTeX loads
+# included), the promises a page or a demo registered with window.__lhtmlReady
+# (themes/slides/js/readiness.js) are settled, MathJax (if any) has typeset, the fonts are loaded (KaTeX loads
 # its own once it has rendered), the images are decoded, each video shows a
 # frame, and the page has painted twice.
 READY = """async ({videoTimeout}) => {
+    if (window.__lhtmlReady?.version === 1) {
+        await window.__lhtmlReady.ready();
+    }
     if (window.MathJax && MathJax.startup && MathJax.startup.promise) {
         await MathJax.startup.promise;
     }
@@ -81,6 +85,13 @@ READY = """async ({videoTimeout}) => {
         })));
     await document.fonts.ready;
     await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
+}"""
+
+# A frame of the page (a demo in an iframe) registers its promises in its own window
+FRAME_READY = """async () => {
+    if (window.__lhtmlReady?.version === 1) {
+        await window.__lhtmlReady.ready();
+    }
 }"""
 
 # The image shows the page as printed: the PDF is printed without the
@@ -219,9 +230,9 @@ def export_node(inputs, stems, chrome_path=None, done=lambda: None):
 def playwright_missing():
     """What to install for the Playwright export, for the way lhtml-site is installed."""
     python = shlex.quote(sys.executable)        # pipx puts it under "Application Support" on macOS
-    install = ('pipx inject --include-apps lhtml-site playwright pypdf' if re.search(r'pipx[/\\]venvs', sys.prefix)
+    install = ('pipx inject --include-apps lhtml-site playwright pypdf' if installation() == 'pipx'
                else f'{python} -m pip install "lhtml-site[pdf]"')
-    return PLAYWRIGHT_MISSING.format(install=install, python=python)
+    return PLAYWRIGHT_MISSING.format(install=install, browser=playwright_browser_command())
 
 
 def export_playwright(inputs, stems, chrome_path=None, done=lambda: None):
@@ -238,7 +249,7 @@ async def _export_playwright(inputs, stems, chrome_path, done=lambda: None):
             browser = await playwright.chromium.launch(executable_path=chrome_path or None)
         except Error as error:
             if "Executable doesn't exist" in str(error):
-                raise RuntimeError(CHROMIUM_MISSING.format(python=shlex.quote(sys.executable))) from None
+                raise RuntimeError(CHROMIUM_MISSING.format(browser=playwright_browser_command())) from None
             raise
         try:
             # The viewport is the page of the PDF, drawn at the width of the image
@@ -250,8 +261,17 @@ async def _export_playwright(inputs, stems, chrome_path, done=lambda: None):
                 async with slots:
                     page = await context.new_page()
                     try:
-                        await page.goto(source.as_uri(), wait_until='load', timeout=READY_TIMEOUT)
-                        await page.evaluate(READY, {'videoTimeout': VIDEO_TIMEOUT})
+                        # One bound for the whole preparation of the page: a
+                        # promise that never settles (MathJax, a demo) fails it
+                        try:
+                            async with asyncio.timeout(READY_TIMEOUT / 1000):
+                                await page.goto(source.as_uri(), wait_until='load', timeout=READY_TIMEOUT)
+                                for frame in page.frames[1:]:
+                                    await frame.evaluate(FRAME_READY)
+                                await page.evaluate(READY, {'videoTimeout': VIDEO_TIMEOUT})
+                        except TimeoutError:
+                            raise RuntimeError(f'PDF of {source} not made: the page was not ready '
+                                               f'after {READY_TIMEOUT // 1000} s') from None
                         await page.pdf(path=stem + '.pdf', width=f'{PAGE_WIDTH}px', height=f'{PAGE_HEIGHT}px',
                                        margin={'top': '0px', 'left': '0px', 'right': '0px', 'bottom': '0px'})
                         # The image of the page as printed: print media, as in the PDF
