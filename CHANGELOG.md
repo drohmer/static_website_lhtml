@@ -3,6 +3,15 @@
 All notable changes to lhtml-site (`lhtml-site` on PyPI) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+- The transcoded videos: only the variants of the videos of the pages built
+  are copied into the site, not the whole `cache_video_directory`. The cache
+  of a page removed was published with the site. A full build now names the
+  directories of the cache that belong to no video of the site, and removes
+  nothing (`--only` builds some pages, and says nothing of the others).
+
 ## [1.0.0] - 2026-10-19
 
 The first release on PyPI. The generator was named `static_website_lhtml`,

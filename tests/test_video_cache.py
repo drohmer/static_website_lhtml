@@ -62,6 +62,38 @@ class VideoCacheTests(unittest.TestCase):
         copied = self.root / 'out/a/assets' / CACHE_VIDEO_DIR
         self.assertTrue((copied / 'clip-vp9.webm').is_file())
 
+    def build_output(self, *arguments, **options):
+        config = self.root / 'configure.yaml'
+        config.write_text(yaml.safe_dump({
+            'source_directory': 'src', 'site_directory': 'out',
+            'theme': str(REPO / 'src/lhtml_site/themes/webpage-frame'), **options}))
+        result = subprocess.run([sys.executable, str(REPO / 'generate.py'), '-i', str(config), *arguments],
+                                cwd=self.root, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return ' '.join(result.stdout.split())
+
+    def test_the_cache_of_a_page_removed_is_neither_published_nor_deleted(self):
+        """Only the variants of the videos built reach the site; a full build
+        names the directories of the cache that belong to none of them."""
+        for directory in ('a/assets', 'gone/assets'):
+            variants = self.root / 'cache' / directory / CACHE_VIDEO_DIR
+            variants.mkdir(parents=True)
+            (variants / 'clip-h264.mp4').write_bytes(b'h264')
+            (variants / 'clip-vp9.webm').write_bytes(b'vp9')
+        (self.root / 'cache/a/assets' / CACHE_VIDEO_DIR / 'old-h264.mp4').write_bytes(b'renamed since')
+        (self.root / 'cache/.DS_Store').write_bytes(b'')
+        output = self.build_output(cache_video_directory=str(self.root / 'cache'))
+        self.assertTrue((self.root / 'out/a/assets' / CACHE_VIDEO_DIR / 'clip-vp9.webm').is_file())
+        self.assertFalse((self.root / 'out/gone').exists())
+        self.assertFalse((self.root / 'out/a/assets' / CACHE_VIDEO_DIR / 'old-h264.mp4').exists())
+        self.assertIn('2 directory(ies)', output)
+        self.assertIn('gone/assets/cache_video_codecs', output)
+        self.assertIn('a/assets/cache_video_codecs', output)
+        self.assertTrue((self.root / 'cache/gone/assets' / CACHE_VIDEO_DIR / 'clip-h264.mp4').is_file())
+        # --only builds some pages: the cache of the others is no orphan
+        output = self.build_output('--only', 'a', cache_video_directory=str(self.root / 'cache'))
+        self.assertNotIn('belong to no video', output)
+
     def test_without_the_converter_a_video_is_shown_as_written(self):
         import os
         env = {**os.environ, 'PATH': os.path.dirname(sys.executable)}       # no ffpb on it

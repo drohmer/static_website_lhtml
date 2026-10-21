@@ -132,7 +132,7 @@ Optional keys:
 | Key | Description |
 |-----|-------------|
 | `debug` | Verbose logging and retained intermediate files; overridden by `--debug` / `--no-debug` |
-| `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies them into the site, and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
+| `cache_video_directory` | Directory of the transcoded videos. Setting it is what asks for them: the build makes the missing variants of the videos in the `assets/` of each page, copies the variants of these videos into the site (not the rest of the cache: a full build names the directories of the cache that belong to no video, and removes nothing), and LHTML adds a `<source>` per variant. Unset, nothing is transcoded |
 | `use_tidy` | Enable HTML tidy post-processing (default: false) |
 | `line-breaks` | The line breaks of the sources are rendered as `<br>` (LHTML's option; default: false) |
 | `keywords` | Extra Jinja2 template variables |

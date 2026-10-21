@@ -93,7 +93,8 @@ def _convert(job):
 
 
 def run(meta):
-    """Make the missing variants and copy the cache into the site. Does
+    """Make the missing variants and copy those of the videos built into the
+    site (not the whole cache: a page removed keeps its cache). Does
     nothing unless the project declares `cache_video_directory:`."""
     cache_directory = meta.get('cache_video_directory')
     if not cache_directory:
@@ -114,11 +115,42 @@ def run(meta):
         with Pool(processes=min(MAX_JOBS, len(jobs))) as pool:
             pool.map(_convert, jobs)
 
-    if os.path.isdir(cache_directory) and os.listdir(cache_directory):
-        for item in os.listdir(cache_directory):
-            source = os.path.join(cache_directory, item)
-            target = os.path.join(meta['site_directory'], item)
-            if os.path.isdir(source):
-                shutil.copytree(source, target, dirs_exist_ok=True)
-            else:
-                shutil.copy2(source, target)
+    variants = _variants_in_cache(cache_directory, videos)
+    for relative in variants:
+        target = os.path.join(meta['site_directory'], relative)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copy2(os.path.join(cache_directory, relative), target)
+    # The cache of a page that no longer exists is not published; a full
+    # build says where it is (--only builds some pages: the others' look orphan)
+    if not meta.get('only'):
+        directories = _orphan_directories(cache_directory, variants)
+        if directories:
+            shown = ', '.join(directories[:5]) + (', ...' if len(directories) > 5 else '')
+            log.info(f'{len(directories)} directory(ies) of {cache_directory} belong to no video '
+                     f'of the site, not published (remove them if their page is gone): {shown}')
+
+
+def _variants_in_cache(cache_directory, videos):
+    """The variants in the cache of the videos built, relative to the cache:
+    the ones made now and those an earlier cache holds (-h265)."""
+    found = []
+    for assets, name in videos:
+        stem = name[:-len(pathlib.Path(name).suffix)]
+        for suffix, _ in SOURCES:
+            relative = os.path.normpath(os.path.join(assets, CACHE_VIDEO_DIR, stem + suffix))
+            if os.path.isfile(os.path.join(cache_directory, relative)):
+                found.append(relative)
+    return found
+
+
+def _orphan_directories(cache_directory, variants):
+    """The directories of the cache holding a file that is no variant of a
+    video built (hidden files, such as .DS_Store, aside), relative to it."""
+    kept = set(variants)
+    orphans = set()
+    for directory, _, files in os.walk(cache_directory):
+        relative = os.path.relpath(directory, cache_directory)
+        for name in files:
+            if not name.startswith('.') and os.path.normpath(os.path.join(relative, name)) not in kept:
+                orphans.add(relative)
+    return sorted(orphans)
