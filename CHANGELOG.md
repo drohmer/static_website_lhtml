@@ -5,6 +5,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- The `slides` theme: a horizontal swipe goes to the next slide (to the
+  left) or the previous one (to the right), on a phone, a tablet or a touch
+  screen. A pinch, a vertical scroll, a page zoomed in, and a swipe on a
+  video, a form, the menu or a block that scrolls sideways (code) are left
+  to the browser.
+
 ### Fixed
 - The transcoded videos: only the variants of the videos of the pages built
   are copied into the site, not the whole `cache_video_directory`. The cache
